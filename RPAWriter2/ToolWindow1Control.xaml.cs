@@ -38,6 +38,7 @@ namespace RPAWriter2
         private CancellationTokenSource? _chatCts;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
+        private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
 
         public ToolWindow1Control()
         {
@@ -243,6 +244,12 @@ namespace RPAWriter2
             };
             if (dlg.ShowDialog() != true) return;
 
+            if (FileLockDetector.IsFileLocked(dlg.FileName))
+            {
+                ShowNotice(SpecLockedMessage);
+                return;
+            }
+
             ShowImportProgress("Reading file…");
             try
             {
@@ -280,6 +287,10 @@ namespace RPAWriter2
                 SetOutput(sb.ToString());
 
                 AppendChat("Imported spec: " + spec.Name + " (tasks: " + spec.Tasks.Count + ")");
+            }
+            catch (Exception ex) when (FileLockDetector.IsFileLocked(ex))
+            {
+                ShowNotice(SpecLockedMessage);
             }
             catch (Exception ex)
             {

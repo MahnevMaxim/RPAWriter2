@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -40,6 +41,20 @@ namespace RPAWriter.Core.Services
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
+
+        static OpenAiCompatibleProvider()
+        {
+            // On .NET Framework the default security protocol can still negotiate TLS 1.0/1.1,
+            // which modern OpenAI-compatible endpoints reject by forcibly closing the connection.
+            try
+            {
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            }
+            catch
+            {
+                // Best-effort only; some runtimes restrict changing this value.
+            }
+        }
 
         public OpenAiCompatibleProvider(OpenAiOptions options) : this(options, new HttpClient()) { }
 
@@ -249,7 +264,6 @@ namespace RPAWriter.Core.Services
             };
             if (!string.IsNullOrWhiteSpace(_options.ApiKey))
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
-            request.Headers.ConnectionClose = true;
             return request;
         }
 
