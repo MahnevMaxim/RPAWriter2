@@ -144,22 +144,70 @@ namespace RPAWriter.Core.Services
             return result;
         }
 
-        public async Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, string robotCode, CancellationToken cancellationToken = default)
+        public async Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
         {
-            var taskJson = JsonConvert.SerializeObject(task);
+            var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
-                "Locate a solution for the task in the robot code. Return JSON {\"xamlFragment\":\"...\",\"csharpCode\":\"...\"}.\n\n" +
-                "Task: " + taskJson + "\n\nRobot code:\n" + (robotCode ?? ""),
+                "Reconstruct the technical specification of an RPA robot from its source code (.xaml/.cs). " +
+                "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}.\n\n" +
+                "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
                 cancellationToken).ConfigureAwait(false);
 
             var obj = ParseJson(content);
-            return new SolutionRecord
+            var spec = new SpecModel
+            {
+                Name = obj.Value<string>("name") ?? robotName ?? "Robot",
+                SourcePath = robotName,
+                Description = obj.Value<string>("description") ?? ""
+            };
+            AddStringArray(spec.Steps, obj["steps"]);
+            AddStringArray(spec.Inputs, obj["inputs"]);
+            AddStringArray(spec.Outputs, obj["outputs"]);
+            spec.RawText = BuildRawSpecText(spec);
+            return spec;
+        }
+
+        public async Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        {
+            var taskJson = JsonConvert.SerializeObject(task);
+            var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
+            var content = await CompleteAsync(
+                "Locate the solution for the task in the robot source files. Return JSON " +
+                "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
+                "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
+                "Task: " + taskJson + "\n\nRobot files (relativePath + content):\n" + filesJson,
+                cancellationToken).ConfigureAwait(false);
+
+            var obj = ParseJson(content);
+            var record = new SolutionRecord
             {
                 Id = Guid.NewGuid().ToString("N"),
                 XamlFragment = obj.Value<string>("xamlFragment"),
                 CSharpCode = obj.Value<string>("csharpCode"),
                 Tasks = new List<TaskDescriptor> { task }
             };
+            AddStringArray(record.SolutionPaths, obj["solutionPaths"]);
+            return record;
+        }
+
+        private static void AddStringArray(List<string> target, JToken token)
+        {
+            if (!(token is JArray array)) return;
+            foreach (var item in array)
+            {
+                if (item.Type == JTokenType.String && !string.IsNullOrWhiteSpace(item.Value<string>()))
+                    target.Add(item.Value<string>());
+            }
+        }
+
+        private static string BuildRawSpecText(SpecModel spec)
+        {
+            var sb = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(spec?.Description)) sb.AppendLine(spec.Description);
+            foreach (var step in spec?.Steps ?? new List<string>()) sb.AppendLine(step);
+            foreach (var input in spec?.Inputs ?? new List<string>()) sb.AppendLine("Input: " + input);
+            foreach (var output in spec?.Outputs ?? new List<string>()) sb.AppendLine("Output: " + output);
+            return sb.ToString();
         }
 
         public async Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)

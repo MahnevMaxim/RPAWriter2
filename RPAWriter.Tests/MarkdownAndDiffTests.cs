@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
@@ -31,6 +32,47 @@ namespace RPAWriter.Tests
             Assert.That(md, Does.Contain("# Tasks — Test"));
             Assert.That(md, Does.Contain("| # | Action | Target | Activity type | Keywords |"));
             Assert.That(md, Does.Contain("| open | site | OpenBrowser | browser |"));
+        }
+
+        [Test]
+        public void SpecToMarkdown_IncludesTimestampAndSections()
+        {
+            var spec = new SpecModel
+            {
+                Name = "RPA-0001",
+                Description = "Opens a site and reads a table.",
+                Steps = new List<string> { "Open browser", "Read table" },
+                Inputs = new List<string> { "url" },
+                Outputs = new List<string> { "table data" }
+            };
+
+            var md = MarkdownContent.SpecToMarkdown(spec, new DateTime(2026, 10, 16, 14, 30, 5, DateTimeKind.Utc));
+
+            Assert.That(md, Does.Contain("# RPA-0001 — Technical specification"));
+            Assert.That(md, Does.Contain("Generated: 2026-10-16 14:30:05 UTC"));
+            Assert.That(md, Does.Contain("## Description"));
+            Assert.That(md, Does.Contain("## Steps"));
+            Assert.That(md, Does.Contain("## Inputs"));
+        }
+
+        [Test]
+        public void RobotTasksToMarkdown_ListsSolutionPaths()
+        {
+            var entries = new List<RobotTaskEntry>
+            {
+                new RobotTaskEntry
+                {
+                    Task = new TaskDescriptor { Action = "open", Target = "site", Description = "Open the site", ActivityType = "OpenBrowser" },
+                    SolutionPaths = new List<string> { "RPA-0001/Main.xaml", "RPA-0001/RpaActions.cs" }
+                }
+            };
+
+            var md = MarkdownContent.RobotTasksToMarkdown("RPA-0001", entries, new DateTime(2026, 10, 16, 14, 30, 5, DateTimeKind.Utc));
+
+            Assert.That(md, Does.Contain("# Tasks — RPA-0001"));
+            Assert.That(md, Does.Contain("Generated: 2026-10-16 14:30:05 UTC"));
+            Assert.That(md, Does.Contain("| # | Task | Description | Activity type | Solution file(s) |"));
+            Assert.That(md, Does.Contain("RPA-0001/Main.xaml, RPA-0001/RpaActions.cs"));
         }
 
         [Test]

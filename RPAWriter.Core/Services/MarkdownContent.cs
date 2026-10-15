@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -77,6 +78,84 @@ namespace RPAWriter.Core.Services
 
             sb.Append(Table(rows));
             return sb.ToString();
+        }
+
+        /// <summary>Formats an absolute timestamp for human-readable headers (ISO-like UTC).</summary>
+        public static string FormatTimestamp(DateTime utc)
+        {
+            return utc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
+        }
+
+        /// <summary>Builds a robot spec.md from a reconstructed specification.</summary>
+        public static string SpecToMarkdown(SpecModel spec, DateTime generatedUtc)
+        {
+            var name = string.IsNullOrWhiteSpace(spec?.Name) ? "Robot" : spec.Name;
+            var sb = new StringBuilder();
+            sb.AppendLine("# " + name + " — Technical specification");
+            sb.AppendLine();
+            sb.AppendLine("Generated: " + FormatTimestamp(generatedUtc));
+            sb.AppendLine("Source robot: " + name);
+            sb.AppendLine();
+
+            if (!string.IsNullOrWhiteSpace(spec?.Description))
+            {
+                sb.AppendLine("## Description");
+                sb.AppendLine();
+                sb.AppendLine(spec.Description);
+                sb.AppendLine();
+            }
+
+            AppendList(sb, "## Steps", spec?.Steps);
+            AppendList(sb, "## Inputs", spec?.Inputs);
+            AppendList(sb, "## Outputs", spec?.Outputs);
+
+            return sb.ToString();
+        }
+
+        /// <summary>Builds a robot tasks.md with the solution file(s) for each task.</summary>
+        public static string RobotTasksToMarkdown(string robotName, IReadOnlyList<RobotTaskEntry> tasks, DateTime generatedUtc)
+        {
+            var name = string.IsNullOrWhiteSpace(robotName) ? "Robot" : robotName;
+            var sb = new StringBuilder();
+            sb.AppendLine("# Tasks — " + name);
+            sb.AppendLine();
+            sb.AppendLine("Generated: " + FormatTimestamp(generatedUtc));
+            sb.AppendLine("Source robot: " + name);
+            sb.AppendLine();
+
+            var rows = new List<IReadOnlyList<string>>
+            {
+                new List<string> { "#", "Task", "Description", "Activity type", "Solution file(s)" }
+            };
+
+            var list = tasks ?? new List<RobotTaskEntry>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                var entry = list[i];
+                var task = entry?.Task;
+                rows.Add(new List<string>
+                {
+                    (i + 1).ToString(),
+                    (task?.Action ?? "") + (string.IsNullOrWhiteSpace(task?.Target) ? "" : " → " + task.Target),
+                    task?.Description ?? "",
+                    task?.ActivityType ?? "",
+                    string.Join(", ", entry?.SolutionPaths ?? new List<string>())
+                });
+            }
+
+            sb.Append(Table(rows));
+            return sb.ToString();
+        }
+
+        private static void AppendList(StringBuilder sb, string heading, List<string> items)
+        {
+            var list = items ?? new List<string>();
+            if (list.Count == 0) return;
+            sb.AppendLine(heading);
+            sb.AppendLine();
+            foreach (var item in list)
+                sb.AppendLine("- " + (item ?? ""));
+            sb.AppendLine();
         }
     }
 }

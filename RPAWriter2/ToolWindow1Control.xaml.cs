@@ -114,6 +114,16 @@ namespace RPAWriter2
             OutputBox.Text = text;
         }
 
+        private void SetKbStatus(string status)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetKbStatus(status)));
+                return;
+            }
+            KbStatusText.Text = status;
+        }
+
         private void ShowError(Exception ex)
         {
             AppendChat("Error: " + ex.Message);
@@ -415,23 +425,42 @@ namespace RPAWriter2
             var kbPath = RequireKbPath();
             if (kbPath == null) return;
 
-            var dlg = new OpenFileDialog
+            var robotsRoot = (RobotsRootPathBox?.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(robotsRoot))
             {
-                Title = "Robot documentation",
-                Filter = "Documentation (*.docx;*.doc;*.txt;*.md)|*.docx;*.doc;*.txt;*.md|All files (*.*)|*.*",
-                Multiselect = true
-            };
-            if (dlg.ShowDialog() != true) return;
+                ShowNotice("Specify the robot solutions directory in the \"Settings\" tab first.");
+                MainTabs.SelectedItem = SettingsTab;
+                return;
+            }
+            if (!Directory.Exists(robotsRoot))
+            {
+                ShowNotice("Robot solutions directory does not exist: " + robotsRoot);
+                return;
+            }
 
+            SetKbStatus("Importing robots…");
             try
             {
-                var kb = new FileKnowledgeBase(kbPath);
-                var service = new KnowledgeBaseFormationService(new OpenXmlDocumentReader(), _ai, kb);
-                var added = await service.BuildFromRobotDocsAsync(dlg.FileNames, "");
-                SetOutput("Solutions added to the knowledge base: " + added);
-                AppendChat("Knowledge base updated: " + added + " solutions.");
+                var service = new RobotKnowledgeBaseImportService(_ai);
+                var progress = new Progress<string>(SetKbStatus);
+                var result = await service.ImportFromRobotsAsync(robotsRoot, kbPath, progress);
+
+                var sb = new StringBuilder();
+                sb.AppendLine("Robots processed: " + result.RobotsProcessed);
+                sb.AppendLine("Spec files written: " + result.SpecFilesWritten);
+                sb.AppendLine("Task files written: " + result.TaskFilesWritten);
+                sb.AppendLine("Tasks added to index: " + result.TasksAdded);
+                foreach (var warning in result.Warnings)
+                    sb.AppendLine("Warning: " + warning);
+                SetOutput(sb.ToString());
+                AppendChat("Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
+                SetKbStatus("Import finished: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
             }
-            catch (Exception ex) { ShowError(ex); }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+                SetKbStatus("Import failed.");
+            }
         }
 
         private async void OnBuildRelease(object sender, RoutedEventArgs e)

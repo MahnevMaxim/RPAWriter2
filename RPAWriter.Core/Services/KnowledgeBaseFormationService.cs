@@ -36,7 +36,11 @@ namespace RPAWriter.Core.Services
                 var tasks = await _ai.DecomposeTasksAsync(spec.RawText, cancellationToken).ConfigureAwait(false);
                 foreach (var task in tasks)
                 {
-                    var solution = await _ai.MapTaskToSolutionAsync(task, robotCode, cancellationToken).ConfigureAwait(false);
+                    var robotFiles = new List<RobotSourceFile>
+                    {
+                        new RobotSourceFile { RelativePath = "robot", Content = robotCode ?? "" }
+                    };
+                    var solution = await _ai.MapTaskToSolutionAsync(task, robotFiles, cancellationToken).ConfigureAwait(false);
                     solution.SourceRobot = spec.SourcePath;
                     solution.Documentation = spec.RawText;
                     await _kb.AddAsync(solution, cancellationToken).ConfigureAwait(false);

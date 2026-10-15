@@ -280,7 +280,7 @@
         <TabItem x:Name="KnowledgeBaseTab" Header="Knowledge base">
             <DockPanel>
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Button Content="Build KB" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
+                    <Button Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
                 <TextBlock x:Name="KbStatusText" DockPanel.Dock="Top" Margin="0,0,0,6"

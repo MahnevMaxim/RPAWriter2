@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -87,18 +88,60 @@ namespace RPAWriter.Core.Services
             return Task.FromResult<IReadOnlyList<TaskDescriptor>>(tasks);
         }
 
-        public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, string robotCode, CancellationToken cancellationToken = default)
+        public Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        {
+            var files = (robotFiles ?? new List<RobotSourceFile>()).Where(f => f != null).ToList();
+            var spec = new SpecModel
+            {
+                Name = robotName ?? "Robot",
+                SourcePath = robotName,
+                Description = "Robot \"" + (robotName ?? "Robot") + "\" reconstructed from " + files.Count + " source file(s)."
+            };
+
+            var sb = new StringBuilder();
+            sb.AppendLine(spec.Description);
+            foreach (var file in files)
+            {
+                spec.Steps.Add(file.RelativePath);
+                sb.AppendLine("File: " + file.RelativePath + ".");
+                foreach (var method in ExtractMethodNames(file.Content))
+                    sb.AppendLine("Implements " + method + ".");
+            }
+            spec.RawText = sb.ToString();
+            return Task.FromResult(spec);
+        }
+
+        public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
         {
             var method = MethodNameFor(task);
+            var files = (robotFiles ?? new List<RobotSourceFile>()).Where(f => f != null).ToList();
+            var paths = files
+                .Where(f => !string.IsNullOrEmpty(f.Content) && f.Content.IndexOf(method, StringComparison.OrdinalIgnoreCase) >= 0)
+                .Select(f => f.RelativePath)
+                .ToList();
+            if (paths.Count == 0 && files.Count > 0)
+                paths.Add(files[0].RelativePath);
+
             var record = new SolutionRecord
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Name = task?.Description ?? task?.Action ?? "Task",
                 Tasks = new List<TaskDescriptor> { CloneTask(task) },
                 XamlFragment = "<InvokeMethod MethodName=\"" + method + "\" TargetType=\"Robots.RpaActions\" />",
-                CSharpCode = "public static void " + method + "() { /* TODO */ }"
+                CSharpCode = "public static void " + method + "() { /* TODO */ }",
+                SolutionPaths = paths
             };
             return Task.FromResult(record);
+        }
+
+        private static IEnumerable<string> ExtractMethodNames(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return Enumerable.Empty<string>();
+            return Regex.Matches(content, @"\b[A-Za-z_][A-Za-z0-9_]*\s*\(")
+                .Cast<Match>()
+                .Select(m => m.Value.TrimEnd('(').Trim())
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
         }
 
         public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)

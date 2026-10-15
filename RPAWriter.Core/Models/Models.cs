@@ -22,6 +22,10 @@ namespace RPAWriter.Core.Models
         public string SourcePath { get; set; }
         public string RawText { get; set; }
         public string MarkdownText { get; set; }
+        public string Description { get; set; }
+        public List<string> Steps { get; set; } = new List<string>();
+        public List<string> Inputs { get; set; } = new List<string>();
+        public List<string> Outputs { get; set; } = new List<string>();
         public List<TaskDescriptor> Tasks { get; set; } = new List<TaskDescriptor>();
     }
 
@@ -84,6 +88,39 @@ namespace RPAWriter.Core.Models
         public string SourceRobot { get; set; }
         public string Documentation { get; set; }
         public DateTime CreatedUtc { get; set; }
+
+        /// <summary>File(s) where the task is implemented, relative to the robots root.</summary>
+        public List<string> SolutionPaths { get; set; } = new List<string>();
+
+        /// <summary>When the knowledge-base entry was generated (absolute UTC timestamp).</summary>
+        public DateTime SpecGeneratedUtc { get; set; }
+
+        /// <summary>Latest modification time of the robot source files (for commit-based refresh).</summary>
+        public DateTime? SourceUpdatedUtc { get; set; }
+    }
+
+    /// <summary>A robot source file: path relative to the robots root + its content.</summary>
+    public class RobotSourceFile
+    {
+        public string RelativePath { get; set; }
+        public string Content { get; set; }
+    }
+
+    /// <summary>A decomposed task paired with the solution file(s) where it is implemented.</summary>
+    public class RobotTaskEntry
+    {
+        public TaskDescriptor Task { get; set; }
+        public List<string> SolutionPaths { get; set; } = new List<string>();
+    }
+
+    /// <summary>Result of importing the knowledge base from a robots directory.</summary>
+    public class RobotKnowledgeBaseImportResult
+    {
+        public int RobotsProcessed { get; set; }
+        public int SpecFilesWritten { get; set; }
+        public int TaskFilesWritten { get; set; }
+        public int TasksAdded { get; set; }
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 
     /// <summary>A matched similar task with a similarity score.</summary>
