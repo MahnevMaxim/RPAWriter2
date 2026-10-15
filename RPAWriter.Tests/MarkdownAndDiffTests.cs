@@ -29,8 +29,8 @@ namespace RPAWriter.Tests
 
             var md = MarkdownContent.TasksToMarkdown(spec);
 
-            Assert.That(md, Does.Contain("# Tasks — Test"));
-            Assert.That(md, Does.Contain("| # | Action | Target | Activity type | Keywords |"));
+            Assert.That(md, Does.Contain("# Задачи — Test"));
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова |"));
             Assert.That(md, Does.Contain("| open | site | OpenBrowser | browser |"));
         }
 
@@ -48,11 +48,11 @@ namespace RPAWriter.Tests
 
             var md = MarkdownContent.SpecToMarkdown(spec, new DateTime(2026, 10, 16, 14, 30, 5, DateTimeKind.Utc));
 
-            Assert.That(md, Does.Contain("# RPA-0001 — Technical specification"));
-            Assert.That(md, Does.Contain("Generated: 2026-10-16 14:30:05 UTC"));
-            Assert.That(md, Does.Contain("## Description"));
-            Assert.That(md, Does.Contain("## Steps"));
-            Assert.That(md, Does.Contain("## Inputs"));
+            Assert.That(md, Does.Contain("# RPA-0001 — Техническое задание"));
+            Assert.That(md, Does.Contain("Сформировано: 2026-10-16 14:30:05 UTC"));
+            Assert.That(md, Does.Contain("## Описание"));
+            Assert.That(md, Does.Contain("## Шаги"));
+            Assert.That(md, Does.Contain("## Входные данные"));
         }
 
         [Test]
@@ -69,9 +69,9 @@ namespace RPAWriter.Tests
 
             var md = MarkdownContent.RobotTasksToMarkdown("RPA-0001", entries, new DateTime(2026, 10, 16, 14, 30, 5, DateTimeKind.Utc));
 
-            Assert.That(md, Does.Contain("# Tasks — RPA-0001"));
-            Assert.That(md, Does.Contain("Generated: 2026-10-16 14:30:05 UTC"));
-            Assert.That(md, Does.Contain("| # | Task | Description | Activity type | Solution file(s) |"));
+            Assert.That(md, Does.Contain("# Задачи — RPA-0001"));
+            Assert.That(md, Does.Contain("Сформировано: 2026-10-16 14:30:05 UTC"));
+            Assert.That(md, Does.Contain("| # | Задача | Описание | Тип активности | Файл(ы) решения |"));
             Assert.That(md, Does.Contain("RPA-0001/Main.xaml, RPA-0001/RpaActions.cs"));
         }
 

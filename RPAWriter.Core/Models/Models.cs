@@ -200,4 +200,12 @@ namespace RPAWriter.Core.Models
         public string Reasoning { get; set; }
         public string Answer { get; set; }
     }
+
+    /// <summary>Token usage reported by the AI provider for a single request.</summary>
+    public class TokenUsage
+    {
+        public int PromptTokens { get; set; }
+        public int CompletionTokens { get; set; }
+        public int TotalTokens { get; set; }
+    }
 }

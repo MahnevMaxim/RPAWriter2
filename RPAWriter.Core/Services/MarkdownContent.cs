@@ -54,12 +54,12 @@ namespace RPAWriter.Core.Services
         {
             var name = spec?.Name ?? "Spec";
             var sb = new StringBuilder();
-            sb.AppendLine("# Tasks — " + name);
+            sb.AppendLine("# Задачи — " + name);
             sb.AppendLine();
 
             var rows = new List<IReadOnlyList<string>>
             {
-                new List<string> { "#", "Action", "Target", "Activity type", "Keywords" }
+                new List<string> { "#", "Действие", "Объект", "Тип активности", "Ключевые слова" }
             };
 
             var tasks = spec?.Tasks ?? new List<TaskDescriptor>();
@@ -91,23 +91,23 @@ namespace RPAWriter.Core.Services
         {
             var name = string.IsNullOrWhiteSpace(spec?.Name) ? "Robot" : spec.Name;
             var sb = new StringBuilder();
-            sb.AppendLine("# " + name + " — Technical specification");
+            sb.AppendLine("# " + name + " — Техническое задание");
             sb.AppendLine();
-            sb.AppendLine("Generated: " + FormatTimestamp(generatedUtc));
-            sb.AppendLine("Source robot: " + name);
+            sb.AppendLine("Сформировано: " + FormatTimestamp(generatedUtc));
+            sb.AppendLine("Робот-источник: " + name);
             sb.AppendLine();
 
             if (!string.IsNullOrWhiteSpace(spec?.Description))
             {
-                sb.AppendLine("## Description");
+                sb.AppendLine("## Описание");
                 sb.AppendLine();
                 sb.AppendLine(spec.Description);
                 sb.AppendLine();
             }
 
-            AppendList(sb, "## Steps", spec?.Steps);
-            AppendList(sb, "## Inputs", spec?.Inputs);
-            AppendList(sb, "## Outputs", spec?.Outputs);
+            AppendList(sb, "## Шаги", spec?.Steps);
+            AppendList(sb, "## Входные данные", spec?.Inputs);
+            AppendList(sb, "## Выходные данные", spec?.Outputs);
 
             return sb.ToString();
         }
@@ -117,15 +117,15 @@ namespace RPAWriter.Core.Services
         {
             var name = string.IsNullOrWhiteSpace(robotName) ? "Robot" : robotName;
             var sb = new StringBuilder();
-            sb.AppendLine("# Tasks — " + name);
+            sb.AppendLine("# Задачи — " + name);
             sb.AppendLine();
-            sb.AppendLine("Generated: " + FormatTimestamp(generatedUtc));
-            sb.AppendLine("Source robot: " + name);
+            sb.AppendLine("Сформировано: " + FormatTimestamp(generatedUtc));
+            sb.AppendLine("Робот-источник: " + name);
             sb.AppendLine();
 
             var rows = new List<IReadOnlyList<string>>
             {
-                new List<string> { "#", "Task", "Description", "Activity type", "Solution file(s)" }
+                new List<string> { "#", "Задача", "Описание", "Тип активности", "Файл(ы) решения" }
             };
 
             var list = tasks ?? new List<RobotTaskEntry>();

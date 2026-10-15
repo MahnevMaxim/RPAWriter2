@@ -31,16 +31,21 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Directory of markdown files containing spec-processing and task-formation rules.</summary>
         public string RulesPath { get; set; } = "";
+
+        /// <summary>Model context window size in tokens; used to display token consumption in the UI.</summary>
+        public int ContextWindowSize { get; set; } = 128000;
     }
 
     /// <summary>
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
+        private readonly TokenUsage _totalUsage = new TokenUsage();
+        private readonly object _usageLock = new object();
 
         static OpenAiCompatibleProvider()
         {
@@ -65,6 +70,29 @@ namespace RPAWriter.Core.Services
             if (_options.TimeoutSeconds > 0)
                 _http.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
         }
+
+        /// <summary>Cumulative tokens consumed across all requests handled by this provider instance.</summary>
+        public TokenUsage TotalTokenUsage
+        {
+            get
+            {
+                lock (_usageLock)
+                {
+                    return new TokenUsage
+                    {
+                        PromptTokens = _totalUsage.PromptTokens,
+                        CompletionTokens = _totalUsage.CompletionTokens,
+                        TotalTokens = _totalUsage.TotalTokens
+                    };
+                }
+            }
+        }
+
+        /// <summary>Context window size (tokens) of the configured model.</summary>
+        public int ContextWindowSize => _options.ContextWindowSize > 0 ? _options.ContextWindowSize : 128000;
+
+        /// <summary>Raised after each request when the provider reports token usage.</summary>
+        public event EventHandler<TokenUsage> TokenUsageUpdated;
 
         /// <summary>Reads spec-processing rules from the configured directory (when set) and prepends them to the prompt.</summary>
         private string ApplyRules(string prompt)
@@ -123,7 +151,8 @@ namespace RPAWriter.Core.Services
             var content = await CompleteAsync(
                 ApplyRules(
                     "Decompose the document into small atomic tasks. Return a JSON array: " +
-                    "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}].\n\nDocument:\n" +
+                    "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}]. " +
+                    "Write the action, target and description of each task in Russian.\n\nDocument:\n" +
                     (text ?? "")), cancellationToken).ConfigureAwait(false);
 
             var array = ParseArray(content);
@@ -149,7 +178,8 @@ namespace RPAWriter.Core.Services
             var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
                 "Reconstruct the technical specification of an RPA robot from its source code (.xaml/.cs). " +
-                "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}.\n\n" +
+                "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}. " +
+                "Write the description, steps, inputs and outputs in Russian.\n\n" +
                 "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
                 cancellationToken).ConfigureAwait(false);
 
@@ -253,8 +283,38 @@ namespace RPAWriter.Core.Services
             {
                 response.EnsureSuccessStatusCode();
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                return JObject.Parse(body);
+                var obj = JObject.Parse(body);
+                RecordUsage(obj["usage"]);
+                return obj;
             }
+        }
+
+        /// <summary>Accumulates token usage reported by the provider and notifies listeners.</summary>
+        private void RecordUsage(JToken usage)
+        {
+            var prompt = ReadTokenCount(usage, "prompt_tokens");
+            var completion = ReadTokenCount(usage, "completion_tokens");
+            var total = ReadTokenCount(usage, "total_tokens");
+            if (total == 0) total = prompt + completion;
+            if (total == 0) return;
+
+            lock (_usageLock)
+            {
+                _totalUsage.PromptTokens += prompt;
+                _totalUsage.CompletionTokens += completion;
+                _totalUsage.TotalTokens += total;
+            }
+
+            TokenUsageUpdated?.Invoke(this, TotalTokenUsage);
+        }
+
+        private static int ReadTokenCount(JToken usage, string name)
+        {
+            var token = usage?[name];
+            if (token == null) return 0;
+            if (token.Type == JTokenType.Integer) return token.Value<int>();
+            if (token.Type == JTokenType.String && int.TryParse(token.Value<string>(), out var parsed)) return parsed;
+            return 0;
         }
 
         /// <summary>

@@ -34,6 +34,7 @@ namespace RPAWriter.Core.Services
             string robotsRoot,
             string kbDirectory,
             IProgress<string> progress = null,
+            IProgress<double> progressValue = null,
             CancellationToken cancellationToken = default)
         {
             var result = new RobotKnowledgeBaseImportResult();
@@ -49,34 +50,43 @@ namespace RPAWriter.Core.Services
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            foreach (var robotDir in robotDirs)
+            progressValue?.Report(0);
+
+            for (var i = 0; i < robotDirs.Count; i++)
             {
+                var robotDir = robotDirs[i];
                 cancellationToken.ThrowIfCancellationRequested();
                 var robotName = Path.GetFileName(robotDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 progress?.Report("Processing robot " + robotName + "…");
 
-                var files = CollectSourceFiles(robotsRoot, robotDir, out var sourceUpdatedUtc);
+                var files = CollectSourceFiles(robotsRoot, robotDir, out var sourceUpdatedUtc, progress);
                 if (files.Count == 0)
                 {
                     result.Warnings.Add("No .xaml/.cs files found for robot \"" + robotName + "\"; skipped.");
+                    progressValue?.Report((i + 1) * 100.0 / robotDirs.Count);
                     continue;
                 }
 
                 var generatedUtc = DateTime.UtcNow;
 
+                progress?.Report("Reconstructing spec for robot " + robotName + "…");
                 var spec = await _ai.ReconstructSpecAsync(robotName, files, cancellationToken).ConfigureAwait(false)
                     ?? new SpecModel { Name = robotName };
 
+                progress?.Report("Forming " + robotName + "-spec.md…");
                 var specMd = MarkdownContent.SpecToMarkdown(spec, generatedUtc);
                 File.WriteAllText(Path.Combine(kbDirectory, robotName + "-spec.md"), specMd);
                 result.SpecFilesWritten++;
 
+                progress?.Report("Decomposing tasks for robot " + robotName + "…");
                 var tasks = await _ai.DecomposeTasksAsync(spec.RawText ?? "", cancellationToken).ConfigureAwait(false);
 
                 var entries = new List<RobotTaskEntry>();
                 foreach (var task in tasks)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    var taskLabel = string.IsNullOrWhiteSpace(task?.Description) ? (task?.Action ?? "task") : task.Description;
+                    progress?.Report("Mapping solution for task \"" + taskLabel + "\"…");
                     var solution = await _ai.MapTaskToSolutionAsync(task, files, cancellationToken).ConfigureAwait(false);
                     solution.Name = robotName + " — " + (string.IsNullOrWhiteSpace(task?.Description) ? task?.Action : task.Description);
                     solution.SourceRobot = robotName;
@@ -93,17 +103,20 @@ namespace RPAWriter.Core.Services
                     });
                 }
 
+                progress?.Report("Forming " + robotName + "-tasks.md…");
                 var tasksMd = MarkdownContent.RobotTasksToMarkdown(robotName, entries, generatedUtc);
                 File.WriteAllText(Path.Combine(kbDirectory, robotName + "-tasks.md"), tasksMd);
                 result.TaskFilesWritten++;
 
                 result.RobotsProcessed++;
+                progressValue?.Report((i + 1) * 100.0 / robotDirs.Count);
             }
 
+            progressValue?.Report(100);
             return result;
         }
 
-        private static List<RobotSourceFile> CollectSourceFiles(string robotsRoot, string robotDir, out DateTime? sourceUpdatedUtc)
+        private static List<RobotSourceFile> CollectSourceFiles(string robotsRoot, string robotDir, out DateTime? sourceUpdatedUtc, IProgress<string> progress = null)
         {
             sourceUpdatedUtc = null;
             var files = new List<RobotSourceFile>();
@@ -119,6 +132,7 @@ namespace RPAWriter.Core.Services
                 {
                     var full = Path.GetFullPath(path);
                     var relative = full.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    progress?.Report("Researching " + relative + "…");
                     files.Add(new RobotSourceFile { RelativePath = relative, Content = File.ReadAllText(full) });
 
                     var lastWrite = File.GetLastWriteTimeUtc(full);

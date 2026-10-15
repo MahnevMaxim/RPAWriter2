@@ -14,6 +14,7 @@ namespace RPAWriter2.Services
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
         public string RulesPath { get; set; } = "";
+        public int ContextWindowSize { get; set; } = 128000;
     }
 
     /// <summary>Loads/saves settings at %AppData%\RPAWriter2\settings.json.</summary>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,17 @@ namespace RPAWriter.Core.Contracts
         Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default);
         /// <summary>Free-form chat with the agent (UI-facing). Returns the answer and, when the provider emits it, the model's "reasoning".</summary>
         Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
+    /// Optional capability for AI providers that can report token usage
+    /// relative to the model's context window.
+    /// </summary>
+    public interface ITokenUsageProvider
+    {
+        TokenUsage TotalTokenUsage { get; }
+        int ContextWindowSize { get; }
+        event EventHandler<TokenUsage> TokenUsageUpdated;
     }
 
     /// <summary>

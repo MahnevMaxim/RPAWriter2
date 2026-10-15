@@ -283,8 +283,14 @@
                     <Button Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
-                <TextBlock x:Name="KbStatusText" DockPanel.Dock="Top" Margin="0,0,0,6"
-                           Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock x:Name="KbStatusText" Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                    <ProgressBar x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
+                                 Minimum="0" Maximum="100" Value="0"
+                                 Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
+                    <TextBlock x:Name="TokenUsageText" Margin="0,4,0,0" Foreground="#C8C8C8"
+                               TextWrapping="Wrap" Text="Context window: —"/>
+                </StackPanel>
                 <ListBox x:Name="KbListBox" Background="{StaticResource Dark.Control}"
                          BorderBrush="{StaticResource Dark.Border}" Foreground="{StaticResource Dark.Text}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"/>
@@ -298,6 +304,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -330,9 +337,12 @@
                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Rules directory (md)" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <TextBox Grid.Row="6" Grid.Column="1" x:Name="RulesPathBox" Margin="0,0,0,4"/>
 
-                <Button Grid.Row="7" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+                <TextBlock Grid.Row="7" Grid.Column="0" Text="Context window (tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="7" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4"/>
 
-                <Border Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
+                <Button Grid.Row="8" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+
+                <Border Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
                         Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                         BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,12,0,0" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">

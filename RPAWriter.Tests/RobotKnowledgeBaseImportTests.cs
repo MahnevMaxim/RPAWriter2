@@ -46,12 +46,12 @@ namespace RPAWriter.Tests
             Assert.That(result.TasksAdded, Is.GreaterThan(0));
 
             var specMd = File.ReadAllText(Path.Combine(_kb, "RPA-0001-spec.md"));
-            Assert.That(specMd, Does.Contain("Generated:"));
+            Assert.That(specMd, Does.Contain("Сформировано:"));
             Assert.That(specMd, Does.Contain("UTC"));
 
             var tasksMd = File.ReadAllText(Path.Combine(_kb, "RPA-0001-tasks.md"));
-            Assert.That(tasksMd, Does.Contain("Solution file(s)"));
-            Assert.That(tasksMd, Does.Contain("Generated:"));
+            Assert.That(tasksMd, Does.Contain("Файл(ы) решения"));
+            Assert.That(tasksMd, Does.Contain("Сформировано:"));
 
             var kb = new FileKnowledgeBase(_kb);
             var all = await kb.GetAllAsync();

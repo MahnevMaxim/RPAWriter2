@@ -33,6 +33,7 @@ namespace RPAWriter2
         private SpecModel _currentSpec;
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
+        private ITokenUsageProvider? _tokenUsage;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private CancellationTokenSource? _chatCts;
@@ -63,11 +64,15 @@ namespace RPAWriter2
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
+            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 128000).ToString();
         }
 
         private void RecreateAiProvider()
         {
+            UnhookTokenUsage();
             _ai = AiProviderFactory.Create(_settings);
+            HookTokenUsage();
+            UpdateTokenUsageDisplay();
         }
 
         private string KbPath()
@@ -83,6 +88,17 @@ namespace RPAWriter2
                 AppendChat("Specify the knowledge base directory in the \"Settings\" tab first.");
                 SetOutput("Knowledge base directory is not configured. Set the path in the \"Settings\" tab.");
                 MainTabs.SelectedItem = SettingsTab;
+                return null;
+            }
+            return p;
+        }
+
+        private string? RequireKbPathForKnowledgeBase()
+        {
+            var p = KbPath();
+            if (string.IsNullOrWhiteSpace(p))
+            {
+                SetKbStatus("Knowledge base directory is not configured. Set the path in the \"Settings\" tab.");
                 return null;
             }
             return p;
@@ -122,6 +138,54 @@ namespace RPAWriter2
                 return;
             }
             KbStatusText.Text = status;
+        }
+
+        private void SetKbProgress(double value)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetKbProgress(value)));
+                return;
+            }
+            KbProgressBar.Value = value;
+            KbProgressBar.Visibility = Visibility.Visible;
+        }
+
+        private void HookTokenUsage()
+        {
+            _tokenUsage = _ai as ITokenUsageProvider;
+            if (_tokenUsage != null)
+                _tokenUsage.TokenUsageUpdated += OnTokenUsageUpdated;
+        }
+
+        private void UnhookTokenUsage()
+        {
+            if (_tokenUsage != null)
+                _tokenUsage.TokenUsageUpdated -= OnTokenUsageUpdated;
+            _tokenUsage = null;
+        }
+
+        private void OnTokenUsageUpdated(object? sender, TokenUsage usage)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnTokenUsageUpdated(sender, usage)));
+                return;
+            }
+            UpdateTokenUsageDisplay();
+        }
+
+        private void UpdateTokenUsageDisplay()
+        {
+            var provider = _tokenUsage;
+            if (provider == null)
+            {
+                TokenUsageText.Text = "Context window: —";
+                return;
+            }
+            var usage = provider.TotalTokenUsage;
+            TokenUsageText.Text = "Context window: " + usage.TotalTokens.ToString("N0") +
+                                  " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
         }
 
         private void ShowError(Exception ex)
@@ -422,28 +486,30 @@ namespace RPAWriter2
 
         private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
         {
-            var kbPath = RequireKbPath();
+            var kbPath = RequireKbPathForKnowledgeBase();
             if (kbPath == null) return;
 
             var robotsRoot = (RobotsRootPathBox?.Text ?? "").Trim();
             if (string.IsNullOrWhiteSpace(robotsRoot))
             {
-                ShowNotice("Specify the robot solutions directory in the \"Settings\" tab first.");
-                MainTabs.SelectedItem = SettingsTab;
+                SetKbStatus("Specify the robot solutions directory in the \"Settings\" tab first.");
                 return;
             }
             if (!Directory.Exists(robotsRoot))
             {
-                ShowNotice("Robot solutions directory does not exist: " + robotsRoot);
+                SetKbStatus("Robot solutions directory does not exist: " + robotsRoot);
                 return;
             }
 
             SetKbStatus("Importing robots…");
+            KbProgressBar.Value = 0;
+            KbProgressBar.Visibility = Visibility.Visible;
             try
             {
                 var service = new RobotKnowledgeBaseImportService(_ai);
                 var progress = new Progress<string>(SetKbStatus);
-                var result = await service.ImportFromRobotsAsync(robotsRoot, kbPath, progress);
+                var progressValue = new Progress<double>(SetKbProgress);
+                var result = await service.ImportFromRobotsAsync(robotsRoot, kbPath, progress, progressValue);
 
                 var sb = new StringBuilder();
                 sb.AppendLine("Robots processed: " + result.RobotsProcessed);
@@ -459,7 +525,11 @@ namespace RPAWriter2
             catch (Exception ex)
             {
                 ShowError(ex);
-                SetKbStatus("Import failed.");
+                SetKbStatus("Import failed.\n\n" + ex.ToString());
+            }
+            finally
+            {
+                KbProgressBar.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -569,7 +639,7 @@ namespace RPAWriter2
 
         private async void OnRefreshKnowledgeBase(object sender, RoutedEventArgs e)
         {
-            var kbPath = RequireKbPath();
+            var kbPath = RequireKbPathForKnowledgeBase();
             if (kbPath == null) return;
             try
             {
@@ -690,9 +760,17 @@ namespace RPAWriter2
             _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
             _settings.RulesPath = RulesPathBox.Text.Trim();
+            _settings.ContextWindowSize = ParseContextWindowSize();
             SettingsStore.Save(_settings);
             RecreateAiProvider();
             AppendChat("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+        }
+
+        private int ParseContextWindowSize()
+        {
+            if (int.TryParse((ContextWindowBox?.Text ?? "").Trim(), out var value) && value > 0)
+                return value;
+            return 128000;
         }
     }
 }

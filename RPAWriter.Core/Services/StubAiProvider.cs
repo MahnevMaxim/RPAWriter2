@@ -95,7 +95,7 @@ namespace RPAWriter.Core.Services
             {
                 Name = robotName ?? "Robot",
                 SourcePath = robotName,
-                Description = "Robot \"" + (robotName ?? "Robot") + "\" reconstructed from " + files.Count + " source file(s)."
+                Description = "Робот \"" + (robotName ?? "Robot") + "\" восстановлен по " + files.Count + " исходным файлам."
             };
 
             var sb = new StringBuilder();
@@ -103,9 +103,9 @@ namespace RPAWriter.Core.Services
             foreach (var file in files)
             {
                 spec.Steps.Add(file.RelativePath);
-                sb.AppendLine("File: " + file.RelativePath + ".");
+                sb.AppendLine("Файл: " + file.RelativePath + ".");
                 foreach (var method in ExtractMethodNames(file.Content))
-                    sb.AppendLine("Implements " + method + ".");
+                    sb.AppendLine("Реализует метод " + method + ".");
             }
             spec.RawText = sb.ToString();
             return Task.FromResult(spec);
