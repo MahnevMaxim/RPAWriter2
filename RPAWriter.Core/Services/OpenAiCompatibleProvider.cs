@@ -33,14 +33,14 @@ namespace RPAWriter.Core.Services
         public string RulesPath { get; set; } = "";
 
         /// <summary>Model context window size in tokens; used to display token consumption in the UI.</summary>
-        public int ContextWindowSize { get; set; } = 256000;
+        public int ContextWindowSize { get; set; } = 409600;
     }
 
     /// <summary>
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
@@ -89,10 +89,18 @@ namespace RPAWriter.Core.Services
         }
 
         /// <summary>Context window size (tokens) of the configured model.</summary>
-        public int ContextWindowSize => _options.ContextWindowSize > 0 ? _options.ContextWindowSize : 256000;
+        public int ContextWindowSize => _options.ContextWindowSize > 0 ? _options.ContextWindowSize : 409600;
 
         /// <summary>Raised after each request when the provider reports token usage.</summary>
         public event EventHandler<TokenUsage> TokenUsageUpdated;
+
+        /// <summary>Raised right before an outgoing message is sent to the AI provider.</summary>
+        public event EventHandler<AiMessageEventArgs> MessageSent;
+
+        private void RaiseMessageSent(string role, string content)
+        {
+            MessageSent?.Invoke(this, new AiMessageEventArgs { Role = role, Content = content ?? "" });
+        }
 
         /// <summary>Reads spec-processing rules from the configured directory (when set) and prepends them to the prompt.</summary>
         private string ApplyRules(string prompt)
@@ -255,6 +263,7 @@ namespace RPAWriter.Core.Services
 
         public async Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
         {
+            RaiseMessageSent("user", message);
             var request = BuildRequest(message, _options.ChatSystemPrompt);
             var obj = await SendAsync(request, cancellationToken).ConfigureAwait(false);
             var messageObj = obj["choices"]?[0]?["message"];
@@ -272,6 +281,7 @@ namespace RPAWriter.Core.Services
 
         internal async Task<string> CompleteAsync(string userMessage, string systemPrompt, CancellationToken cancellationToken)
         {
+            RaiseMessageSent("user", userMessage);
             var request = BuildRequest(userMessage, systemPrompt);
             var obj = await SendAsync(request, cancellationToken).ConfigureAwait(false);
             var content = obj["choices"]?[0]?["message"]?["content"]?.Value<string>();

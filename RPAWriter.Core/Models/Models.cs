@@ -222,4 +222,13 @@ namespace RPAWriter.Core.Models
         public int CompletionTokens { get; set; }
         public int TotalTokens { get; set; }
     }
+
+    /// <summary>Outgoing AI message reported by a provider right before it is sent.</summary>
+    public class AiMessageEventArgs : EventArgs
+    {
+        /// <summary>Message role, e.g. "system" or "user".</summary>
+        public string Role { get; set; }
+        /// <summary>Message text sent to the AI provider.</summary>
+        public string Content { get; set; }
+    }
 }

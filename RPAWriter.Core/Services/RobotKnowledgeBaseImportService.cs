@@ -11,23 +11,40 @@ using RPAWriter.Core.Models;
 namespace RPAWriter.Core.Services
 {
     /// <summary>
-    /// Imports the knowledge base from a directory of robots. For each robot folder it
-    /// reconstructs the technical specification from the robot's source code (.xaml/.cs),
-    /// decomposes it into tasks, and records the solution file(s) where each task is implemented.
+    /// Импортирует базу знаний из каталога роботов. Для каждой папки робота
+    /// восстанавливает техническое задание из исходного кода робота (.xaml/.cs),
+    /// декомпозирует его на задачи и записывает файл(ы) решения, где реализована каждая задача.
     /// </summary>
     public class RobotKnowledgeBaseImportService
     {
+        /// <summary>Расширения исходных файлов, которые учитываются при импорте.</summary>
         private static readonly string[] SourceExtensions = { ".xaml", ".cs" };
+
+        /// <summary>Расширения файлов проекта, по которым определяется платформа робота.</summary>
         private static readonly string[] ProjectExtensions = { ".sln", ".csproj", ".wfproj" };
 
+        /// <summary>Находит ссылки на файлы рабочих процессов .xaml в тексте.</summary>
         private static readonly Regex XamlReferenceRegex = new Regex(@"([A-Za-z0-9_\-\.]+\.xaml)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>Находит значения атрибутов типов (TargetType, ClassName, x:Class и т.п.) в XAML.</summary>
         private static readonly Regex TypeAttributeRegex = new Regex(@"(?:TargetType|ClassName|TargetTypeName|ResultType|x:Class)\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>Находит значения атрибута MethodName в XAML.</summary>
         private static readonly Regex MethodNameAttributeRegex = new Regex(@"MethodName\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>Находит конструкции new Тип(...) в C#-коде.</summary>
         private static readonly Regex NewObjectRegex = new Regex(@"\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", RegexOptions.Compiled);
+
+        /// <summary>Находит вызовы методов по имени в коде.</summary>
         private static readonly Regex MethodCallRegex = new Regex(@"([A-Za-z_][A-Za-z0-9_]*)\s*\(", RegexOptions.Compiled);
+
+        /// <summary>Находит объявления классов, интерфейсов, структур и перечислений.</summary>
         private static readonly Regex ClassDeclRegex = new Regex(@"\b(?:class|interface|struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
+
+        /// <summary>Находит объявления методов в C#-коде.</summary>
         private static readonly Regex MethodDeclRegex = new Regex(@"(?:^|\s)(?:public|private|protected|internal)?\s*(?:static|async|override|virtual|sealed)?\s*[A-Za-z0-9_<>\[\]\.]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", RegexOptions.Multiline | RegexOptions.Compiled);
 
+        /// <summary>Ключевые слова C#, которые не считаются именами методов или классов.</summary>
         private static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
         {
             "if", "for", "while", "foreach", "switch", "catch", "using", "typeof", "sizeof",
@@ -36,18 +53,32 @@ namespace RPAWriter.Core.Services
             "return", "try", "finally", "else", "do", "in", "out", "ref", "params", "var"
         };
 
+        /// <summary>AI-провайдер для реконструкции ТЗ, декомпозиции задач и маппинга решений.</summary>
         private readonly IAiProvider _ai;
 
+        /// <summary>Raised for every progress/result message emitted during the import.</summary>
+        public event EventHandler<string> MessageReported;
+
+        /// <summary>
+        /// Создаёт сервис импорта базы знаний из роботов.
+        /// </summary>
+        /// <param name="ai">AI-провайдер, используемый для реконструкции ТЗ и декомпозиции задач.</param>
         public RobotKnowledgeBaseImportService(IAiProvider ai)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
         }
 
         /// <summary>
-        /// Walks the robot folders under <paramref name="robotsRoot"/>, and for each robot writes
-        /// <c>&lt;robot&gt;-spec.md</c> and <c>&lt;robot&gt;-tasks.md</c> into <paramref name="kbDirectory"/>
-        /// and updates the knowledge-base index.
+        /// Обходит папки роботов внутри <paramref name="robotsRoot"/> и для каждого робота
+        /// записывает <c>&lt;робот&gt;-spec.md</c> и <c>&lt;робот&gt;-tasks.md</c> в
+        /// <paramref name="kbDirectory"/>, а также обновляет индекс базы знаний.
         /// </summary>
+        /// <param name="robotsRoot">Корневой каталог, содержащий папки роботов.</param>
+        /// <param name="kbDirectory">Каталог базы знаний, куда пишутся сформированные файлы.</param>
+        /// <param name="progress">Приёмник текстовых сообщений о ходе импорта.</param>
+        /// <param name="progressValue">Приёмник прогресса в процентах (0–100).</param>
+        /// <param name="cancellationToken">Токен отмены операции.</param>
+        /// <returns>Результат импорта: обработанные роботы, записанные файлы и предупреждения.</returns>
         public async Task<RobotKnowledgeBaseImportResult> ImportFromRobotsAsync(
             string robotsRoot,
             string kbDirectory,
@@ -64,6 +95,13 @@ namespace RPAWriter.Core.Services
             Directory.CreateDirectory(kbDirectory);
             var kb = new FileKnowledgeBase(kbDirectory);
 
+            Action<string> report = message =>
+            {
+                if (string.IsNullOrEmpty(message)) return;
+                progress?.Report(message);
+                MessageReported?.Invoke(this, message);
+            };
+
             var robotDirs = Directory.EnumerateDirectories(robotsRoot, "*", SearchOption.TopDirectoryOnly)
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -75,9 +113,9 @@ namespace RPAWriter.Core.Services
                 var robotDir = robotDirs[i];
                 cancellationToken.ThrowIfCancellationRequested();
                 var robotName = Path.GetFileName(robotDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                progress?.Report("Processing robot " + robotName + "…");
+                report("Processing robot " + robotName + "…");
 
-                var input = CollectRobotInput(robotsRoot, robotDir, robotName, progress, result.Warnings);
+                var input = CollectRobotInput(robotsRoot, robotDir, robotName, report, result.Warnings);
                 var files = input.Files;
                 if (files.Count == 0)
                 {
@@ -88,16 +126,16 @@ namespace RPAWriter.Core.Services
 
                 var generatedUtc = DateTime.UtcNow;
 
-                progress?.Report("Reconstructing spec for robot " + robotName + "…");
+                report("Reconstructing spec for robot " + robotName + "…");
                 var spec = await _ai.ReconstructSpecAsync(robotName, files, cancellationToken, input.Platform).ConfigureAwait(false)
                     ?? new SpecModel { Name = robotName };
 
-                progress?.Report("Forming " + robotName + "-spec.md…");
+                report("Forming " + robotName + "-spec.md…");
                 var specMd = MarkdownContent.SpecToMarkdown(spec, generatedUtc);
                 File.WriteAllText(Path.Combine(kbDirectory, robotName + "-spec.md"), specMd);
                 result.SpecFilesWritten++;
 
-                progress?.Report("Decomposing tasks for robot " + robotName + "…");
+                report("Decomposing tasks for robot " + robotName + "…");
                 var tasks = await _ai.DecomposeTasksAsync(spec.RawText ?? "", cancellationToken).ConfigureAwait(false);
 
                 var entries = new List<RobotTaskEntry>();
@@ -105,7 +143,7 @@ namespace RPAWriter.Core.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var taskLabel = string.IsNullOrWhiteSpace(task?.Description) ? (task?.Action ?? "task") : task.Description;
-                    progress?.Report("Mapping solution for task \"" + taskLabel + "\"…");
+                    report("Mapping solution for task \"" + taskLabel + "\"…");
                     var solution = await _ai.MapTaskToSolutionAsync(task, files, cancellationToken, input.Platform).ConfigureAwait(false);
                     solution.Name = robotName + " — " + (string.IsNullOrWhiteSpace(task?.Description) ? task?.Action : task.Description);
                     solution.SourceRobot = robotName;
@@ -122,7 +160,7 @@ namespace RPAWriter.Core.Services
                     });
                 }
 
-                progress?.Report("Forming " + robotName + "-tasks.md…");
+                report("Forming " + robotName + "-tasks.md…");
                 var tasksMd = MarkdownContent.RobotTasksToMarkdown(robotName, entries, generatedUtc);
                 File.WriteAllText(Path.Combine(kbDirectory, robotName + "-tasks.md"), tasksMd);
                 result.TaskFilesWritten++;
@@ -135,14 +173,20 @@ namespace RPAWriter.Core.Services
             return result;
         }
 
-        private static RobotInput CollectRobotInput(string robotsRoot, string robotDir, string robotName, IProgress<string> progress, List<string> warnings)
+        /// <summary>
+        /// Собирает исходные данные одного робота: папку проекта, исходные файлы,
+        /// платформу и замыкание файлов, достижимых из точки входа.
+        /// </summary>
+        private static RobotInput CollectRobotInput(string robotsRoot, string robotDir, string robotName, Action<string> report, List<string> warnings)
         {
             warnings = warnings ?? new List<string>();
             var input = new RobotInput { RobotName = robotName };
             var baseDir = Path.GetFullPath(robotsRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-            // 1. Locate the project folder named after the robot inside the solution folder;
-            //    auxiliary projects in the solution are intentionally ignored.
+            report?.Invoke("CollectRobotInput: gathering input for robot \"" + robotName + "\"…");
+
+            // 1. Находим папку проекта, названную по имени робота, внутри папки решения;
+            //    вспомогательные проекты в решении намеренно игнорируются.
             var projectRoot = FindProjectFolder(robotDir, robotName);
             if (projectRoot == null)
             {
@@ -150,19 +194,26 @@ namespace RPAWriter.Core.Services
                 projectRoot = robotDir;
             }
 
-            // 2. Read all source files of the project (used for platform detection and reference resolution).
-            input.Files = CollectFiles(projectRoot, baseDir, out var sourceUpdatedUtc, progress);
+            // 2. Читаем все исходные файлы проекта (используются для определения платформы и разрешения ссылок).
+            input.Files = CollectFiles(projectRoot, baseDir, out var sourceUpdatedUtc, report);
             input.SourceUpdatedUtc = sourceUpdatedUtc;
+            report?.Invoke("CollectFiles: " + input.Files.Count + " source file(s) found.");
 
-            // 3. Detect the robot platform.
+            // 3. Определяем платформу робота.
             input.Platform = DetectPlatform(robotDir, projectRoot, input.Files);
+            report?.Invoke("DetectPlatform: " + input.Platform + ".");
 
-            // 4. Follow the call graph starting from the entry point (main.xaml).
-            input.Files = BuildClosure(input.Files, progress, warnings);
+            // 4. Проходим граф вызовов, начиная с точки входа (main.xaml).
+            input.Files = BuildClosure(input.Files, report, warnings);
+            report?.Invoke("CollectRobotInput: " + input.Files.Count + " file(s) collected.");
 
             return input;
         }
 
+        /// <summary>
+        /// Ищет папку проекта, названную по имени робота, среди вложенных папок решения.
+        /// </summary>
+        /// <returns>Путь к папке проекта или null, если она не найдена.</returns>
         private static string FindProjectFolder(string solutionDir, string robotName)
         {
             try
@@ -176,12 +227,16 @@ namespace RPAWriter.Core.Services
             }
             catch
             {
-                // fall through and let the caller fall back to the solution root
+                // пропускаем и позволяем вызывающему коду вернуться к корню решения
             }
             return null;
         }
 
-        private static List<RobotSourceFile> CollectFiles(string root, string baseDir, out DateTime? sourceUpdatedUtc, IProgress<string> progress)
+        /// <summary>
+        /// Рекурсивно собирает исходные файлы (.xaml/.cs) из каталога и вычисляет
+        /// время последнего изменения источников.
+        /// </summary>
+        private static List<RobotSourceFile> CollectFiles(string root, string baseDir, out DateTime? sourceUpdatedUtc, Action<string> report)
         {
             sourceUpdatedUtc = null;
             var files = new List<RobotSourceFile>();
@@ -197,7 +252,7 @@ namespace RPAWriter.Core.Services
                     {
                         var full = Path.GetFullPath(path);
                         var relative = full.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                        progress?.Report("Researching " + relative + "…");
+                        report?.Invoke("Researching " + relative + "…");
                         files.Add(new RobotSourceFile { RelativePath = relative, Content = File.ReadAllText(full) });
 
                         var lastWrite = File.GetLastWriteTimeUtc(full);
@@ -206,19 +261,24 @@ namespace RPAWriter.Core.Services
                     }
                     catch
                     {
-                        // Skip unreadable files; the robot is still processed with what is available.
+                        // Пропускаем нечитаемые файлы; робот обрабатывается с тем, что доступно.
                     }
                 }
             }
             catch
             {
-                // Directory enumeration failed; return whatever was collected.
+                // Перечисление каталога не удалось; возвращаем то, что удалось собрать.
             }
             return files;
         }
 
+        /// <summary>
+        /// Определяет платформу робота (MWF, UiPath, PIX или WR) по наличию файлов проекта
+        /// и составу исходных файлов.
+        /// </summary>
         private static RobotPlatform DetectPlatform(string solutionDir, string projectRoot, IReadOnlyList<RobotSourceFile> files)
         {
+            // Проверяет наличие файлов проекта в каталоге.
             bool HasProjectFile(string dir)
             {
                 if (string.IsNullOrEmpty(dir)) return false;
@@ -230,6 +290,7 @@ namespace RPAWriter.Core.Services
                 catch { return false; }
             }
 
+            // Проверяет наличие проекта Workflow Foundation (*.wfproj) в каталоге.
             bool HasWfProject(string dir)
             {
                 if (string.IsNullOrEmpty(dir)) return false;
@@ -255,7 +316,10 @@ namespace RPAWriter.Core.Services
             return RobotPlatform.UiPath;
         }
 
-        private static List<RobotSourceFile> BuildClosure(List<RobotSourceFile> projectFiles, IProgress<string> progress, List<string> warnings)
+        /// <summary>
+        /// Строит замыкание достижимых файлов, обходя граф вызовов от точки входа (main.xaml).
+        /// </summary>
+        private static List<RobotSourceFile> BuildClosure(List<RobotSourceFile> projectFiles, Action<string> report, List<string> warnings)
         {
             if (projectFiles.Count == 0) return projectFiles;
 
@@ -264,9 +328,11 @@ namespace RPAWriter.Core.Services
             if (entry == null)
             {
                 warnings.Add("Entry point \"main.xaml\" not found; the agent will pick the entry point itself.");
-                return projectFiles
+                var all = projectFiles
                     .Select(f => new RobotSourceFile { RelativePath = f.RelativePath, Content = "" })
                     .ToList();
+                report?.Invoke("BuildClosure: entry point \"main.xaml\" not found; including " + all.Count + " file(s).");
+                return all;
             }
 
             var xamlIndex = IndexBy(projectFiles, f => IsXaml(f.RelativePath), f => new[] { Path.GetFileNameWithoutExtension(f.RelativePath) });
@@ -284,17 +350,21 @@ namespace RPAWriter.Core.Services
                 var current = queue.Dequeue();
                 if (!visited.Add(Normalize(current.RelativePath))) continue;
                 closure.Add(current);
-                progress?.Report("Researching " + current.RelativePath + "…");
+                report?.Invoke("Researching " + current.RelativePath + "…");
 
-                EnqueueXamlReferences(current, xamlIndex, queue, visited, warnings, warnedMissing);
+                EnqueueXamlReferences(current, xamlIndex, queue, visited, warnings, warnedMissing, report);
                 EnqueueMatches(classIndex, ExtractTypeReferences(current.Content), queue, visited);
                 EnqueueMatches(methodIndex, ExtractMethodReferences(current.Content), queue, visited);
             }
 
+            report?.Invoke("BuildClosure: " + closure.Count + " reachable file(s).");
             return closure;
         }
 
-        private static void EnqueueXamlReferences(RobotSourceFile file, ILookup<string, RobotSourceFile> index, Queue<RobotSourceFile> queue, HashSet<string> visited, List<string> warnings, HashSet<string> warnedMissing)
+        /// <summary>
+        /// Добавляет в очередь файлы рабочих процессов, на которые ссылается указанный XAML-файл.
+        /// </summary>
+        private static void EnqueueXamlReferences(RobotSourceFile file, ILookup<string, RobotSourceFile> index, Queue<RobotSourceFile> queue, HashSet<string> visited, List<string> warnings, HashSet<string> warnedMissing, Action<string> report)
         {
             foreach (var key in ExtractXamlReferences(file.Content))
             {
@@ -306,11 +376,19 @@ namespace RPAWriter.Core.Services
                     continue;
                 }
                 foreach (var f in matches)
+                {
                     if (!visited.Contains(Normalize(f.RelativePath)))
+                    {
                         queue.Enqueue(f);
+                        report?.Invoke("EnqueueXamlReferences: \"" + key + ".xaml\" → enqueueing " + f.RelativePath + ".");
+                    }
+                }
             }
         }
 
+        /// <summary>
+        /// Добавляет в очередь файлы из индекса, соответствующие переданным ключам (типам/методам).
+        /// </summary>
         private static void EnqueueMatches(ILookup<string, RobotSourceFile> index, IEnumerable<string> keys, Queue<RobotSourceFile> queue, HashSet<string> visited)
         {
             foreach (var key in keys)
@@ -321,6 +399,9 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>
+        /// Строит индекс файлов по ключам, извлекаемым из каждого файла селектором ключей.
+        /// </summary>
         private static ILookup<string, RobotSourceFile> IndexBy(IEnumerable<RobotSourceFile> files, Func<RobotSourceFile, bool> predicate, Func<RobotSourceFile, IEnumerable<string>> keySelector)
         {
             var entries = new List<KeyValuePair<string, RobotSourceFile>>();
@@ -336,6 +417,7 @@ namespace RPAWriter.Core.Services
             return entries.ToLookup(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         }
 
+        /// <summary>Извлекает из содержимого имена файлов .xaml, на которые есть ссылки.</summary>
         private static IEnumerable<string> ExtractXamlReferences(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) yield break;
@@ -348,6 +430,7 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>Извлекает из содержимого имена типов (атрибуты типов и конструкции new Тип(...)).</summary>
         private static IEnumerable<string> ExtractTypeReferences(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) yield break;
@@ -367,6 +450,7 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>Извлекает из содержимого имена методов (атрибуты MethodName и вызовы методов).</summary>
         private static IEnumerable<string> ExtractMethodReferences(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) yield break;
@@ -386,6 +470,7 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>Извлекает из содержимого имена объявленных классов и интерфейсов.</summary>
         private static IEnumerable<string> ExtractDeclaredClassNames(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) yield break;
@@ -398,6 +483,7 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>Извлекает из содержимого имена объявленных методов.</summary>
         private static IEnumerable<string> ExtractDeclaredMethodNames(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) yield break;
@@ -411,22 +497,34 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        /// <summary>Проверяет, является ли имя ключевым словом C#.</summary>
         private static bool IsCSharpKeyword(string name)
         {
             return CSharpKeywords.Contains(name);
         }
 
+        /// <summary>Проверяет, является ли путь файлом XAML (.xaml).</summary>
         private static bool IsXaml(string path) => path != null && path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>Проверяет, является ли путь файлом C# (.cs).</summary>
         private static bool IsCs(string path) => path != null && path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>Приводит путь к единому виду, заменяя обратные слэши на прямые.</summary>
         private static string Normalize(string path) => (path ?? "").Replace('\\', '/');
 
+        /// <summary>Собранные исходные данные одного робота.</summary>
         private sealed class RobotInput
         {
+            /// <summary>Имя робота (имя папки решения).</summary>
             public string RobotName { get; set; }
+
+            /// <summary>Определённая платформа робота.</summary>
             public RobotPlatform Platform { get; set; }
+
+            /// <summary>Достижимые исходные файлы робота.</summary>
             public List<RobotSourceFile> Files { get; set; } = new List<RobotSourceFile>();
+
+            /// <summary>Время последнего изменения исходных файлов (UTC).</summary>
             public DateTime? SourceUpdatedUtc { get; set; }
         }
     }

@@ -34,6 +34,7 @@ namespace RPAWriter2
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
         private ITokenUsageProvider? _tokenUsage;
+        private IMessageNotifier? _messageNotifier;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private CancellationTokenSource? _chatCts;
@@ -64,14 +65,16 @@ namespace RPAWriter2
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
-            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 256000).ToString();
+            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600).ToString();
         }
 
         private void RecreateAiProvider()
         {
             UnhookTokenUsage();
+            UnhookMessageNotifier();
             _ai = AiProviderFactory.Create(_settings);
             HookTokenUsage();
+            HookMessageNotifier();
             UpdateTokenUsageDisplay();
         }
 
@@ -163,6 +166,46 @@ namespace RPAWriter2
             if (_tokenUsage != null)
                 _tokenUsage.TokenUsageUpdated -= OnTokenUsageUpdated;
             _tokenUsage = null;
+        }
+
+        private void HookMessageNotifier()
+        {
+            _messageNotifier = _ai as IMessageNotifier;
+            if (_messageNotifier != null)
+                _messageNotifier.MessageSent += OnAiMessageSent;
+        }
+
+        private void UnhookMessageNotifier()
+        {
+            if (_messageNotifier != null)
+                _messageNotifier.MessageSent -= OnAiMessageSent;
+            _messageNotifier = null;
+        }
+
+        private void OnAiMessageSent(object? sender, AiMessageEventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAiMessageSent(sender, e)));
+                return;
+            }
+            AppendKbMessage("→ [" + (e.Role ?? "") + "] " + (e.Content ?? ""));
+        }
+
+        private void AppendKbMessage(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendKbMessage(text)));
+                return;
+            }
+            KbMessagesBox.AppendText(text + Environment.NewLine);
+            KbMessagesBox.ScrollToEnd();
+        }
+
+        private void OnRobotImportMessage(object? sender, string message)
+        {
+            AppendKbMessage(message);
         }
 
         private void OnTokenUsageUpdated(object? sender, TokenUsage usage)
@@ -504,9 +547,10 @@ namespace RPAWriter2
             SetKbStatus("Importing robots…");
             KbProgressBar.Value = 0;
             KbProgressBar.Visibility = Visibility.Visible;
+            var service = new RobotKnowledgeBaseImportService(_ai);
+            service.MessageReported += OnRobotImportMessage;
             try
             {
-                var service = new RobotKnowledgeBaseImportService(_ai);
                 var progress = new Progress<string>(SetKbStatus);
                 var progressValue = new Progress<double>(SetKbProgress);
                 var result = await service.ImportFromRobotsAsync(robotsRoot, kbPath, progress, progressValue);
@@ -529,6 +573,7 @@ namespace RPAWriter2
             }
             finally
             {
+                service.MessageReported -= OnRobotImportMessage;
                 KbProgressBar.Visibility = Visibility.Collapsed;
             }
         }
@@ -770,7 +815,7 @@ namespace RPAWriter2
         {
             if (int.TryParse((ContextWindowBox?.Text ?? "").Trim(), out var value) && value > 0)
                 return value;
-            return 256000;
+            return 409600;
         }
     }
 }

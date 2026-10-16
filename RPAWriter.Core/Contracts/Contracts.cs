@@ -33,6 +33,15 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Optional capability for AI providers that report each outgoing message
+    /// right before it is sent to the model.
+    /// </summary>
+    public interface IMessageNotifier
+    {
+        event EventHandler<AiMessageEventArgs> MessageSent;
+    }
+
+    /// <summary>
     /// Reads specification documents from Word/Excel/plain text.
     /// </summary>
     public interface IDocumentReader

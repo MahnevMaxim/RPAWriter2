@@ -284,13 +284,20 @@
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                    <TextBlock x:Name="KbStatusText" Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="KbStatusText" Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                    </ScrollViewer>
                     <ProgressBar x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
                                  Minimum="0" Maximum="100" Value="0"
                                  Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
                     <TextBlock x:Name="TokenUsageText" Margin="0,4,0,0" Foreground="#C8C8C8"
                                TextWrapping="Wrap" Text="Context window: —"/>
                 </StackPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Messages:" Margin="0,0,0,4" Foreground="#C8C8C8"/>
+                <TextBox x:Name="KbMessagesBox" DockPanel.Dock="Top" Height="120" IsReadOnly="True"
+                         AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         Margin="0,0,0,6"/>
                 <ListBox x:Name="KbListBox" Background="{StaticResource Dark.Control}"
                          BorderBrush="{StaticResource Dark.Border}" Foreground="{StaticResource Dark.Text}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"/>

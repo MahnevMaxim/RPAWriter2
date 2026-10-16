@@ -272,11 +272,11 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void OpenAiOptions_DefaultContextWindowIs256K()
+        public void OpenAiOptions_DefaultContextWindowIs409600()
         {
-            Assert.That(new OpenAiOptions().ContextWindowSize, Is.EqualTo(256000));
+            Assert.That(new OpenAiOptions().ContextWindowSize, Is.EqualTo(409600));
             var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(new FakeHttpHandler()));
-            Assert.That(provider.ContextWindowSize, Is.EqualTo(256000));
+            Assert.That(provider.ContextWindowSize, Is.EqualTo(409600));
         }
     }
 }

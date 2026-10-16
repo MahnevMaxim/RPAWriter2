@@ -18,7 +18,7 @@ namespace RPAWriter2.Services
                 ApiKey = apiKey,
                 Model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim(),
                 RulesPath = (settings?.RulesPath ?? "").Trim(),
-                ContextWindowSize = settings.ContextWindowSize > 0 ? settings.ContextWindowSize : 256000
+                ContextWindowSize = settings.ContextWindowSize > 0 ? settings.ContextWindowSize : 409600
             });
         }
     }
