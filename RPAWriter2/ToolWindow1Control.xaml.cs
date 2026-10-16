@@ -888,11 +888,67 @@ namespace RPAWriter2
 
         private async Task SendMessageAsync()
         {
-            if (_chatCts != null) return; // already awaiting the agent's reply
-
             var text = InputBox.Text.Trim();
             if (text.Length == 0) return;
             InputBox.Clear();
+            await SendChatTextAsync(text);
+        }
+
+        private async void OnSendErrors(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var text = await BuildCompilerErrorsTextAsync();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    AppendChat("No compilation errors found.");
+                    return;
+                }
+
+                await SendChatTextAsync(text);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private async Task<string> BuildCompilerErrorsTextAsync()
+        {
+            var errors = await _buildFeedback.GetCompilationErrorsAsync();
+            var red = errors
+                .Where(e => e != null && string.Equals(e.Severity, "Error", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (red.Count == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("Compilation errors from the Visual Studio Error List:");
+            foreach (var e in red)
+            {
+                var location = e.File ?? string.Empty;
+                if (e.Line > 0)
+                    location = string.IsNullOrEmpty(location) ? "line " + e.Line : location + ":" + e.Line;
+
+                if (!string.IsNullOrWhiteSpace(e.Code))
+                    sb.AppendLine("[Error] " + e.Code + ": " + (e.Message ?? string.Empty) + FormatLocation(location));
+                else
+                    sb.AppendLine("[Error] " + (e.Message ?? string.Empty) + FormatLocation(location));
+            }
+
+            return sb.ToString();
+        }
+
+        private static string FormatLocation(string location)
+        {
+            return string.IsNullOrEmpty(location) ? string.Empty : " (" + location + ")";
+        }
+
+        private async Task SendChatTextAsync(string text)
+        {
+            if (_chatCts != null) return; // already awaiting the agent's reply
+            if (string.IsNullOrWhiteSpace(text)) return;
+
             AppendChatMessage(new ChatMessage { Role = "user", Text = text });
 
             var cts = new CancellationTokenSource();
