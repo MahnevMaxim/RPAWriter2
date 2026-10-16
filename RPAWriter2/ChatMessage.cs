@@ -8,6 +8,9 @@ namespace RPAWriter2
         public string Text { get; set; } = "";
         public string Reasoning { get; set; } = "";
 
+        /// <summary>Agent mode ("Plan"/"Act") this message was produced in; used for the UI label.</summary>
+        public string Mode { get; set; } = "";
+
         public bool HasReasoning => !string.IsNullOrWhiteSpace(Reasoning);
 
         public string Label
@@ -17,7 +20,7 @@ namespace RPAWriter2
                 switch (Role)
                 {
                     case "user": return "You: ";
-                    case "agent": return "Agent: ";
+                    case "agent": return string.IsNullOrWhiteSpace(Mode) ? "Agent: " : "Agent [" + Mode + "]: ";
                     default: return "";
                 }
             }

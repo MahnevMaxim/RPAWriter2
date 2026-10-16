@@ -16,6 +16,15 @@ namespace RPAWriter.Core.Models
         Wr
     }
 
+    /// <summary>Operating mode of the agent chat: read-only planning vs. full action.</summary>
+    public enum AgentMode
+    {
+        /// <summary>Agent reads, analyzes and plans only; mutating tools are not exposed.</summary>
+        Plan,
+        /// <summary>Agent can perform real changes (write files, create robots, run builds).</summary>
+        Act
+    }
+
     /// <summary>How knowledge-base formation should treat a previous run.</summary>
     public enum KnowledgeBaseFormationMode
     {
@@ -222,6 +231,14 @@ namespace RPAWriter.Core.Models
     {
         public string Reasoning { get; set; }
         public string Answer { get; set; }
+    }
+
+    /// <summary>A single chat message passed to the AI provider (role + content).</summary>
+    public class ChatMessageData
+    {
+        /// <summary>Message role: "system" | "user" | "assistant" | "tool".</summary>
+        public string Role { get; set; } = "";
+        public string Content { get; set; } = "";
     }
 
     /// <summary>Token usage reported by the AI provider for a single request.</summary>

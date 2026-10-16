@@ -19,6 +19,12 @@ namespace RPAWriter.Core.Contracts
         Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf);
         /// <summary>Free-form chat with the agent (UI-facing). Returns the answer and, when the provider emits it, the model's "reasoning".</summary>
         Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Multi-turn chat with the agent: carries the full message history (user/assistant/tool)
+        /// and an explicit system prompt. Used by the agentic tool loop.
+        /// </summary>
+        Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

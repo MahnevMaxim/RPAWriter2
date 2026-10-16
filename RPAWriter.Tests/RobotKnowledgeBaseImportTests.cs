@@ -326,6 +326,9 @@ namespace RPAWriter.Tests
 
             public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
                 => Task.FromResult(new ChatResponse { Answer = "stub" });
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+                => Task.FromResult(new ChatResponse { Answer = "stub" });
         }
 
         private sealed class ResumableTestAiProvider : IAiProvider
@@ -356,6 +359,9 @@ namespace RPAWriter.Tests
 
             public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
                 => _inner.ChatAsync(message, cancellationToken);
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(messages, systemPrompt, cancellationToken);
         }
     }
 }

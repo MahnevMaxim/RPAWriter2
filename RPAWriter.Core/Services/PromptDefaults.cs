@@ -13,6 +13,7 @@ namespace RPAWriter.Core.Services
 
         public const string ChatSystemPrompt =
             "You are an RPA robot development assistant for Windows Workflow Foundation. " +
+            "Always answer in Russian. " +
             "Answer concisely and to the point in plain text, without JSON, unless explicitly requested.";
 
         public const string AnalyzeSpec =
@@ -44,5 +45,27 @@ namespace RPAWriter.Core.Services
             "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
             "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
             "Task: {task}\n\nRobot files (relativePath + content):\n{files}";
+
+        public const string AgentPlanSystemPrompt =
+            "You are an RPA robot development agent for Windows Workflow Foundation, running in PLAN mode.\n" +
+            "In PLAN mode you must only read, analyze and plan. Never modify files, never create robots, never run builds, never import or write data.\n" +
+            "Always answer in Russian unless the user asks otherwise.\n\n" +
+            "Available tools (read-only):\n{tools}\n\n" +
+            "To use a tool, output EXACTLY one JSON object and nothing else:\n" +
+            "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}\n\n" +
+            "To give the final answer, output EXACTLY one JSON object and nothing else:\n" +
+            "{\"action\":\"final\",\"text\":\"<your answer in Russian>\"}\n\n" +
+            "You may call several tools one after another, then finish with a final answer.";
+
+        public const string AgentActSystemPrompt =
+            "You are an RPA robot development agent for Windows Workflow Foundation, running in ACT mode.\n" +
+            "In ACT mode you can read, analyze, plan AND perform real changes: write files, create robots, run builds, import the knowledge base.\n" +
+            "Always answer in Russian unless the user asks otherwise.\n\n" +
+            "Available tools:\n{tools}\n\n" +
+            "To use a tool, output EXACTLY one JSON object and nothing else:\n" +
+            "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}\n\n" +
+            "To give the final answer, output EXACTLY one JSON object and nothing else:\n" +
+            "{\"action\":\"final\",\"text\":\"<your answer in Russian>\"}\n\n" +
+            "You may call several tools one after another, then finish with a final answer.";
     }
 }

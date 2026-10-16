@@ -2,9 +2,11 @@
 using System.Windows;
 using System.Windows.Controls;
 using System;
+using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 using RPAWriter2.Services;
+using RPAWriter2.Services.AgentTools;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using EnvDTE;
@@ -33,6 +35,9 @@ namespace RPAWriter2
         private SpecModel _currentSpec;
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
+        private AgentMode _mode = AgentMode.Plan;
+        private AgentToolRegistry? _toolRegistry;
+        private AgentRunner? _agentRunner;
         private ITokenUsageProvider? _tokenUsage;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
@@ -53,6 +58,7 @@ namespace RPAWriter2
             RecreateAiProvider();
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
+            RebuildAgentTools();
             HookSolutionEvents();
             UpdateCreateRobotVisibility();
             AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
@@ -948,7 +954,9 @@ namespace RPAWriter2
         {
             if (_chatCts != null) return; // already awaiting the agent's reply
             if (string.IsNullOrWhiteSpace(text)) return;
+            if (_agentRunner == null) return;
 
+            var modeName = _mode.ToString();
             AppendChatMessage(new ChatMessage { Role = "user", Text = text });
 
             var cts = new CancellationTokenSource();
@@ -957,8 +965,8 @@ namespace RPAWriter2
             StartChatStatus();
             try
             {
-                var response = await _ai.ChatAsync(text, cts.Token);
-                AppendChatMessage(new ChatMessage { Role = "agent", Text = response.Answer, Reasoning = response.Reasoning });
+                var result = await _agentRunner.RunAsync(text, _mode, cts.Token);
+                AppendChatMessage(new ChatMessage { Role = "agent", Text = result.FinalText, Reasoning = result.Reasoning, Mode = modeName });
                 StopChatStatus();
             }
             catch (OperationCanceledException)
@@ -976,6 +984,48 @@ namespace RPAWriter2
                 _chatCts = null;
                 cts.Dispose();
             }
+        }
+
+        private void RebuildAgentTools()
+        {
+            var registry = BuildToolRegistry();
+            _toolRegistry = registry;
+            if (_agentRunner != null)
+                _agentRunner.ToolExecuted -= OnAgentToolExecuted;
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry));
+            _agentRunner.ToolExecuted += OnAgentToolExecuted;
+        }
+
+        private AgentToolRegistry BuildToolRegistry()
+        {
+            var factory = new AgentToolFactory(
+                _ai,
+                () => _currentSpec,
+                KbPath,
+                () => (RobotsRootPathBox?.Text ?? "").Trim(),
+                () => (RobotTemplateNameBox?.Text ?? "").Trim(),
+                GetOpenSolutionDirectory,
+                _buildFeedback,
+                _robotTemplate);
+            return factory.CreateRegistry();
+        }
+
+        private void OnAgentToolExecuted(object? sender, AgentToolCall e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAgentToolExecuted(sender, e)));
+                return;
+            }
+            AppendChat(e.Blocked
+                ? "⛔ " + e.ToolName + " blocked in Plan mode."
+                : "⚙ " + e.ToolName + " → " + e.Result);
+        }
+
+        private void OnModeChanged(object sender, RoutedEventArgs e)
+        {
+            _mode = ActModeButton.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
+            AppendChat("Mode: " + _mode);
         }
 
         private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
@@ -1003,6 +1053,7 @@ namespace RPAWriter2
             _settings.ContextWindowSize = ParseContextWindowSize();
             SettingsStore.Save(_settings);
             RecreateAiProvider();
+            RebuildAgentTools();
             AppendChat("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
         }
 

@@ -13,6 +13,8 @@ namespace RPAWriter.Core.Services
         public string DecomposeTasks { get; set; }
         public string ReconstructSpec { get; set; }
         public string MapTaskToSolution { get; set; }
+        public string AgentPlanSystemPrompt { get; set; }
+        public string AgentActSystemPrompt { get; set; }
 
         /// <summary>Loads every prompt template from <paramref name="promptsPath"/> with built-in fallbacks.</summary>
         public static PromptSet Load(string promptsPath)
@@ -25,7 +27,9 @@ namespace RPAWriter.Core.Services
                 GenerateRobot = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "generate-robot.txt", PromptDefaults.GenerateRobot),
                 DecomposeTasks = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "decompose-tasks.txt", PromptDefaults.DecomposeTasks),
                 ReconstructSpec = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "reconstruct-spec.txt", PromptDefaults.ReconstructSpec),
-                MapTaskToSolution = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "map-task-to-solution.txt", PromptDefaults.MapTaskToSolution)
+                MapTaskToSolution = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "map-task-to-solution.txt", PromptDefaults.MapTaskToSolution),
+                AgentPlanSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-plan-system.txt", PromptDefaults.AgentPlanSystemPrompt),
+                AgentActSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-act-system.txt", PromptDefaults.AgentActSystemPrompt)
             };
         }
     }

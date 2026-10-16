@@ -47,10 +47,122 @@
             <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0"
+                                                                  Margin="{TemplateBinding Padding}"
+                                                                  HorizontalAlignment="Left"
+                                                                  VerticalAlignment="Center"
+                                                                  Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                                <Path Grid.Column="1"
+                                                      Data="M 0,0 L 4,4 L 8,0 Z"
+                                                      Fill="{StaticResource Dark.Text}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,6,0"
+                                                      Width="8" Height="4"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        Background="{StaticResource Dark.Control}"
+                                        BorderBrush="{StaticResource Dark.Border}"
+                                        BorderThickness="1"
+                                        CornerRadius="2"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer Margin="4,4" SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.Accent}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
         </Style>
 
@@ -228,6 +340,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
                         <ProgressBar x:Name="AgentProgress" Width="16" Height="16"
@@ -265,6 +378,15 @@
                                   Width="18" Height="18"/>
                         </Button>
                     </Grid>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
+                        <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
+                                     IsChecked="True" Checked="OnModeChanged"
+                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
+                                     Checked="OnModeChanged"
+                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </TabItem>
@@ -311,7 +433,7 @@
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <ComboBox x:Name="KbModeCombo" SelectedIndex="0" VerticalAlignment="Center" Margin="0,5,8,0">
+                    <ComboBox x:Name="KbModeCombo" SelectedIndex="1" VerticalAlignment="Center" Margin="0,5,8,0">
                         <ComboBoxItem Content="Override (start over)"/>
                         <ComboBoxItem Content="Continue (resume)"/>
                     </ComboBox>

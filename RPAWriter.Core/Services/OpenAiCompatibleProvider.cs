@@ -280,6 +280,21 @@ namespace RPAWriter.Core.Services
             return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
         }
 
+        public async Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+        {
+            if (messages == null) throw new ArgumentNullException(nameof(messages));
+            foreach (var m in messages)
+                RaiseMessageSent(string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, m?.Content ?? "");
+
+            var obj = await SendAsync(() => BuildRequest(messages, systemPrompt), cancellationToken).ConfigureAwait(false);
+            var messageObj = obj["choices"]?[0]?["message"];
+            var content = messageObj?["content"]?.Value<string>();
+            var reasoning = ExtractReasoning(messageObj);
+            if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(reasoning))
+                throw new InvalidOperationException("Empty response from the AI provider.");
+            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
+        }
+
         internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken, bool notifyMessageSent = true)
         {
             return await CompleteAsync(userMessage, _prompts.SystemPrompt, cancellationToken, notifyMessageSent).ConfigureAwait(false);
@@ -515,15 +530,20 @@ namespace RPAWriter.Core.Services
 
         internal HttpRequestMessage BuildRequest(string userMessage, string systemPrompt)
         {
-            var messages = new List<object>
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userMessage }
-            };
+            var messages = new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = userMessage } };
+            return BuildRequest(messages, systemPrompt);
+        }
+
+        internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt)
+        {
+            var list = new List<object> { new { role = "system", content = systemPrompt ?? "" } };
+            foreach (var m in messages ?? new List<ChatMessageData>())
+                list.Add(new { role = string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, content = m?.Content ?? "" });
+
             var payload = new
             {
                 model = _options.Model,
-                messages = messages,
+                messages = list,
                 temperature = _options.Temperature
             };
             var json = JsonConvert.SerializeObject(payload);
