@@ -142,6 +142,57 @@ namespace RPAWriter.Tests
 
 
         [Test]
+        public async Task ImportFromRobots_Mwf_SkipsObjAndBinWhenCsprojPresent()
+        {
+            var projectDir = Path.Combine(_root, "RPA-0001");
+            var objDir = Path.Combine(projectDir, "obj");
+            var binDir = Path.Combine(projectDir, "bin");
+            Directory.CreateDirectory(objDir);
+            Directory.CreateDirectory(binDir);
+            File.WriteAllText(Path.Combine(projectDir, "RPA-0001.csproj"), "<Project />");
+            File.WriteAllText(Path.Combine(projectDir, "Main.xaml"),
+                "<Activity><InvokeWorkflowFile WorkflowFileName=Sub.xaml /></Activity>");
+            File.WriteAllText(Path.Combine(projectDir, "Sub.xaml"), "<Activity />");
+            File.WriteAllText(Path.Combine(objDir, "Generated.cs"), "public class Generated { }");
+            File.WriteAllText(Path.Combine(objDir, "Main.g.xaml"), "<Activity />");
+            File.WriteAllText(Path.Combine(binDir, "Copied.xaml"), "<Activity />");
+            File.WriteAllText(Path.Combine(binDir, "Copied.cs"), "public class Copied { }");
+
+            var ai = new RecordingAiProvider();
+            var service = new RobotKnowledgeBaseImportService(ai);
+            var result = await service.ImportFromRobotsAsync(_root, _kb);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            Assert.That(ai.LastPlatform, Is.EqualTo(RobotPlatform.Mwf));
+
+            var paths = ai.LastFiles.Select(f => f.RelativePath).ToList();
+            Assert.That(paths, Does.Contain(Path.Combine("RPA-0001", "Main.xaml")));
+            Assert.That(paths, Does.Contain(Path.Combine("RPA-0001", "Sub.xaml")));
+
+            var segments = ai.LastFiles.SelectMany(f => f.RelativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            Assert.That(segments.Any(s => s.Equals("obj", StringComparison.OrdinalIgnoreCase) || s.Equals("bin", StringComparison.OrdinalIgnoreCase)), Is.False);
+        }
+
+        [Test]
+        public async Task ImportFromRobots_NoCsproj_KeepsObjFolder()
+        {
+            var projectDir = Path.Combine(_root, "RPA-0001");
+            var objDir = Path.Combine(projectDir, "obj");
+            Directory.CreateDirectory(objDir);
+            File.WriteAllText(Path.Combine(projectDir, "Main.xaml"),
+                "<Activity><InvokeWorkflowFile WorkflowFileName=Sub.xaml /></Activity>");
+            File.WriteAllText(Path.Combine(objDir, "Sub.xaml"), "<Activity />");
+
+            var ai = new RecordingAiProvider();
+            var service = new RobotKnowledgeBaseImportService(ai);
+            var result = await service.ImportFromRobotsAsync(_root, _kb);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            var paths = ai.LastFiles.Select(f => f.RelativePath).ToList();
+            Assert.That(paths, Does.Contain(Path.Combine("RPA-0001", "obj", "Sub.xaml")));
+        }
+
+        [Test]
         public async Task ImportFromRobots_MissingEntryPoint_WarnsAndFallsBack()
         {
             var solutionDir = Path.Combine(_root, "RPA-0001");

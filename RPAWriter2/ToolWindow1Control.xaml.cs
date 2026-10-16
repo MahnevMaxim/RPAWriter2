@@ -38,6 +38,8 @@ namespace RPAWriter2
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private CancellationTokenSource? _chatCts;
+        private CancellationTokenSource? _kbImportCts;
+        private volatile bool _kbImportPaused;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
@@ -200,7 +202,8 @@ namespace RPAWriter2
                 return;
             }
             KbMessagesBox.AppendText(text + Environment.NewLine);
-            KbMessagesBox.ScrollToEnd();
+            if (KbAutoScrollCheckBox.IsChecked == true)
+                KbMessagesBox.ScrollToEnd();
         }
 
         private void OnRobotImportMessage(object? sender, string message)
@@ -544,6 +547,9 @@ namespace RPAWriter2
                 return;
             }
 
+            _kbImportPaused = false;
+            _kbImportCts = new CancellationTokenSource();
+            SetKbImportRunning(true);
             SetKbStatus("Importing robots…");
             KbProgressBar.Value = 0;
             KbProgressBar.Visibility = Visibility.Visible;
@@ -553,7 +559,8 @@ namespace RPAWriter2
             {
                 var progress = new Progress<string>(SetKbStatus);
                 var progressValue = new Progress<double>(SetKbProgress);
-                var result = await service.ImportFromRobotsAsync(robotsRoot, kbPath, progress, progressValue);
+                var result = await service.ImportFromRobotsAsync(
+                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused);
 
                 var sb = new StringBuilder();
                 sb.AppendLine("Robots processed: " + result.RobotsProcessed);
@@ -566,6 +573,11 @@ namespace RPAWriter2
                 AppendChat("Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
                 SetKbStatus("Import finished: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
             }
+            catch (OperationCanceledException)
+            {
+                AppendKbMessage("Import stopped by user.");
+                SetKbStatus("Import stopped.");
+            }
             catch (Exception ex)
             {
                 ShowError(ex);
@@ -575,7 +587,50 @@ namespace RPAWriter2
             {
                 service.MessageReported -= OnRobotImportMessage;
                 KbProgressBar.Visibility = Visibility.Collapsed;
+                SetKbImportRunning(false);
+                _kbImportCts.Dispose();
+                _kbImportCts = null;
             }
+        }
+
+        private void SetKbImportRunning(bool running)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetKbImportRunning(running)));
+                return;
+            }
+            KbImportButton.IsEnabled = !running;
+            KbPauseButton.IsEnabled = running;
+            KbStopButton.IsEnabled = running;
+            if (!running)
+            {
+                KbPauseButton.Content = "Pause";
+                _kbImportPaused = false;
+            }
+        }
+
+        private void OnPauseKnowledgeBaseImport(object sender, RoutedEventArgs e)
+        {
+            if (_kbImportCts == null) return;
+            _kbImportPaused = !_kbImportPaused;
+            if (_kbImportPaused)
+            {
+                KbPauseButton.Content = "Resume";
+                SetKbStatus("Paused — click Resume to continue.");
+            }
+            else
+            {
+                KbPauseButton.Content = "Pause";
+                SetKbStatus("Importing robots…");
+            }
+        }
+
+        private void OnStopKnowledgeBaseImport(object sender, RoutedEventArgs e)
+        {
+            _kbImportCts?.Cancel();
+            KbStopButton.IsEnabled = false;
+            SetKbStatus("Stopping…");
         }
 
         private async void OnBuildRelease(object sender, RoutedEventArgs e)

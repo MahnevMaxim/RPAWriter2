@@ -288,7 +288,9 @@
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <Button Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
+                    <Button x:Name="KbImportButton" Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
+                    <Button x:Name="KbPauseButton" Content="Pause" Click="OnPauseKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
+                    <Button x:Name="KbStopButton" Content="Stop" Click="OnStopKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
 
@@ -317,7 +319,11 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="Messages:" Margin="0,0,0,4" Foreground="#C8C8C8"/>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Messages:" VerticalAlignment="Center" Foreground="#C8C8C8"/>
+                        <CheckBox x:Name="KbAutoScrollCheckBox" Content="Auto-scroll" IsChecked="True"
+                                  VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#C8C8C8"/>
+                    </StackPanel>
                     <TextBox Grid.Row="1" x:Name="KbMessagesBox" IsReadOnly="True"
                              AcceptsReturn="True" TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>

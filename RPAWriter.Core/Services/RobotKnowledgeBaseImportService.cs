@@ -23,6 +23,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Расширения файлов проекта, по которым определяется платформа робота.</summary>
         private static readonly string[] ProjectExtensions = { ".sln", ".csproj" };
 
+        /// <summary>Имена каталогов сборки, которые не читаются, когда в папке проекта есть *.csproj.</summary>
+        private static readonly string[] ExcludedDirectoryNames = { "obj", "bin" };
+
         /// <summary>Находит ссылки на файлы рабочих процессов .xaml в тексте.</summary>
         private static readonly Regex XamlReferenceRegex = new Regex(@"([A-Za-z0-9_\-\.]+\.xaml)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -78,13 +81,15 @@ namespace RPAWriter.Core.Services
         /// <param name="progress">Приёмник текстовых сообщений о ходе импорта.</param>
         /// <param name="progressValue">Приёмник прогресса в процентах (0–100).</param>
         /// <param name="cancellationToken">Токен отмены операции.</param>
+        /// <param name="isPaused">Опциональный признак паузы: пока возвращает true, импорт ожидает.</param>
         /// <returns>Результат импорта: обработанные роботы, записанные файлы и предупреждения.</returns>
         public async Task<RobotKnowledgeBaseImportResult> ImportFromRobotsAsync(
             string robotsRoot,
             string kbDirectory,
             IProgress<string> progress = null,
             IProgress<double> progressValue = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            Func<bool> isPaused = null)
         {
             var result = new RobotKnowledgeBaseImportResult();
             if (string.IsNullOrWhiteSpace(robotsRoot) || !Directory.Exists(robotsRoot))
@@ -112,6 +117,7 @@ namespace RPAWriter.Core.Services
             {
                 var robotDir = robotDirs[i];
                 cancellationToken.ThrowIfCancellationRequested();
+                await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
                 var robotName = Path.GetFileName(robotDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 report("Processing robot " + robotName + "…");
 
@@ -142,6 +148,7 @@ namespace RPAWriter.Core.Services
                 foreach (var task in tasks)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
                     var taskLabel = string.IsNullOrWhiteSpace(task?.Description) ? (task?.Action ?? "task") : task.Description;
                     report("Mapping solution for task \"" + taskLabel + "\"…");
                     var solution = await _ai.MapTaskToSolutionAsync(task, files, cancellationToken, input.Platform).ConfigureAwait(false);
@@ -171,6 +178,19 @@ namespace RPAWriter.Core.Services
 
             progressValue?.Report(100);
             return result;
+        }
+
+        /// <summary>
+        /// Ожидает, пока действует пауза (<paramref name="isPaused"/> возвращает true),
+        /// периодически проверяя токен отмены.
+        /// </summary>
+        private static async Task WaitWhilePausedAsync(Func<bool> isPaused, CancellationToken cancellationToken)
+        {
+            while (isPaused != null && isPaused())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -242,7 +262,7 @@ namespace RPAWriter.Core.Services
             var files = new List<RobotSourceFile>();
             try
             {
-                foreach (var path in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+                foreach (var path in EnumerateSourcePaths(root))
                 {
                     var extension = Path.GetExtension(path);
                     if (!SourceExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
@@ -270,6 +290,40 @@ namespace RPAWriter.Core.Services
                 // Перечисление каталога не удалось; возвращаем то, что удалось собрать.
             }
             return files;
+        }
+
+        /// <summary>
+        /// Рекурсивно перечисляет файлы проекта, пропуская каталоги obj/bin,
+        /// когда в каталоге присутствует файл проекта (*.csproj).
+        /// </summary>
+        private static IEnumerable<string> EnumerateSourcePaths(string root)
+        {
+            var stack = new Stack<string>();
+            stack.Push(root);
+            while (stack.Count > 0)
+            {
+                var dir = stack.Pop();
+                string[] files;
+                string[] subdirs;
+                try
+                {
+                    files = Directory.GetFiles(dir);
+                    subdirs = Directory.GetDirectories(dir);
+                }
+                catch
+                {
+                    continue; // недоступный каталог пропускаем
+                }
+                foreach (var file in files)
+                    yield return file;
+                var hasCsproj = files.Any(f => string.Equals(Path.GetExtension(f), ".csproj", StringComparison.OrdinalIgnoreCase));
+                foreach (var sub in subdirs)
+                {
+                    if (hasCsproj && ExcludedDirectoryNames.Contains(Path.GetFileName(sub), StringComparer.OrdinalIgnoreCase))
+                        continue;
+                    stack.Push(sub);
+                }
+            }
         }
 
         /// <summary>
@@ -338,7 +392,7 @@ namespace RPAWriter.Core.Services
                 var current = queue.Dequeue();
                 if (!visited.Add(Normalize(current.RelativePath))) continue;
                 closure.Add(current);
-                report?.Invoke("Researching " + current.RelativePath + "…");
+                report?.Invoke("BuildClosure: processing " + current.RelativePath + "…");
 
                 EnqueueXamlReferences(current, xamlIndex, queue, visited, warnings, warnedMissing, report);
                 EnqueueMatches(classIndex, ExtractTypeReferences(current.Content), queue, visited);
