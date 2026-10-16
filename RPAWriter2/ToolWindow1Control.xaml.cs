@@ -49,6 +49,8 @@ namespace RPAWriter2
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
+        private const int ErrorContextLines = 15;
+        private const int MaxErrorsWithContext = 10;
 
         public ToolWindow1Control()
         {
@@ -132,6 +134,41 @@ namespace RPAWriter2
             }
             _messages.Add(message);
             ChatScroll.ScrollToEnd();
+        }
+
+        private void OnCopyMessage(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: ChatMessage message })
+            {
+                try { Clipboard.SetText(FormatMessageForCopy(message)); }
+                catch { /* clipboard busy — ignore */ }
+            }
+        }
+
+        private void OnCopyConversation(object sender, RoutedEventArgs e)
+        {
+            var sb = new StringBuilder();
+            foreach (var m in _messages)
+            {
+                if (sb.Length > 0) sb.AppendLine().AppendLine();
+                sb.Append(FormatMessageForCopy(m));
+            }
+            if (sb.Length == 0) return;
+            try { Clipboard.SetText(sb.ToString()); }
+            catch { /* clipboard busy — ignore */ }
+        }
+
+        private static string FormatMessageForCopy(ChatMessage message)
+        {
+            var sb = new StringBuilder();
+            sb.Append(message.DisplayText);
+            if (!string.IsNullOrWhiteSpace(message.Reasoning))
+            {
+                sb.AppendLine();
+                sb.AppendLine("[Reasoning]");
+                sb.Append(message.Reasoning);
+            }
+            return sb.ToString();
         }
 
         private void SetOutput(string text)
@@ -645,7 +682,7 @@ namespace RPAWriter2
                 sb.AppendLine("Tasks added to index: " + result.TasksAdded);
                 foreach (var warning in result.Warnings)
                     sb.AppendLine("Warning: " + warning);
-                SetOutput(sb.ToString());
+                AppendKbMessage(sb.ToString().TrimEnd());
                 AppendChat("Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
                 SetKbStatus("Import finished: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
             }
@@ -904,10 +941,11 @@ namespace RPAWriter2
         {
             try
             {
-                var text = await BuildCompilerErrorsTextAsync();
+                var errors = await _buildFeedback.GetCompilationErrorsAsync();
+                var text = await BuildCompilationErrorsContextAsync(errors);
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    AppendChat("No compilation errors found.");
+                    AppendChat(await FormatNoCompilationErrorsAsync(errors));
                     return;
                 }
 
@@ -919,30 +957,110 @@ namespace RPAWriter2
             }
         }
 
-        private async Task<string> BuildCompilerErrorsTextAsync()
+        /// <summary>
+        /// Builds the primary context the agent receives for compiler errors: the error text
+        /// plus, for each error, a bounded window around the error line read from the open
+        /// editor tab (never from disk). The agent can then decide whether to read more.
+        /// </summary>
+        private async Task<string> BuildCompilationErrorsContextAsync(IReadOnlyList<BuildError> errors)
         {
-            var errors = await _buildFeedback.GetCompilationErrorsAsync();
-            var red = errors
+            var red = (errors ?? new List<BuildError>())
                 .Where(e => e != null && string.Equals(e.Severity, "Error", StringComparison.OrdinalIgnoreCase))
                 .ToList();
             if (red.Count == 0)
                 return string.Empty;
 
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
+
             var sb = new StringBuilder();
             sb.AppendLine("Compilation errors from the Visual Studio Error List:");
-            foreach (var e in red)
-            {
-                var location = e.File ?? string.Empty;
-                if (e.Line > 0)
-                    location = string.IsNullOrEmpty(location) ? "line " + e.Line : location + ":" + e.Line;
+            sb.AppendLine();
 
-                if (!string.IsNullOrWhiteSpace(e.Code))
-                    sb.AppendLine("[Error] " + e.Code + ": " + (e.Message ?? string.Empty) + FormatLocation(location));
-                else
-                    sb.AppendLine("[Error] " + (e.Message ?? string.Empty) + FormatLocation(location));
+            var shownSnippets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var shown = 0;
+
+            foreach (var e in red.Take(MaxErrorsWithContext))
+            {
+                shown++;
+
+                var file = e.File ?? string.Empty;
+                var line = e.Line;
+
+                var location = string.Empty;
+                if (!string.IsNullOrEmpty(file)) location = line > 0 ? file + ":" + line : file;
+                else if (line > 0) location = "line " + line;
+
+                sb.Append("[Error] ");
+                if (!string.IsNullOrWhiteSpace(e.Code)) sb.Append(e.Code).Append(": ");
+                sb.Append(e.Message ?? string.Empty);
+                sb.Append(FormatLocation(location));
+                sb.AppendLine();
+
+                // Read a bounded window around the error line from the open editor tab (never from disk).
+                if (!string.IsNullOrEmpty(file) && line > 0 && dte != null)
+                {
+                    var key = file + "\u0000" + line;
+                    if (shownSnippets.Add(key))
+                    {
+                        string? snippet = null;
+                        try
+                        {
+                            var doc = VsDocumentService.OpenOrActivate(dte, file);
+                            if (doc != null)
+                                snippet = VsDocumentService.ReadDocumentWindow(doc, line, ErrorContextLines);
+                        }
+                        catch
+                        {
+                            snippet = null;
+                        }
+
+                        if (!string.IsNullOrEmpty(snippet))
+                        {
+                            sb.AppendLine(file + " (around line " + line + "):");
+                            sb.AppendLine(snippet);
+                        }
+                    }
+                }
+
+                sb.AppendLine();
             }
 
-            return sb.ToString();
+            if (red.Count > MaxErrorsWithContext)
+                sb.AppendLine("(showing " + MaxErrorsWithContext + " of " + red.Count + " errors)");
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private async Task<string> FormatNoCompilationErrorsAsync(IReadOnlyList<BuildError> errors)
+        {
+            var all = errors ?? new List<BuildError>();
+            var warnings = all.Count(e => e != null && string.Equals(e.Severity, "Warning", StringComparison.OrdinalIgnoreCase));
+            var messages = all.Count(e => e != null && string.Equals(e.Severity, "Message", StringComparison.OrdinalIgnoreCase));
+
+            var sb = new StringBuilder();
+            sb.AppendLine("No compilation errors found.");
+            if (warnings > 0 || messages > 0)
+                sb.AppendLine("Error List contains " + warnings + " warning(s) and " + messages + " message(s), but no Error-level entries.");
+
+            string output;
+            try
+            {
+                output = await _buildFeedback.GetOutputWindowTextAsync();
+            }
+            catch (Exception ex)
+            {
+                output = "Output window unavailable: " + ex.Message;
+            }
+
+            if (!string.IsNullOrWhiteSpace(output))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Build output:");
+                sb.AppendLine(output);
+            }
+
+            return sb.ToString().TrimEnd();
         }
 
         private static string FormatLocation(string location)
@@ -959,23 +1077,34 @@ namespace RPAWriter2
             var modeName = _mode.ToString();
             AppendChatMessage(new ChatMessage { Role = "user", Text = text });
 
+            var thinking = new ChatMessage { Role = "agent", Mode = modeName, IsThinking = true, Text = "Thinking…" };
+            AppendChatMessage(thinking);
+
             var cts = new CancellationTokenSource();
             _chatCts = cts;
             SendButton.IsEnabled = false;
             StartChatStatus();
             try
             {
-                var result = await _agentRunner.RunAsync(text, _mode, cts.Token);
-                AppendChatMessage(new ChatMessage { Role = "agent", Text = result.FinalText, Reasoning = result.Reasoning, Mode = modeName });
+                var progress = new Progress<ChatStreamDelta>(delta =>
+                {
+                    if (!string.IsNullOrEmpty(delta.ReasoningDelta))
+                        thinking.Reasoning += delta.ReasoningDelta;
+                });
+                var result = await _agentRunner.RunAsync(text, _mode, cts.Token, progress);
+                thinking.IsThinking = false;
+                thinking.Text = result.FinalText;
                 StopChatStatus();
             }
             catch (OperationCanceledException)
             {
+                thinking.IsThinking = false;
                 AppendChat("Request cancelled.");
                 StopChatStatus();
             }
             catch (Exception ex)
             {
+                thinking.IsThinking = false;
                 AppendChat("Error: " + ex.Message);
                 ShowChatStatusError(ex.Message);
             }
@@ -1005,6 +1134,7 @@ namespace RPAWriter2
                 () => (RobotsRootPathBox?.Text ?? "").Trim(),
                 () => (RobotTemplateNameBox?.Text ?? "").Trim(),
                 GetOpenSolutionDirectory,
+                () => _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2),
                 _buildFeedback,
                 _robotTemplate);
             return factory.CreateRegistry();
@@ -1024,7 +1154,7 @@ namespace RPAWriter2
 
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
-            _mode = ActModeButton.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
+            _mode = ActModeButton?.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
             AppendChat("Mode: " + _mode);
         }
 

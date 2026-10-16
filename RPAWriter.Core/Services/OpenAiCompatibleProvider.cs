@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -43,7 +44,7 @@ namespace RPAWriter.Core.Services
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable, IStreamingAiProvider
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
@@ -295,6 +296,199 @@ namespace RPAWriter.Core.Services
             return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
         }
 
+        public async Task<ChatResponse> ChatStreamingAsync(
+            IReadOnlyList<ChatMessageData> messages,
+            string systemPrompt,
+            IProgress<ChatStreamDelta> progress,
+            CancellationToken cancellationToken = default)
+        {
+            if (messages == null) throw new ArgumentNullException(nameof(messages));
+            foreach (var m in messages)
+                RaiseMessageSent(string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, m?.Content ?? "");
+
+            var reasoning = new StringBuilder();
+            var content = new StringBuilder();
+
+            var startedAt = DateTime.UtcNow;
+            var deadline = startedAt + _options.RetryTimeout;
+            var attempt = 0;
+            int? lastStatus = null;
+            var lastReason = "";
+            var lastBody = "";
+
+            while (DateTime.UtcNow < deadline)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                HttpResponseMessage response = null;
+                Exception sendError = null;
+                try
+                {
+                    response = await _http.SendAsync(
+                        BuildRequest(messages, systemPrompt, stream: true),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    sendError = new TimeoutException(
+                        "Timed out waiting for a response from the AI provider (" + _options.TimeoutSeconds + " s).");
+                }
+                catch (HttpRequestException ex)
+                {
+                    sendError = ex;
+                }
+
+                if (response != null)
+                {
+                    if (response.IsSuccessStatusCode)
+                    {
+                        try
+                        {
+                            await ReadSseStreamAsync(response, reasoning, content, progress, cancellationToken).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            response.Dispose();
+                        }
+                        return new ChatResponse { Answer = content.ToString(), Reasoning = reasoning.ToString() };
+                    }
+
+                    var retryAfter = ReadRetryAfter(response);
+                    var body = "";
+                    try { body = await response.Content.ReadAsStringAsync().ConfigureAwait(false); } catch { body = ""; }
+                    lastStatus = (int)response.StatusCode;
+                    lastReason = response.ReasonPhrase ?? "";
+                    lastBody = body;
+                    response.Dispose();
+
+                    attempt++;
+                    var wait = retryAfter ?? ComputeBackoff(attempt);
+                    var elapsed = DateTime.UtcNow - startedAt;
+                    var remaining = deadline - DateTime.UtcNow;
+                    var willRetry = remaining > TimeSpan.Zero;
+                    if (willRetry && wait > remaining)
+                        wait = remaining;
+
+                    RaiseRetryAttempt(attempt, lastStatus, lastReason, lastBody, wait, elapsed, remaining, willRetry);
+
+                    if (!willRetry) break;
+                    if (wait > TimeSpan.Zero)
+                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    lastStatus = null;
+                    lastReason = sendError?.GetType().Name ?? "network error";
+                    lastBody = sendError?.Message ?? "";
+
+                    attempt++;
+                    var wait = ComputeBackoff(attempt);
+                    var elapsed = DateTime.UtcNow - startedAt;
+                    var remaining = deadline - DateTime.UtcNow;
+                    var willRetry = remaining > TimeSpan.Zero;
+                    if (willRetry && wait > remaining)
+                        wait = remaining;
+
+                    RaiseRetryAttempt(attempt, lastStatus, lastReason, lastBody, wait, elapsed, remaining, willRetry);
+
+                    if (!willRetry) break;
+                    if (wait > TimeSpan.Zero)
+                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            throw new HttpRequestException(BuildFinalErrorMessage(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody));
+        }
+
+        /// <summary>
+        /// Reads an OpenAI-compatible SSE stream ("data: {json}" lines) and reports
+        /// reasoning/content deltas through <paramref name="progress"/>. Falls back to
+        /// parsing a plain JSON object when the endpoint ignores <c>stream:true</c>.
+        /// </summary>
+        private async Task ReadSseStreamAsync(
+            HttpResponseMessage response,
+            StringBuilder reasoning,
+            StringBuilder content,
+            IProgress<ChatStreamDelta> progress,
+            CancellationToken cancellationToken)
+        {
+            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+            using (var reader = new StreamReader(stream, Encoding.UTF8))
+            {
+                var inSse = false;
+                var nonSseBuffer = new StringBuilder();
+
+                while (!reader.EndOfStream)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                    if (line == null) break;
+
+                    var trimmed = line.Trim();
+                    if (trimmed.Length == 0 || trimmed.StartsWith(":", StringComparison.Ordinal)) continue;
+
+                    if (trimmed.StartsWith("data:", StringComparison.Ordinal))
+                    {
+                        inSse = true;
+                        nonSseBuffer.Clear();
+
+                        var data = trimmed.Substring(5).TrimStart();
+                        if (data == "[DONE]") break;
+
+                        JObject chunk;
+                        try { chunk = JObject.Parse(data); }
+                        catch { continue; }
+
+                        RecordUsage(chunk["usage"]);
+
+                        var delta = chunk["choices"]?[0]?["delta"];
+                        if (delta == null) continue;
+
+                        var reasoningDelta = ExtractReasoning(delta);
+                        var contentDelta = delta["content"]?.Value<string>();
+
+                        if (!string.IsNullOrEmpty(reasoningDelta))
+                            reasoning.Append(reasoningDelta);
+                        if (!string.IsNullOrEmpty(contentDelta))
+                            content.Append(contentDelta);
+
+                        if ((!string.IsNullOrEmpty(reasoningDelta) || !string.IsNullOrEmpty(contentDelta)) && progress != null)
+                        {
+                            progress.Report(new ChatStreamDelta
+                            {
+                                ReasoningDelta = reasoningDelta,
+                                ContentDelta = contentDelta
+                            });
+                        }
+                    }
+                    else if (!inSse && trimmed.StartsWith("{", StringComparison.Ordinal))
+                    {
+                        // The endpoint returned a plain JSON object instead of an SSE stream.
+                        nonSseBuffer.Append(trimmed);
+                        JObject obj;
+                        try { obj = JObject.Parse(nonSseBuffer.ToString()); }
+                        catch { continue; } // keep accumulating pretty-printed multi-line JSON
+
+                        var messageObj = obj["choices"]?[0]?["message"];
+                        var c = messageObj?["content"]?.Value<string>();
+                        var r = ExtractReasoning(messageObj);
+
+                        if (!string.IsNullOrEmpty(r))
+                            reasoning.Append(r);
+                        if (!string.IsNullOrEmpty(c))
+                            content.Append(c);
+
+                        if ((!string.IsNullOrEmpty(r) || !string.IsNullOrEmpty(c)) && progress != null)
+                            progress.Report(new ChatStreamDelta { ReasoningDelta = r, ContentDelta = c });
+
+                        RecordUsage(obj["usage"]);
+                        return;
+                    }
+                    // otherwise: ignore (e.g. an SSE "event:" line)
+                }
+            }
+        }
+
         internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken, bool notifyMessageSent = true)
         {
             return await CompleteAsync(userMessage, _prompts.SystemPrompt, cancellationToken, notifyMessageSent).ConfigureAwait(false);
@@ -536,17 +730,25 @@ namespace RPAWriter.Core.Services
 
         internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt)
         {
+            return BuildRequest(messages, systemPrompt, stream: false);
+        }
+
+        internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt, bool stream)
+        {
             var list = new List<object> { new { role = "system", content = systemPrompt ?? "" } };
             foreach (var m in messages ?? new List<ChatMessageData>())
                 list.Add(new { role = string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, content = m?.Content ?? "" });
 
-            var payload = new
+            var payload = new JObject
             {
-                model = _options.Model,
-                messages = list,
-                temperature = _options.Temperature
+                ["model"] = _options.Model,
+                ["temperature"] = _options.Temperature,
+                ["messages"] = JArray.FromObject(list)
             };
-            var json = JsonConvert.SerializeObject(payload);
+            if (stream)
+                payload["stream"] = true;
+
+            var json = payload.ToString(Formatting.None);
 
             var url = (_options.BaseUrl ?? "https://api.openai.com/v1").TrimEnd('/') + "/chat/completions";
             var request = new HttpRequestMessage(HttpMethod.Post, url)

@@ -241,6 +241,16 @@ namespace RPAWriter.Core.Models
         public string Content { get; set; } = "";
     }
 
+    /// <summary>A single incremental chunk of a streamed chat response.</summary>
+    public class ChatStreamDelta
+    {
+        /// <summary>Incremental reasoning text, when the model emits a reasoning chunk.</summary>
+        public string ReasoningDelta { get; set; }
+
+        /// <summary>Incremental answer content text, when the model emits a content chunk.</summary>
+        public string ContentDelta { get; set; }
+    }
+
     /// <summary>Token usage reported by the AI provider for a single request.</summary>
     public class TokenUsage
     {

@@ -36,15 +36,17 @@ namespace RPAWriter2.Services
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
-            var result = new List<BuildError>();
             var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
-            if (dte?.Solution == null)
-                return result;
+            if (dte == null)
+                throw new InvalidOperationException("Visual Studio is not available.");
+            if (dte.Solution == null || !dte.Solution.IsOpen)
+                throw new InvalidOperationException("No open solution.");
 
             var errorItems = dte.ToolWindows.ErrorList?.ErrorItems;
             if (errorItems == null)
-                return result;
+                throw new InvalidOperationException("The Visual Studio Error List is not available.");
 
+            var result = new List<BuildError>();
             for (var i = 1; i <= errorItems.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();

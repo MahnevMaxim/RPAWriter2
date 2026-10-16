@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -56,6 +57,14 @@ namespace RPAWriter.Tests
             CallCount++;
             return Task.FromResult(Responder(CallCount));
         }
+    }
+
+    /// <summary>Collects progress reports synchronously, so tests can assert on them deterministically.</summary>
+    public class SyncProgress<T> : IProgress<T>
+    {
+        public List<T> Reported { get; } = new List<T>();
+
+        public void Report(T value) => Reported.Add(value);
     }
 
     [TestFixture]
@@ -476,6 +485,34 @@ namespace RPAWriter.Tests
 
             Assert.That(record.CSharpCode, Does.Contain(@"\s"));
             Assert.That(record.SolutionPaths, Does.Contain("Main.xaml"));
+        }
+
+        [Test]
+        public async Task ChatStreamingAsync_StreamsReasoningAndContentDeltas()
+        {
+            var sse =
+                "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"step \"}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"two\"}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"action\\\":\\\"final\\\",\\\"text\\\":\\\"done\\\"}\"}}]}\n\n" +
+                "data: [DONE]\n\n";
+
+            var handler = new FakeHttpHandler { Responder = req => sse };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            var progress = new SyncProgress<ChatStreamDelta>();
+
+            var response = await provider.ChatStreamingAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system",
+                progress);
+
+            var deltas = progress.Reported.Select(d => d.ReasoningDelta ?? d.ContentDelta).ToList();
+
+            Assert.That(response.Reasoning, Is.EqualTo("step two"));
+            Assert.That(response.Answer, Is.EqualTo("{\"action\":\"final\",\"text\":\"done\"}"));
+            Assert.That(deltas, Does.Contain("step "));
+            Assert.That(deltas, Does.Contain("two"));
+            Assert.That(handler.LastBody, Does.Contain("\"stream\":true"));
         }
     }
 }

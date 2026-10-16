@@ -50,7 +50,7 @@ namespace RPAWriter.Core.AgentTools
             _maxIterations = maxIterations > 0 ? maxIterations : 8;
         }
 
-        public async Task<AgentRunResult> RunAsync(string userText, AgentMode mode, CancellationToken cancellationToken)
+        public async Task<AgentRunResult> RunAsync(string userText, AgentMode mode, CancellationToken cancellationToken, IProgress<ChatStreamDelta> progress = null)
         {
             var systemPrompt = _systemPromptFactory(mode);
             var messages = new List<ChatMessageData>
@@ -62,7 +62,17 @@ namespace RPAWriter.Core.AgentTools
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var response = await _ai.ChatAsync(messages, systemPrompt, cancellationToken).ConfigureAwait(false);
+                ChatResponse response;
+                if (_ai is IStreamingAiProvider streaming)
+                {
+                    response = await streaming.ChatStreamingAsync(messages, systemPrompt, progress, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    response = await _ai.ChatAsync(messages, systemPrompt, cancellationToken).ConfigureAwait(false);
+                    if (progress != null && !string.IsNullOrEmpty(response.Reasoning))
+                        progress.Report(new ChatStreamDelta { ReasoningDelta = response.Reasoning });
+                }
                 var action = AgentResponseParser.Parse(response.Answer);
 
                 if (action.IsFinal)

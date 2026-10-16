@@ -28,6 +28,21 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Optional capability: streams the model's response (reasoning and content) as
+    /// incremental deltas instead of returning only the completed response.
+    /// Providers that cannot stream fall back to
+    /// <see cref="IAiProvider.ChatAsync(IReadOnlyList{ChatMessageData}, string, CancellationToken)"/>.
+    /// </summary>
+    public interface IStreamingAiProvider
+    {
+        Task<ChatResponse> ChatStreamingAsync(
+            IReadOnlyList<ChatMessageData> messages,
+            string systemPrompt,
+            IProgress<ChatStreamDelta> progress,
+            CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
     /// Optional capability for AI providers that can report token usage
     /// relative to the model's context window.
     /// </summary>

@@ -314,18 +314,30 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
-                                    <StackPanel>
-                                        <Expander Header="Reasoning" IsExpanded="False"
-                                                  Foreground="{StaticResource Dark.Text}"
-                                                  Visibility="{Binding HasReasoning, Converter={StaticResource BoolToVis}}">
-                                            <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
-                                                     Foreground="#C8C8C8" FontStyle="Italic"
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
+                                                      Foreground="{StaticResource Dark.Text}"
+                                                      Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
+                                                <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
+                                                         Foreground="#C8C8C8" FontStyle="Italic"
+                                                         IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                                            </Expander>
+                                            <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
+                                                     Foreground="{StaticResource Dark.Text}"
                                                      IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                                        </Expander>
-                                        <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
-                                                 Foreground="{StaticResource Dark.Text}"
-                                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                                    </StackPanel>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
+                                                Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                                ToolTip="Copy message" Click="OnCopyMessage">
+                                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -378,15 +390,27 @@
                                   Width="18" Height="18"/>
                         </Button>
                     </Grid>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
-                        <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
-                        <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
-                                     IsChecked="True" Checked="OnModeChanged"
-                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
-                                     Checked="OnModeChanged"
-                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
-                    </StackPanel>
+                    <Grid Grid.Row="2" Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
+                            <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
+                                         IsChecked="True" Checked="OnModeChanged"
+                                         Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
+                                         Checked="OnModeChanged"
+                                         Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Center"
+                                Style="{StaticResource IconButtonStyle}" Width="24" Height="24"
+                                ToolTip="Copy conversation" Click="OnCopyConversation">
+                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="16" Height="16"/>
+                        </Button>
+                    </Grid>
                 </Grid>
             </Grid>
         </TabItem>

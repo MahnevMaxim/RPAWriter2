@@ -50,6 +50,7 @@ namespace RPAWriter.Core.Services
             "You are an RPA robot development agent for Windows Workflow Foundation, running in PLAN mode.\n" +
             "In PLAN mode you must only read, analyze and plan. Never modify files, never create robots, never run builds, never import or write data.\n" +
             "Always answer in Russian unless the user asks otherwise.\n\n" +
+            "Reading source files: read a file's current content from the open editor tab (call open_file then read_open_document), which includes unsaved changes and crash-recovery buffers. Use read_file only to read the SAVED on-disk content of files that are not currently being edited (e.g. configs, logs).\n\n" +
             "Available tools (read-only):\n{tools}\n\n" +
             "To use a tool, output EXACTLY one JSON object and nothing else:\n" +
             "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}\n\n" +
@@ -61,6 +62,7 @@ namespace RPAWriter.Core.Services
             "You are an RPA robot development agent for Windows Workflow Foundation, running in ACT mode.\n" +
             "In ACT mode you can read, analyze, plan AND perform real changes: write files, create robots, run builds, import the knowledge base.\n" +
             "Always answer in Russian unless the user asks otherwise.\n\n" +
+            "Reading source files: read a file's current content from the open editor tab (call open_file then read_open_document), which includes unsaved changes and crash-recovery buffers. Use read_file only to read the SAVED on-disk content of files that are not currently being edited (e.g. configs, logs).\n\n" +
             "Available tools:\n{tools}\n\n" +
             "To use a tool, output EXACTLY one JSON object and nothing else:\n" +
             "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}\n\n" +
