@@ -278,30 +278,55 @@
         </TabItem>
 
         <TabItem x:Name="KnowledgeBaseTab" Header="Knowledge base">
-            <DockPanel>
-                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="1*" MinHeight="48"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="1*" MinHeight="64"/>
+                    <RowDefinition Height="2*" MinHeight="48"/>
+                </Grid.RowDefinitions>
+
+                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
                     <Button Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+
+                <Grid Grid.Row="1" Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
                         <TextBlock x:Name="KbStatusText" Foreground="#C8C8C8" TextWrapping="Wrap"/>
                     </ScrollViewer>
-                    <ProgressBar x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
+                    <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
                                  Minimum="0" Maximum="100" Value="0"
                                  Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
-                    <TextBlock x:Name="TokenUsageText" Margin="0,4,0,0" Foreground="#C8C8C8"
+                    <TextBlock Grid.Row="2" x:Name="TokenUsageText" Margin="0,4,0,0" Foreground="#C8C8C8"
                                TextWrapping="Wrap" Text="Context window: —"/>
-                </StackPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Messages:" Margin="0,0,0,4" Foreground="#C8C8C8"/>
-                <TextBox x:Name="KbMessagesBox" DockPanel.Dock="Top" Height="120" IsReadOnly="True"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         Margin="0,0,0,6"/>
-                <ListBox x:Name="KbListBox" Background="{StaticResource Dark.Control}"
+                </Grid>
+
+                <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center" ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"/>
+
+                <Grid Grid.Row="3" Margin="0,4,0,6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Messages:" Margin="0,0,0,4" Foreground="#C8C8C8"/>
+                    <TextBox Grid.Row="1" x:Name="KbMessagesBox" IsReadOnly="True"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                </Grid>
+
+                <ListBox Grid.Row="4" x:Name="KbListBox" Background="{StaticResource Dark.Control}"
                          BorderBrush="{StaticResource Dark.Border}" Foreground="{StaticResource Dark.Text}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-            </DockPanel>
+            </Grid>
         </TabItem>
 
         <TabItem x:Name="SettingsTab" Header="Settings">

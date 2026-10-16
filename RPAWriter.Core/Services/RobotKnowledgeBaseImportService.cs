@@ -21,7 +21,7 @@ namespace RPAWriter.Core.Services
         private static readonly string[] SourceExtensions = { ".xaml", ".cs" };
 
         /// <summary>Расширения файлов проекта, по которым определяется платформа робота.</summary>
-        private static readonly string[] ProjectExtensions = { ".sln", ".csproj", ".wfproj" };
+        private static readonly string[] ProjectExtensions = { ".sln", ".csproj" };
 
         /// <summary>Находит ссылки на файлы рабочих процессов .xaml в тексте.</summary>
         private static readonly Regex XamlReferenceRegex = new Regex(@"([A-Za-z0-9_\-\.]+\.xaml)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -278,7 +278,7 @@ namespace RPAWriter.Core.Services
         /// </summary>
         private static RobotPlatform DetectPlatform(string solutionDir, string projectRoot, IReadOnlyList<RobotSourceFile> files)
         {
-            // Проверяет наличие файлов проекта в каталоге.
+            // Проверяет наличие файлов проекта (.sln/.csproj) в каталоге.
             bool HasProjectFile(string dir)
             {
                 if (string.IsNullOrEmpty(dir)) return false;
@@ -290,27 +290,15 @@ namespace RPAWriter.Core.Services
                 catch { return false; }
             }
 
-            // Проверяет наличие проекта Workflow Foundation (*.wfproj) в каталоге.
-            bool HasWfProject(string dir)
-            {
-                if (string.IsNullOrEmpty(dir)) return false;
-                try
-                {
-                    return Directory.EnumerateFiles(dir, "*.wfproj", SearchOption.AllDirectories).Any();
-                }
-                catch { return false; }
-            }
-
             var hasVsProject = HasProjectFile(solutionDir) || HasProjectFile(projectRoot);
-            var hasWf = HasWfProject(solutionDir) || HasWfProject(projectRoot);
-            var hasMainXaml = files.Any(f => string.Equals(Path.GetFileName(f.RelativePath), "main.xaml", StringComparison.OrdinalIgnoreCase));
             var hasCs = files.Any(f => IsCs(f.RelativePath));
             var hasXaml = files.Any(f => IsXaml(f.RelativePath));
 
             if (hasVsProject)
             {
-                if (hasWf || hasMainXaml) return RobotPlatform.Mwf;
-                return RobotPlatform.Wr;
+                // Проект Visual Studio с XAML-воркфлоу — это Workflow Foundation (MWF);
+                // проект без XAML — чисто кодовый (WR).
+                return hasXaml ? RobotPlatform.Mwf : RobotPlatform.Wr;
             }
             if (hasXaml && !hasCs) return RobotPlatform.Pix;
             return RobotPlatform.UiPath;

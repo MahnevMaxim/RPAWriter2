@@ -201,7 +201,7 @@ namespace RPAWriter.Core.Services
                     "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}. " +
                     "Write the description, steps, inputs and outputs in Russian.\n\n" +
                     "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
-                    platform), cancellationToken).ConfigureAwait(false);
+                    platform), cancellationToken, notifyMessageSent: false).ConfigureAwait(false);
 
             var obj = ParseJson(content);
             var spec = new SpecModel
@@ -227,7 +227,7 @@ namespace RPAWriter.Core.Services
                     "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
                     "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
                     "Task: " + taskJson + "\n\nRobot files (relativePath + content):\n" + filesJson,
-                    platform), cancellationToken).ConfigureAwait(false);
+                    platform), cancellationToken, notifyMessageSent: false).ConfigureAwait(false);
 
             var obj = ParseJson(content);
             var record = new SolutionRecord
@@ -274,14 +274,15 @@ namespace RPAWriter.Core.Services
             return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
         }
 
-        internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken)
+        internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken, bool notifyMessageSent = true)
         {
-            return await CompleteAsync(userMessage, _options.SystemPrompt, cancellationToken).ConfigureAwait(false);
+            return await CompleteAsync(userMessage, _options.SystemPrompt, cancellationToken, notifyMessageSent).ConfigureAwait(false);
         }
 
-        internal async Task<string> CompleteAsync(string userMessage, string systemPrompt, CancellationToken cancellationToken)
+        internal async Task<string> CompleteAsync(string userMessage, string systemPrompt, CancellationToken cancellationToken, bool notifyMessageSent = true)
         {
-            RaiseMessageSent("user", userMessage);
+            if (notifyMessageSent)
+                RaiseMessageSent("user", userMessage);
             var request = BuildRequest(userMessage, systemPrompt);
             var obj = await SendAsync(request, cancellationToken).ConfigureAwait(false);
             var content = obj["choices"]?[0]?["message"]?["content"]?.Value<string>();

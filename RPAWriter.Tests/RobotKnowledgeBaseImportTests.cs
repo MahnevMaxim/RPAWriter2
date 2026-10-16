@@ -107,6 +107,39 @@ namespace RPAWriter.Tests
             Assert.That(paths, Does.Not.Contain("RPA-0001/Common/Common.cs"));
             Assert.That(result.Warnings, Is.Empty);
         }
+        [Test]
+        public async Task ImportFromRobots_CsprojWithWorkflowXaml_DetectedAsMwf()
+        {
+            var projectDir = Path.Combine(_root, "RPA-0001");
+            Directory.CreateDirectory(projectDir);
+            File.WriteAllText(Path.Combine(projectDir, "RPA-0001.csproj"), "<Project />");
+            File.WriteAllText(Path.Combine(projectDir, "Workflow.xaml"), "<Activity />");
+            File.WriteAllText(Path.Combine(projectDir, "RpaActions.cs"), "public class RpaActions { }");
+
+            var ai = new RecordingAiProvider();
+            var service = new RobotKnowledgeBaseImportService(ai);
+            var result = await service.ImportFromRobotsAsync(_root, _kb);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            Assert.That(ai.LastPlatform, Is.EqualTo(RobotPlatform.Mwf));
+        }
+
+        [Test]
+        public async Task ImportFromRobots_CsprojCodeOnly_DetectedAsWr()
+        {
+            var projectDir = Path.Combine(_root, "RPA-0001");
+            Directory.CreateDirectory(projectDir);
+            File.WriteAllText(Path.Combine(projectDir, "RPA-0001.csproj"), "<Project />");
+            File.WriteAllText(Path.Combine(projectDir, "RpaActions.cs"), "public class RpaActions { }");
+
+            var ai = new RecordingAiProvider();
+            var service = new RobotKnowledgeBaseImportService(ai);
+            var result = await service.ImportFromRobotsAsync(_root, _kb);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            Assert.That(ai.LastPlatform, Is.EqualTo(RobotPlatform.Wr));
+        }
+
 
         [Test]
         public async Task ImportFromRobots_MissingEntryPoint_WarnsAndFallsBack()
