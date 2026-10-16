@@ -20,12 +20,7 @@ namespace RPAWriter2.Services
     {
         private static readonly Regex ErrorCodeRegex = new Regex(@"^\s*([A-Za-z]{2,}\d+)\s*:", RegexOptions.Compiled);
 
-        private static readonly Guid[] OutputPaneGuids =
-        {
-            VSConstants.GUID_OutWindowBuildPane,
-            VSConstants.GUID_OutWindowDebugPane,
-            VSConstants.GUID_OutWindowGeneralPane
-        };
+        private static readonly string[] OutputPaneNames = { "Build", "Debug", "General" };
 
         public async Task BuildReleaseAsync(CancellationToken cancellationToken = default)
         {
@@ -74,16 +69,22 @@ namespace RPAWriter2.Services
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
-            var outputWindow = Package.GetGlobalService(typeof(SVsOutputWindow)) as IVsOutputWindow;
-            if (outputWindow == null)
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            var panes = dte?.ToolWindows.OutputWindow?.OutputWindowPanes;
+            if (panes == null)
                 return string.Empty;
 
-            foreach (var paneGuid in OutputPaneGuids)
+            foreach (var paneName in OutputPaneNames)
             {
-                var guid = paneGuid;
-                IVsOutputWindowPane pane;
-                if (outputWindow.GetPane(ref guid, out pane) != VSConstants.S_OK || pane == null)
+                OutputWindowPane pane;
+                try
+                {
+                    pane = panes.Item(paneName);
+                }
+                catch
+                {
                     continue;
+                }
 
                 var text = ReadPaneText(pane);
                 if (!string.IsNullOrEmpty(text))
@@ -117,25 +118,22 @@ namespace RPAWriter2.Services
             return match.Success ? match.Groups[1].Value : string.Empty;
         }
 
-        private static string ReadPaneText(IVsOutputWindowPane pane)
+        private static string ReadPaneText(OutputWindowPane pane)
         {
-            if (pane == null)
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (pane?.TextDocument == null)
                 return string.Empty;
 
-            IVsTextLines textLines;
-            if (pane.GetTextLines(out textLines) != VSConstants.S_OK || textLines == null)
+            try
+            {
+                var editPoint = pane.TextDocument.StartPoint.CreateEditPoint();
+                return editPoint.GetText(pane.TextDocument.EndPoint) ?? string.Empty;
+            }
+            catch
+            {
                 return string.Empty;
-
-            int lastLine;
-            int lastIndex;
-            if (textLines.GetLastLineIndex(out lastLine, out lastIndex) != VSConstants.S_OK)
-                return string.Empty;
-
-            string text;
-            if (textLines.GetLineText(0, 0, lastLine, lastIndex, out text) != VSConstants.S_OK)
-                return string.Empty;
-
-            return text ?? string.Empty;
+            }
         }
     }
 }
