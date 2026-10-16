@@ -33,7 +33,7 @@ namespace RPAWriter.Core.Services
         public string RulesPath { get; set; } = "";
 
         /// <summary>Model context window size in tokens; used to display token consumption in the UI.</summary>
-        public int ContextWindowSize { get; set; } = 128000;
+        public int ContextWindowSize { get; set; } = 256000;
     }
 
     /// <summary>
@@ -89,7 +89,7 @@ namespace RPAWriter.Core.Services
         }
 
         /// <summary>Context window size (tokens) of the configured model.</summary>
-        public int ContextWindowSize => _options.ContextWindowSize > 0 ? _options.ContextWindowSize : 128000;
+        public int ContextWindowSize => _options.ContextWindowSize > 0 ? _options.ContextWindowSize : 256000;
 
         /// <summary>Raised after each request when the provider reports token usage.</summary>
         public event EventHandler<TokenUsage> TokenUsageUpdated;
@@ -101,6 +101,16 @@ namespace RPAWriter.Core.Services
             if (string.IsNullOrWhiteSpace(rules))
                 return prompt;
             return "The spec-processing and task-formation rules are provided below. Comply with them strictly.\n\n" +
+                   rules + "\n\n" + prompt;
+        }
+
+        /// <summary>Reads platform-specific rules from the platform subdirectory of the rules path and prepends them to the prompt.</summary>
+        private string ApplyPlatformRules(string prompt, RobotPlatform platform)
+        {
+            var rules = ProcessingRulesReader.ReadAll(_options.RulesPath, platform.ToString().ToLowerInvariant());
+            if (string.IsNullOrWhiteSpace(rules))
+                return prompt;
+            return "The platform-specific rules are provided below. Comply with them strictly.\n\n" +
                    rules + "\n\n" + prompt;
         }
 
@@ -173,15 +183,17 @@ namespace RPAWriter.Core.Services
             return result;
         }
 
-        public async Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        public async Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
         {
             var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
-                "Reconstruct the technical specification of an RPA robot from its source code (.xaml/.cs). " +
-                "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}. " +
-                "Write the description, steps, inputs and outputs in Russian.\n\n" +
-                "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
-                cancellationToken).ConfigureAwait(false);
+                ApplyPlatformRules(
+                    "Reconstruct the technical specification of an RPA robot from its source code. " +
+                    "Start from the entry point (main.xaml) and follow the files it invokes; the provided list is the reachable set. " +
+                    "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}. " +
+                    "Write the description, steps, inputs and outputs in Russian.\n\n" +
+                    "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
+                    platform), cancellationToken).ConfigureAwait(false);
 
             var obj = ParseJson(content);
             var spec = new SpecModel
@@ -197,16 +209,17 @@ namespace RPAWriter.Core.Services
             return spec;
         }
 
-        public async Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        public async Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
         {
             var taskJson = JsonConvert.SerializeObject(task);
             var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
-                "Locate the solution for the task in the robot source files. Return JSON " +
-                "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
-                "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
-                "Task: " + taskJson + "\n\nRobot files (relativePath + content):\n" + filesJson,
-                cancellationToken).ConfigureAwait(false);
+                ApplyPlatformRules(
+                    "Locate the solution for the task in the robot source files. Return JSON " +
+                    "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
+                    "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
+                    "Task: " + taskJson + "\n\nRobot files (relativePath + content):\n" + filesJson,
+                    platform), cancellationToken).ConfigureAwait(false);
 
             var obj = ParseJson(content);
             var record = new SolutionRecord
@@ -281,12 +294,20 @@ namespace RPAWriter.Core.Services
             }
             using (response)
             {
-                response.EnsureSuccessStatusCode();
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpRequestException(
+                        "AI provider returned " + (int)response.StatusCode + " (" + response.ReasonPhrase + "). Response: " + TruncateForLog(body));
                 var obj = JObject.Parse(body);
                 RecordUsage(obj["usage"]);
                 return obj;
             }
+        }
+
+        private static string TruncateForLog(string text, int max = 2000)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= max) return text;
+            return text.Substring(0, max) + "…(truncated)";
         }
 
         /// <summary>Accumulates token usage reported by the provider and notifies listeners.</summary>

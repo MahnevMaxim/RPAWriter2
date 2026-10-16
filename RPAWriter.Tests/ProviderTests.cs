@@ -17,6 +17,7 @@ namespace RPAWriter.Tests
         public HttpRequestMessage LastRequest { get; private set; }
         public string LastBody { get; private set; }
         public Func<HttpRequestMessage, string> Responder { get; set; }
+        public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -24,7 +25,7 @@ namespace RPAWriter.Tests
             LastRequest = request;
             LastBody = request.Content != null ? await request.Content.ReadAsStringAsync() : "";
             var content = Responder?.Invoke(request) ?? "";
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(StatusCode)
             {
                 Content = new StringContent(content, Encoding.UTF8, "application/json")
             };
@@ -228,6 +229,54 @@ namespace RPAWriter.Tests
             {
                 Directory.Delete(dir, recursive: true);
             }
+        }
+
+        [Test]
+        public async Task ReconstructSpecAsync_IncludesPlatformRulesFromSubfolder()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "rpawriter_rules_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(dir, "mwf"));
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "mwf", "rules.md"), "Platform rule: analyze main.xaml first.");
+                var handler = new FakeHttpHandler
+                {
+                    Responder = req => Completion("{\"name\":\"R\",\"description\":\"d\",\"steps\":[],\"inputs\":[],\"outputs\":[]}")
+                };
+                var provider = new OpenAiCompatibleProvider(new OpenAiOptions { RulesPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
+
+                await provider.ReconstructSpecAsync("RPA-0001", Array.Empty<RobotSourceFile>(), platform: RobotPlatform.Mwf);
+
+                Assert.That(handler.LastBody, Does.Contain("Platform rule: analyze main.xaml first."));
+            }
+            finally
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        [Test]
+        public void ChatAsync_IncludesResponseBodyWhenProviderReturnsError()
+        {
+            var handler = new FakeHttpHandler
+            {
+                StatusCode = HttpStatusCode.BadRequest,
+                Responder = req => "{\"error\":{\"message\":\"context length exceeded\"}}"
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hi"));
+
+            Assert.That(ex.Message, Does.Contain("400"));
+            Assert.That(ex.Message, Does.Contain("context length exceeded"));
+        }
+
+        [Test]
+        public void OpenAiOptions_DefaultContextWindowIs256K()
+        {
+            Assert.That(new OpenAiOptions().ContextWindowSize, Is.EqualTo(256000));
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(new FakeHttpHandler()));
+            Assert.That(provider.ContextWindowSize, Is.EqualTo(256000));
         }
     }
 }

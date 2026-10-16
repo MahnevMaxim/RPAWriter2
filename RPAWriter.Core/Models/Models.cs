@@ -3,6 +3,20 @@ using System.Collections.Generic;
 
 namespace RPAWriter.Core.Models
 {
+    /// <summary>RPA platform of a robot under reverse engineering.</summary>
+    public enum RobotPlatform
+    {
+        /// <summary>Microsoft Workflow Foundation (Visual Studio workflow project).</summary>
+        Mwf,
+        /// <summary>UiPath (the agent decides details itself).</summary>
+        UiPath,
+        /// <summary>PIX — a plain set of XAML files.</summary>
+        Pix,
+        /// <summary>Visual Studio code-only (C#) project.</summary>
+        Wr
+    }
+
+
     /// <summary>Atomic task extracted from a spec: action, target, inputs/outputs, keywords, activity type.</summary>
     public class TaskDescriptor
     {

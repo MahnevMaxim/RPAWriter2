@@ -88,7 +88,7 @@ namespace RPAWriter.Core.Services
             return Task.FromResult<IReadOnlyList<TaskDescriptor>>(tasks);
         }
 
-        public Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        public Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
         {
             var files = (robotFiles ?? new List<RobotSourceFile>()).Where(f => f != null).ToList();
             var spec = new SpecModel
@@ -111,7 +111,7 @@ namespace RPAWriter.Core.Services
             return Task.FromResult(spec);
         }
 
-        public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default)
+        public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
         {
             var method = MethodNameFor(task);
             var files = (robotFiles ?? new List<RobotSourceFile>()).Where(f => f != null).ToList();

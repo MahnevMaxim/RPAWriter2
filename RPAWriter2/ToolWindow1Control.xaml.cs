@@ -64,7 +64,7 @@ namespace RPAWriter2
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
-            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 128000).ToString();
+            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 256000).ToString();
         }
 
         private void RecreateAiProvider()
@@ -770,7 +770,7 @@ namespace RPAWriter2
         {
             if (int.TryParse((ContextWindowBox?.Text ?? "").Trim(), out var value) && value > 0)
                 return value;
-            return 128000;
+            return 256000;
         }
     }
 }
