@@ -402,5 +402,80 @@ namespace RPAWriter.Tests
 
             Assert.ThrowsAsync(Is.InstanceOf<OperationCanceledException>(), async () => await provider.ChatAsync("hi", cts.Token));
         }
+
+        [Test]
+        public async Task AnalyzeSpecAsync_LoadsPromptFromPromptsPath()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "rpawriter_prompts_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(dir, "Tasks"));
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "Tasks", "analyze-spec.txt"), "CUSTOM PROMPT with spec: {spec}");
+                var handler = new FakeHttpHandler
+                {
+                    Responder = req => Completion("{\"summary\":\"s\",\"tasks\":[]}")
+                };
+                var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+                {
+                    PromptsPath = dir,
+                    ApiKey = "sk-test"
+                }, new HttpClient(handler));
+
+                await provider.AnalyzeSpecAsync(new SpecModel { RawText = "Open site" });
+
+                Assert.That(handler.LastBody, Does.Contain("CUSTOM PROMPT"));
+                Assert.That(handler.LastBody, Does.Contain("Open site"));
+                Assert.That(handler.LastBody, Does.Not.Contain("{spec}"));
+            }
+            finally
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task ReloadPromptsFromDisk_PicksUpEditedChatSystemPrompt()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "rpawriter_prompts_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(dir, "System"));
+            try
+            {
+                var chatFile = Path.Combine(dir, "System", "chat-system.txt");
+                File.WriteAllText(chatFile, "CHAT V1");
+                var handler = new FakeHttpHandler { Responder = req => Completion("ok") };
+                var provider = new OpenAiCompatibleProvider(new OpenAiOptions { PromptsPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
+
+                await provider.ChatAsync("hi");
+                Assert.That(handler.LastBody, Does.Contain("CHAT V1"));
+
+                File.WriteAllText(chatFile, "CHAT V2");
+                provider.ReloadPromptsFromDisk();
+
+                await provider.ChatAsync("hi");
+                Assert.That(handler.LastBody, Does.Contain("CHAT V2"));
+                Assert.That(handler.LastBody, Does.Not.Contain("CHAT V1"));
+            }
+            finally
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task MapTaskToSolutionAsync_ToleratesInvalidEscapeInCSharpCode()
+        {
+            // The model may emit a raw "\s" (from a C# verbatim string or regex pattern)
+            // without escaping the backslash, which is invalid JSON.
+            var content = "{\"xamlFragment\":\"<Activity/>\",\"csharpCode\":\"var p = Regex.Match(s, @\\\"\\s+\\\");\",\"solutionPaths\":[\"Main.xaml\"]}";
+            var handler = new FakeHttpHandler { Responder = req => Completion(content) };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+
+            var record = await provider.MapTaskToSolutionAsync(
+                new TaskDescriptor { Action = "match", Description = "Match whitespace" },
+                new List<RobotSourceFile>());
+
+            Assert.That(record.CSharpCode, Does.Contain(@"\s"));
+            Assert.That(record.SolutionPaths, Does.Contain("Main.xaml"));
+        }
     }
 }

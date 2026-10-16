@@ -82,6 +82,7 @@ namespace RPAWriter.Core.Services
         /// <param name="progressValue">Приёмник прогресса в процентах (0–100).</param>
         /// <param name="cancellationToken">Токен отмены операции.</param>
         /// <param name="isPaused">Опциональный признак паузы: пока возвращает true, импорт ожидает.</param>
+        /// <param name="mode">Override — сбросить предыдущее состояние и сформировать всё заново; Continue — продолжить с места остановки.</param>
         /// <returns>Результат импорта: обработанные роботы, записанные файлы и предупреждения.</returns>
         public async Task<RobotKnowledgeBaseImportResult> ImportFromRobotsAsync(
             string robotsRoot,
@@ -90,7 +91,7 @@ namespace RPAWriter.Core.Services
             IProgress<double> progressValue = null,
             CancellationToken cancellationToken = default,
             Func<bool> isPaused = null,
-            bool resume = false)
+            KnowledgeBaseFormationMode mode = KnowledgeBaseFormationMode.Override)
         {
             var result = new RobotKnowledgeBaseImportResult();
             if (string.IsNullOrWhiteSpace(robotsRoot) || !Directory.Exists(robotsRoot))
@@ -100,7 +101,17 @@ namespace RPAWriter.Core.Services
 
             Directory.CreateDirectory(kbDirectory);
             var kb = new FileKnowledgeBase(kbDirectory);
-            var completedRobots = resume ? LoadCompletedRobots(kbDirectory) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            HashSet<string> completedRobots;
+            if (mode == KnowledgeBaseFormationMode.Continue)
+            {
+                completedRobots = LoadCompletedRobots(kbDirectory);
+            }
+            else
+            {
+                completedRobots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                await ResetFormationStateAsync(kbDirectory, kb, cancellationToken).ConfigureAwait(false);
+            }
 
             Action<string> report = message =>
             {
@@ -122,7 +133,7 @@ namespace RPAWriter.Core.Services
                 await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
                 var robotName = Path.GetFileName(robotDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
-                if (resume && completedRobots.Contains(robotName))
+                if (mode == KnowledgeBaseFormationMode.Continue && completedRobots.Contains(robotName))
                 {
                     report("Skipping robot " + robotName + " (already imported).");
                     progressValue?.Report((i + 1) * 100.0 / robotDirs.Count);
@@ -606,6 +617,39 @@ namespace RPAWriter.Core.Services
             {
                 // ignore write errors — resume state is best-effort
             }
+        }
+
+        /// <summary>
+        /// Clears everything produced by a previous formation run so that
+        /// <see cref="KnowledgeBaseFormationMode.Override"/> starts from a clean slate:
+        /// the resume-state file, the generated <c>*-spec.md</c>/<c>*-tasks.md</c> files,
+        /// and every index record that was imported from robots (SourceRobot is set).
+        /// </summary>
+        private static async Task ResetFormationStateAsync(string kbDirectory, IKnowledgeBase kb, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var statePath = Path.Combine(kbDirectory, ImportStateFileName);
+                if (File.Exists(statePath)) File.Delete(statePath);
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
+
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(kbDirectory, "*-spec.md", SearchOption.TopDirectoryOnly))
+                    File.Delete(file);
+                foreach (var file in Directory.EnumerateFiles(kbDirectory, "*-tasks.md", SearchOption.TopDirectoryOnly))
+                    File.Delete(file);
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
+
+            await kb.RemoveWhereAsync(r => !string.IsNullOrWhiteSpace(r.SourceRobot), cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>Собранные исходные данные одного робота.</summary>

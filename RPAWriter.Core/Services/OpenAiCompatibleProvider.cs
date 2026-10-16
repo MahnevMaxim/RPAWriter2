@@ -20,17 +20,11 @@ namespace RPAWriter.Core.Services
         public string Model { get; set; } = "gpt-4o-mini";
         public double Temperature { get; set; } = 0.2;
         public int TimeoutSeconds { get; set; } = 300;
-        public string SystemPrompt { get; set; } =
-            "You are an RPA robot development agent for Windows Workflow Foundation. " +
-            "Always respond with strictly valid JSON and no prose.";
-
-        /// <summary>Prompt for free-form chat (plain text, no JSON requirement).</summary>
-        public string ChatSystemPrompt { get; set; } =
-            "You are an RPA robot development assistant for Windows Workflow Foundation. " +
-            "Answer concisely and to the point in plain text, without JSON, unless explicitly requested.";
+        /// <summary>Base directory of the prompt template files (System/, Tasks/) shipped with the extension.</summary>
+        public string PromptsPath { get; set; } = PromptPaths.ResolvePromptsDirectory();
 
         /// <summary>Directory of markdown files containing spec-processing and task-formation rules.</summary>
-        public string RulesPath { get; set; } = "";
+        public string RulesPath { get; set; } = PromptPaths.ResolveRulesDirectory();
 
         /// <summary>Model context window size in tokens; used to display token consumption in the UI.</summary>
         public int ContextWindowSize { get; set; } = 409600;
@@ -49,10 +43,11 @@ namespace RPAWriter.Core.Services
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
+        private PromptSet _prompts;
         private readonly TokenUsage _totalUsage = new TokenUsage();
         private readonly object _usageLock = new object();
 
@@ -81,8 +76,15 @@ namespace RPAWriter.Core.Services
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _http = http ?? throw new ArgumentNullException(nameof(http));
+            _prompts = PromptSet.Load(_options.PromptsPath);
             if (_options.TimeoutSeconds > 0)
                 _http.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
+        }
+
+        /// <summary>Re-reads all prompt templates from the prompts directory on disk.</summary>
+        public void ReloadPromptsFromDisk()
+        {
+            _prompts = PromptSet.Load(_options.PromptsPath);
         }
 
         /// <summary>Cumulative tokens consumed across all requests handled by this provider instance.</summary>
@@ -140,9 +142,8 @@ namespace RPAWriter.Core.Services
         {
             var content = await CompleteAsync(
                 ApplyRules(
-                    "Analyze the technical specification and return JSON of the form " +
-                    "{\"summary\":\"...\",\"tasks\":[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}]}.\n\nSpec:\n" +
-                    (spec?.RawText ?? "")), cancellationToken).ConfigureAwait(false);
+                    _prompts.AnalyzeSpec.Replace("{spec}", spec?.RawText ?? "")),
+                cancellationToken).ConfigureAwait(false);
 
             var obj = ParseJson(content);
             var analysis = new SpecAnalysis { Summary = obj.Value<string>("summary") ?? "" };
@@ -163,10 +164,7 @@ namespace RPAWriter.Core.Services
         {
             var payload = JsonConvert.SerializeObject(analysis);
             var content = await CompleteAsync(
-                "Construct a workflow plan. Return JSON of the form {\"name\":\"...\",\"steps\":[" +
-                "{\"kind\":\"InvokeMethod\",\"className\":\"RpaActions\",\"methodName\":\"...\"}," +
-                "{\"kind\":\"Assign\",\"variable\":\"...\",\"expression\":\"...\"}]}. " +
-                "kind: Sequence|InvokeMethod|Assign|WriteLine|Delay. Source analysis: " + payload,
+                _prompts.GenerateRobot.Replace("{analysis}", payload),
                 cancellationToken).ConfigureAwait(false);
 
             var obj = ParseJson(content);
@@ -182,10 +180,8 @@ namespace RPAWriter.Core.Services
         {
             var content = await CompleteAsync(
                 ApplyRules(
-                    "Decompose the document into small atomic tasks. Return a JSON array: " +
-                    "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}]. " +
-                    "Write the action, target and description of each task in Russian.\n\nDocument:\n" +
-                    (text ?? "")), cancellationToken).ConfigureAwait(false);
+                    _prompts.DecomposeTasks.Replace("{document}", text ?? "")),
+                cancellationToken).ConfigureAwait(false);
 
             var array = ParseArray(content);
             var result = new List<TaskDescriptor>();
@@ -210,11 +206,9 @@ namespace RPAWriter.Core.Services
             var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
                 ApplyPlatformRules(
-                    "Reconstruct the technical specification of an RPA robot from its source code. " +
-                    "Start from the entry point (main.xaml) and follow the files it invokes; the provided list is the reachable set. " +
-                    "Return JSON of the form {\"name\":\"...\",\"description\":\"...\",\"steps\":[\"...\"],\"inputs\":[\"...\"],\"outputs\":[\"...\"]}. " +
-                    "Write the description, steps, inputs and outputs in Russian.\n\n" +
-                    "Robot name: " + (robotName ?? "") + "\n\nRobot files (relativePath + content):\n" + filesJson,
+                    _prompts.ReconstructSpec
+                        .Replace("{robotName}", robotName ?? "")
+                        .Replace("{files}", filesJson),
                     platform), cancellationToken, notifyMessageSent: false).ConfigureAwait(false);
 
             var obj = ParseJson(content);
@@ -237,10 +231,9 @@ namespace RPAWriter.Core.Services
             var filesJson = JsonConvert.SerializeObject(robotFiles ?? new List<RobotSourceFile>());
             var content = await CompleteAsync(
                 ApplyPlatformRules(
-                    "Locate the solution for the task in the robot source files. Return JSON " +
-                    "{\"xamlFragment\":\"...\",\"csharpCode\":\"...\",\"solutionPaths\":[\"relative/path/File.xaml\",\"relative/path/File.cs\"]}. " +
-                    "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
-                    "Task: " + taskJson + "\n\nRobot files (relativePath + content):\n" + filesJson,
+                    _prompts.MapTaskToSolution
+                        .Replace("{task}", taskJson)
+                        .Replace("{files}", filesJson),
                     platform), cancellationToken, notifyMessageSent: false).ConfigureAwait(false);
 
             var obj = ParseJson(content);
@@ -278,7 +271,7 @@ namespace RPAWriter.Core.Services
         public async Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
         {
             RaiseMessageSent("user", message);
-            var obj = await SendAsync(() => BuildRequest(message, _options.ChatSystemPrompt), cancellationToken).ConfigureAwait(false);
+            var obj = await SendAsync(() => BuildRequest(message, _prompts.ChatSystemPrompt), cancellationToken).ConfigureAwait(false);
             var messageObj = obj["choices"]?[0]?["message"];
             var content = messageObj?["content"]?.Value<string>();
             var reasoning = ExtractReasoning(messageObj);
@@ -289,7 +282,7 @@ namespace RPAWriter.Core.Services
 
         internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken, bool notifyMessageSent = true)
         {
-            return await CompleteAsync(userMessage, _options.SystemPrompt, cancellationToken, notifyMessageSent).ConfigureAwait(false);
+            return await CompleteAsync(userMessage, _prompts.SystemPrompt, cancellationToken, notifyMessageSent).ConfigureAwait(false);
         }
 
         internal async Task<string> CompleteAsync(string userMessage, string systemPrompt, CancellationToken cancellationToken, bool notifyMessageSent = true)
@@ -517,7 +510,7 @@ namespace RPAWriter.Core.Services
 
         internal HttpRequestMessage BuildRequest(string userMessage)
         {
-            return BuildRequest(userMessage, _options.SystemPrompt);
+            return BuildRequest(userMessage, _prompts.SystemPrompt);
         }
 
         internal HttpRequestMessage BuildRequest(string userMessage, string systemPrompt)
@@ -567,7 +560,71 @@ namespace RPAWriter.Core.Services
                 if (lastFence > firstNewline)
                     content = content.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
             }
-            return content;
+            return FixInvalidJsonEscapes(content);
+        }
+
+        /// <summary>
+        /// Escapes backslashes that precede characters which are not valid JSON escape
+        /// sequences (e.g. the <c>\s</c> produced by AI models when embedding C# verbatim
+        /// strings or regex patterns like <c>@"\s+"</c>). Valid escapes are left untouched,
+        /// so well-formed JSON is unaffected.
+        /// </summary>
+        private static string FixInvalidJsonEscapes(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            const string validEscapes = "\"\\/bfnrt";
+            var sb = new StringBuilder(content.Length);
+            for (var i = 0; i < content.Length; i++)
+            {
+                var c = content[i];
+                if (c != '\\')
+                {
+                    sb.Append(c);
+                    continue;
+                }
+
+                if (i + 1 >= content.Length)
+                {
+                    // Trailing backslash has nothing to escape; keep it literal.
+                    sb.Append("\\\\");
+                    break;
+                }
+
+                var next = content[i + 1];
+                if (validEscapes.IndexOf(next) >= 0)
+                {
+                    // Valid simple escape: keep both characters as-is.
+                    sb.Append(c).Append(next);
+                    i++;
+                }
+                else if (next == 'u' && i + 5 < content.Length && IsHex(content, i + 2, 4))
+                {
+                    // Valid \uXXXX escape: keep it as-is.
+                    sb.Append(content, i, 6);
+                    i += 5;
+                }
+                else
+                {
+                    // Invalid escape: escape the backslash so it stays literal. The following
+                    // character is processed normally on the next iteration.
+                    sb.Append("\\\\");
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static bool IsHex(string value, int start, int length)
+        {
+            for (var i = start; i < start + length; i++)
+            {
+                var c = value[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                    return false;
+            }
+            return true;
         }
 
         private static ActivityNode ParseStep(JToken step)

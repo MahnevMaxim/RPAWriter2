@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Newtonsoft.Json;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -13,7 +14,7 @@ namespace RPAWriter2.Services
         public string KnowledgeBasePath { get; set; } = "";
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
-        public string RulesPath { get; set; } = "";
+        public string RulesPath { get; set; } = PromptPaths.ResolveRulesDirectory();
         public int ContextWindowSize { get; set; } = 409600;
     }
 
@@ -32,14 +33,25 @@ namespace RPAWriter2.Services
                 if (File.Exists(SettingsFile))
                 {
                     var json = File.ReadAllText(SettingsFile);
-                    return JsonConvert.DeserializeObject<SettingsData>(json) ?? new SettingsData();
+                    var settings = JsonConvert.DeserializeObject<SettingsData>(json) ?? new SettingsData();
+                    EnsureDefaults(settings);
+                    return settings;
                 }
             }
             catch
             {
                 // ignore read errors — fall back to defaults
             }
-            return new SettingsData();
+            var defaults = new SettingsData();
+            EnsureDefaults(defaults);
+            return defaults;
+        }
+
+        private static void EnsureDefaults(SettingsData settings)
+        {
+            if (settings == null) return;
+            if (string.IsNullOrWhiteSpace(settings.RulesPath))
+                settings.RulesPath = PromptPaths.ResolveRulesDirectory();
         }
 
         public static void Save(SettingsData settings)

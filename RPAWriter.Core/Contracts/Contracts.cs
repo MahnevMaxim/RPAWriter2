@@ -51,6 +51,15 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Optional capability for AI providers that load prompt templates from disk
+    /// and can re-read them on demand (e.g. after the files were edited).
+    /// </summary>
+    public interface IPromptReloadable
+    {
+        void ReloadPromptsFromDisk();
+    }
+
+    /// <summary>
     /// Reads specification documents from Word/Excel/plain text.
     /// </summary>
     public interface IDocumentReader
@@ -64,6 +73,7 @@ namespace RPAWriter.Core.Contracts
     public interface IKnowledgeBase
     {
         Task AddAsync(SolutionRecord record, CancellationToken cancellationToken = default);
+        Task<int> RemoveWhereAsync(Func<SolutionRecord, bool> predicate, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<SolutionRecord>> GetAllAsync(CancellationToken cancellationToken = default);
         Task<IReadOnlyList<SimilarTaskMatch>> FindSimilarTasksAsync(TaskDescriptor query, int topK, CancellationToken cancellationToken = default);
         Task<SolutionRecord> GetSolutionAsync(string id, CancellationToken cancellationToken = default);

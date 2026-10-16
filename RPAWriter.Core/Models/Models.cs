@@ -16,6 +16,15 @@ namespace RPAWriter.Core.Models
         Wr
     }
 
+    /// <summary>How knowledge-base formation should treat a previous run.</summary>
+    public enum KnowledgeBaseFormationMode
+    {
+        /// <summary>Start over: clear previous state and re-form every robot.</summary>
+        Override,
+        /// <summary>Resume: skip robots already imported by a previous run.</summary>
+        Continue
+    }
+
 
     /// <summary>Atomic task extracted from a spec: action, target, inputs/outputs, keywords, activity type.</summary>
     public class TaskDescriptor

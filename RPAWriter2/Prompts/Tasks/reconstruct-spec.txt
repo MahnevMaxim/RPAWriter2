@@ -1,0 +1,6 @@
+Reconstruct the technical specification of an RPA robot from its source code. Start from the entry point (main.xaml) and follow the files it invokes; the provided list is the reachable set. Return JSON of the form {"name":"...","description":"...","steps":["..."],"inputs":["..."],"outputs":["..."]}. Write the description, steps, inputs and outputs in Russian.
+
+Robot name: {robotName}
+
+Robot files (relativePath + content):
+{files}

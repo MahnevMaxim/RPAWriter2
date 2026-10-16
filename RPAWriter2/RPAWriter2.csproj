@@ -39,6 +39,13 @@
     <VSIXSourceItem Include="$(OutputPath)Newtonsoft.Json.dll" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->
+    <Content Include="Prompts\**\*">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <VSCTCompile Include="RPAWriter2Package.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
       <Generator>VsctGenerator</Generator>

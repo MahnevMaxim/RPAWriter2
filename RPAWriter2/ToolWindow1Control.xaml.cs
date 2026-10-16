@@ -590,15 +590,17 @@ namespace RPAWriter2
 
         private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
         {
-            await RunKnowledgeBaseImport(resume: false);
+            await RunKnowledgeBaseImport(GetKnowledgeBaseFormationMode());
         }
 
-        private async void OnRetryKnowledgeBaseImport(object sender, RoutedEventArgs e)
+        private KnowledgeBaseFormationMode GetKnowledgeBaseFormationMode()
         {
-            await RunKnowledgeBaseImport(resume: true);
+            return KbModeCombo.SelectedIndex == 1
+                ? KnowledgeBaseFormationMode.Continue
+                : KnowledgeBaseFormationMode.Override;
         }
 
-        private async Task RunKnowledgeBaseImport(bool resume)
+        private async Task RunKnowledgeBaseImport(KnowledgeBaseFormationMode mode)
         {
             var kbPath = RequireKbPathForKnowledgeBase();
             if (kbPath == null) return;
@@ -615,11 +617,10 @@ namespace RPAWriter2
                 return;
             }
 
-            KbRetryButton.Visibility = Visibility.Collapsed;
             _kbImportPaused = false;
             _kbImportCts = new CancellationTokenSource();
             SetKbImportRunning(true);
-            SetKbStatus(resume ? "Resuming import…" : "Importing robots…");
+            SetKbStatus(mode == KnowledgeBaseFormationMode.Continue ? "Resuming import…" : "Importing robots…");
             KbProgressBar.Value = 0;
             KbProgressBar.Visibility = Visibility.Visible;
             var service = new RobotKnowledgeBaseImportService(_ai);
@@ -629,7 +630,7 @@ namespace RPAWriter2
                 var progress = new Progress<string>(SetKbStatus);
                 var progressValue = new Progress<double>(SetKbProgress);
                 var result = await service.ImportFromRobotsAsync(
-                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused, resume);
+                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused, mode);
 
                 var sb = new StringBuilder();
                 sb.AppendLine("Robots processed: " + result.RobotsProcessed);
@@ -650,8 +651,7 @@ namespace RPAWriter2
             catch (Exception ex)
             {
                 ShowError(ex);
-                SetKbStatus("Import failed.\n\n" + ex.ToString());
-                KbRetryButton.Visibility = Visibility.Visible;
+                SetKbStatus("Import failed.\n\n" + ex.ToString() + "\n\nSelect \"Continue (resume)\" and run again to resume from the last completed robot.");
             }
             finally
             {
@@ -671,6 +671,7 @@ namespace RPAWriter2
                 return;
             }
             KbImportButton.IsEnabled = !running;
+            KbModeCombo.IsEnabled = !running;
             KbPauseButton.IsEnabled = running;
             KbStopButton.IsEnabled = running;
             if (!running)
@@ -918,6 +919,19 @@ namespace RPAWriter2
             {
                 _chatCts = null;
                 cts.Dispose();
+            }
+        }
+
+        private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
+        {
+            if (_ai is IPromptReloadable reloadable)
+            {
+                reloadable.ReloadPromptsFromDisk();
+                AppendChat("Prompts reloaded from disk: " + PromptPaths.ResolvePromptsDirectory());
+            }
+            else
+            {
+                AppendChat("Prompts reload is unavailable for the current provider (stub/offline).");
             }
         }
 

@@ -249,10 +249,43 @@ namespace RPAWriter.Tests
 
             var resumingAi = new ResumableTestAiProvider();
             var resumingService = new RobotKnowledgeBaseImportService(resumingAi);
-            var result = await resumingService.ImportFromRobotsAsync(_root, _kb, resume: true);
+            var result = await resumingService.ImportFromRobotsAsync(_root, _kb, mode: KnowledgeBaseFormationMode.Continue);
 
             Assert.That(result.RobotsProcessed, Is.EqualTo(1));
             Assert.That(resumingAi.ReconstructedRobots, Is.EquivalentTo(new[] { "RPA-0002" }));
+        }
+
+        [Test]
+        public async Task ImportFromRobots_Override_ClearsStateAndRebuilds()
+        {
+            CreateRobotDir(_root, "RPA-0001");
+            CreateRobotDir(_root, "RPA-0002");
+
+            var failingAi = new ResumableTestAiProvider { FailOnRobot = "RPA-0002" };
+            var service = new RobotKnowledgeBaseImportService(failingAi);
+
+            Assert.ThrowsAsync<HttpRequestException>(async () => await service.ImportFromRobotsAsync(_root, _kb));
+
+            Assert.That(File.Exists(Path.Combine(_kb, "RPA-0001-spec.md")), Is.True);
+            Assert.That(File.Exists(Path.Combine(_kb, "import-state.txt")), Is.True);
+            var kbBefore = new FileKnowledgeBase(_kb);
+            Assert.That((await kbBefore.GetAllAsync()).Count, Is.GreaterThan(0));
+
+            var rebuildAi = new ResumableTestAiProvider();
+            var rebuildService = new RobotKnowledgeBaseImportService(rebuildAi);
+            var result = await rebuildService.ImportFromRobotsAsync(_root, _kb, mode: KnowledgeBaseFormationMode.Override);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(2));
+            Assert.That(rebuildAi.ReconstructedRobots, Is.EquivalentTo(new[] { "RPA-0001", "RPA-0002" }));
+
+            // Override must not accumulate records from the first (interrupted) run:
+            // both robots are identical, so each must end up with the same record count.
+            var kbAfter = new FileKnowledgeBase(_kb);
+            var all = await kbAfter.GetAllAsync();
+            var count1 = all.Count(r => r.SourceRobot == "RPA-0001");
+            var count2 = all.Count(r => r.SourceRobot == "RPA-0002");
+            Assert.That(count2, Is.GreaterThan(0));
+            Assert.That(count1, Is.EqualTo(count2));
         }
 
         private static void CreateRobotDir(string root, string robotName)

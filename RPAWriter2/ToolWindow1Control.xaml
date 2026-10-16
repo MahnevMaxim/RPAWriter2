@@ -43,6 +43,17 @@
             <Setter Property="Padding" Value="4,2"/>
         </Style>
 
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+        </Style>
+
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
             <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
@@ -291,10 +302,13 @@
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                    <ComboBox x:Name="KbModeCombo" SelectedIndex="0" VerticalAlignment="Center" Margin="0,5,8,0">
+                        <ComboBoxItem Content="Override (start over)"/>
+                        <ComboBoxItem Content="Continue (resume)"/>
+                    </ComboBox>
                     <Button x:Name="KbImportButton" Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
                     <Button x:Name="KbPauseButton" Content="Pause" Click="OnPauseKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
                     <Button x:Name="KbStopButton" Content="Stop" Click="OnStopKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
-                    <Button x:Name="KbRetryButton" Content="Retry" Click="OnRetryKnowledgeBaseImport" Margin="0,5,8,0" Visibility="Collapsed"/>
                     <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
                 </WrapPanel>
 
@@ -361,6 +375,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -398,6 +413,8 @@
                                    Margin="8,0,0,0" Foreground="#C8C8C8"/>
                     </StackPanel>
                 </Border>
+
+                <Button Grid.Row="10" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
             </Grid>
         </TabItem>
     </TabControl>

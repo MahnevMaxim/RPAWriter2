@@ -1,0 +1,1 @@
+Construct a workflow plan. Return JSON of the form {"name":"...","steps":[{"kind":"InvokeMethod","className":"RpaActions","methodName":"..."},{"kind":"Assign","variable":"...","expression":"..."}]}. kind: Sequence|InvokeMethod|Assign|WriteLine|Delay. Source analysis: {analysis}

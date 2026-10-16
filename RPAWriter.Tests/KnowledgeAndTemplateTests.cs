@@ -46,6 +46,22 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task FileKnowledgeBase_RemoveWhere_RemovesMatchingRecords()
+        {
+            var kb = new FileKnowledgeBase(_dir);
+            await kb.AddAsync(new SolutionRecord { Name = "A", SourceRobot = "RPA-0001" });
+            await kb.AddAsync(new SolutionRecord { Name = "B", SourceRobot = "RPA-0002" });
+            await kb.AddAsync(new SolutionRecord { Name = "C" });
+
+            var removed = await kb.RemoveWhereAsync(r => !string.IsNullOrWhiteSpace(r.SourceRobot));
+
+            Assert.That(removed, Is.EqualTo(2));
+            var all = await kb.GetAllAsync();
+            Assert.That(all.Count, Is.EqualTo(1));
+            Assert.That(all[0].Name, Is.EqualTo("C"));
+        }
+
+        [Test]
         public void SolutionTemplateEngine_ReplacesPlaceholders()
         {
             var template = new SolutionRecord

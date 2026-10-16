@@ -1,0 +1,4 @@
+Decompose the document into small atomic tasks. Return a JSON array: [{"action":"...","target":"...","description":"...","activityType":"..."}]. Write the action, target and description of each task in Russian.
+
+Document:
+{document}

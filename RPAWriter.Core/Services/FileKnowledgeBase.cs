@@ -40,6 +40,25 @@ namespace RPAWriter.Core.Services
             return Task.CompletedTask;
         }
 
+        public Task<int> RemoveWhereAsync(Func<SolutionRecord, bool> predicate, CancellationToken cancellationToken = default)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                var all = Load().ToList();
+                var remaining = new List<SolutionRecord>(all.Count);
+                var removed = 0;
+                foreach (var record in all)
+                {
+                    if (predicate(record)) removed++;
+                    else remaining.Add(record);
+                }
+                if (removed > 0) Save(remaining);
+                return Task.FromResult(removed);
+            }
+        }
+
         public Task<IReadOnlyList<SolutionRecord>> GetAllAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

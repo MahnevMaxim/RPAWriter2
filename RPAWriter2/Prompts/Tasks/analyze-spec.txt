@@ -1,0 +1,4 @@
+Analyze the technical specification and return JSON of the form {"summary":"...","tasks":[{"action":"...","target":"...","description":"...","activityType":"..."}]}.
+
+Spec:
+{spec}

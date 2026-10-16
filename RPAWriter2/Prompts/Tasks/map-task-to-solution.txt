@@ -1,0 +1,6 @@
+Locate the solution for the task in the robot source files. Return JSON {"xamlFragment":"...","csharpCode":"...","solutionPaths":["relative/path/File.xaml","relative/path/File.cs"]}. solutionPaths must list the file(s) (relative path) where the task is implemented.
+
+Task: {task}
+
+Robot files (relativePath + content):
+{files}

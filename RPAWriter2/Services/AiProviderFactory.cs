@@ -12,12 +12,16 @@ namespace RPAWriter2.Services
             if (string.IsNullOrWhiteSpace(apiKey))
                 return new StubAiProvider();
 
+            var rulesPath = (settings?.RulesPath ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(rulesPath))
+                rulesPath = PromptPaths.ResolveRulesDirectory();
+
             return new OpenAiCompatibleProvider(new OpenAiOptions
             {
                 BaseUrl = string.IsNullOrWhiteSpace(settings.BaseUrl) ? "https://api.openai.com/v1" : settings.BaseUrl.Trim(),
                 ApiKey = apiKey,
                 Model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim(),
-                RulesPath = (settings?.RulesPath ?? "").Trim(),
+                RulesPath = rulesPath,
                 ContextWindowSize = settings.ContextWindowSize > 0 ? settings.ContextWindowSize : 409600
             });
         }
