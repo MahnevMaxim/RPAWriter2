@@ -231,4 +231,25 @@ namespace RPAWriter.Core.Models
         /// <summary>Message text sent to the AI provider.</summary>
         public string Content { get; set; }
     }
+
+    /// <summary>Reported by a provider on each retry attempt while a request keeps failing.</summary>
+    public class RetryAttemptEventArgs : EventArgs
+    {
+        /// <summary>1-based number of the retry attempt.</summary>
+        public int Attempt { get; set; }
+        /// <summary>HTTP status code returned by the provider, or null when no response was received.</summary>
+        public int? StatusCode { get; set; }
+        /// <summary>Reason phrase returned by the provider.</summary>
+        public string ReasonPhrase { get; set; }
+        /// <summary>Response body returned by the provider (truncated).</summary>
+        public string Body { get; set; }
+        /// <summary>Delay before the next attempt.</summary>
+        public TimeSpan WaitBeforeRetry { get; set; }
+        /// <summary>Time elapsed since the first attempt of this request.</summary>
+        public TimeSpan Elapsed { get; set; }
+        /// <summary>Time remaining until the retry budget is exhausted.</summary>
+        public TimeSpan Remaining { get; set; }
+        /// <summary>Whether another attempt will be made.</summary>
+        public bool WillRetry { get; set; }
+    }
 }

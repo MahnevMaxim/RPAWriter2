@@ -34,18 +34,32 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Model context window size in tokens; used to display token consumption in the UI.</summary>
         public int ContextWindowSize { get; set; } = 409600;
+
+        /// <summary>Total budget for retrying a failing request before giving up.</summary>
+        public TimeSpan RetryTimeout { get; set; } = TimeSpan.FromMinutes(30);
+
+        /// <summary>Initial delay between retries; doubles on each attempt up to RetryMaxDelay.</summary>
+        public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+        /// <summary>Maximum delay between retries.</summary>
+        public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
     }
 
     /// <summary>
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
         private readonly TokenUsage _totalUsage = new TokenUsage();
         private readonly object _usageLock = new object();
+
+        /// <summary>Raised on every retry attempt, carrying the provider's status code and response.</summary>
+        public event EventHandler<RetryAttemptEventArgs> RetryAttempt;
+
+        private static readonly Random _random = new Random();
 
         static OpenAiCompatibleProvider()
         {
@@ -264,8 +278,7 @@ namespace RPAWriter.Core.Services
         public async Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
         {
             RaiseMessageSent("user", message);
-            var request = BuildRequest(message, _options.ChatSystemPrompt);
-            var obj = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var obj = await SendAsync(() => BuildRequest(message, _options.ChatSystemPrompt), cancellationToken).ConfigureAwait(false);
             var messageObj = obj["choices"]?[0]?["message"];
             var content = messageObj?["content"]?.Value<string>();
             var reasoning = ExtractReasoning(messageObj);
@@ -283,36 +296,161 @@ namespace RPAWriter.Core.Services
         {
             if (notifyMessageSent)
                 RaiseMessageSent("user", userMessage);
-            var request = BuildRequest(userMessage, systemPrompt);
-            var obj = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var obj = await SendAsync(() => BuildRequest(userMessage, systemPrompt), cancellationToken).ConfigureAwait(false);
             var content = obj["choices"]?[0]?["message"]?["content"]?.Value<string>();
             if (string.IsNullOrWhiteSpace(content))
                 throw new InvalidOperationException("Empty response from the AI provider.");
             return content;
         }
 
-        private async Task<JObject> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        private async Task<JObject> SendAsync(Func<HttpRequestMessage> requestFactory, CancellationToken cancellationToken)
         {
-            HttpResponseMessage response;
-            try
+            var startedAt = DateTime.UtcNow;
+            var deadline = startedAt + _options.RetryTimeout;
+            var attempt = 0;
+            int? lastStatus = null;
+            var lastReason = "";
+            var lastBody = "";
+
+            while (DateTime.UtcNow < deadline)
             {
-                response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                HttpResponseMessage response = null;
+                Exception sendError = null;
+                try
+                {
+                    response = await _http.SendAsync(requestFactory(), cancellationToken).ConfigureAwait(false);
+                }
+                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    sendError = new TimeoutException(
+                        "Timed out waiting for a response from the AI provider (" + _options.TimeoutSeconds + " s).");
+                }
+                catch (HttpRequestException ex)
+                {
+                    sendError = ex;
+                }
+
+                if (response != null)
+                {
+                    var retryAfter = ReadRetryAfter(response);
+                    var body = "";
+                    try { body = await response.Content.ReadAsStringAsync().ConfigureAwait(false); } catch { body = ""; }
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var obj = JObject.Parse(body);
+                        RecordUsage(obj["usage"]);
+                        response.Dispose();
+                        return obj;
+                    }
+
+                    lastStatus = (int)response.StatusCode;
+                    lastReason = response.ReasonPhrase ?? "";
+                    lastBody = body;
+                    response.Dispose();
+
+                    attempt++;
+                    var wait = retryAfter ?? ComputeBackoff(attempt);
+                    var elapsed = DateTime.UtcNow - startedAt;
+                    var remaining = deadline - DateTime.UtcNow;
+                    var willRetry = remaining > TimeSpan.Zero;
+                    if (willRetry && wait > remaining)
+                        wait = remaining;
+
+                    RaiseRetryAttempt(attempt, lastStatus, lastReason, lastBody, wait, elapsed, remaining, willRetry);
+
+                    if (!willRetry) break;
+
+                    if (wait > TimeSpan.Zero)
+                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    lastStatus = null;
+                    lastReason = sendError?.GetType().Name ?? "network error";
+                    lastBody = sendError?.Message ?? "";
+
+                    attempt++;
+                    var wait = ComputeBackoff(attempt);
+                    var elapsed = DateTime.UtcNow - startedAt;
+                    var remaining = deadline - DateTime.UtcNow;
+                    var willRetry = remaining > TimeSpan.Zero;
+                    if (willRetry && wait > remaining)
+                        wait = remaining;
+
+                    RaiseRetryAttempt(attempt, lastStatus, lastReason, lastBody, wait, elapsed, remaining, willRetry);
+
+                    if (!willRetry) break;
+
+                    if (wait > TimeSpan.Zero)
+                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                }
             }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+
+            throw new HttpRequestException(BuildFinalErrorMessage(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody));
+        }
+
+        private TimeSpan ComputeBackoff(int attempt)
+        {
+            var baseSeconds = Math.Max(0, _options.RetryBaseDelay.TotalSeconds);
+            var maxSeconds = Math.Max(baseSeconds, _options.RetryMaxDelay.TotalSeconds);
+            var seconds = Math.Min(maxSeconds, baseSeconds * Math.Pow(2.0, attempt - 1));
+            var jitter = seconds * 0.2 * _random.NextDouble();
+            return TimeSpan.FromSeconds(seconds + jitter);
+        }
+
+        private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+        {
+            if (response?.Headers == null) return null;
+            if (!response.Headers.TryGetValues("Retry-After", out var values)) return null;
+            foreach (var value in values)
             {
-                throw new TimeoutException(
-                    "Timed out waiting for a response from the AI provider (" + _options.TimeoutSeconds + " s). Verify that the provider is reachable.");
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                if (int.TryParse(value.Trim(), out var seconds))
+                    return TimeSpan.FromSeconds(Math.Max(0, seconds));
+                if (DateTimeOffset.TryParse(value.Trim(), out var date))
+                {
+                    var delta = date - DateTimeOffset.UtcNow;
+                    if (delta > TimeSpan.Zero) return delta;
+                }
             }
-            using (response)
+            return null;
+        }
+
+        private void RaiseRetryAttempt(int attempt, int? statusCode, string reason, string body, TimeSpan wait, TimeSpan elapsed, TimeSpan remaining, bool willRetry)
+        {
+            var handler = RetryAttempt;
+            if (handler == null) return;
+            handler(this, new RetryAttemptEventArgs
             {
-                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException(
-                        "AI provider returned " + (int)response.StatusCode + " (" + response.ReasonPhrase + "). Response: " + TruncateForLog(body));
-                var obj = JObject.Parse(body);
-                RecordUsage(obj["usage"]);
-                return obj;
-            }
+                Attempt = attempt,
+                StatusCode = statusCode,
+                ReasonPhrase = reason ?? "",
+                Body = TruncateForLog(body ?? "", 500),
+                WaitBeforeRetry = wait,
+                Elapsed = elapsed,
+                Remaining = remaining,
+                WillRetry = willRetry
+            });
+        }
+
+        private static string BuildFinalErrorMessage(int attempt, TimeSpan elapsed, int? statusCode, string reason, string body)
+        {
+            var status = statusCode.HasValue
+                ? statusCode.Value + " (" + reason + ")"
+                : "no response (" + reason + ")";
+            return "AI provider unavailable after " + attempt + " attempt(s) over " + FormatDuration(elapsed) +
+                   ". Last status: " + status + ". Response: " + TruncateForLog(body);
+        }
+
+        private static string FormatDuration(TimeSpan t)
+        {
+            if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+            if (t.TotalMinutes >= 1) return (int)t.TotalMinutes + "m " + t.Seconds + "s";
+            if (t.TotalSeconds >= 1) return (int)t.TotalSeconds + "s";
+            return (int)t.TotalMilliseconds + "ms";
         }
 
         private static string TruncateForLog(string text, int max = 2000)

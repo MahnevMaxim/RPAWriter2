@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -40,6 +41,20 @@ namespace RPAWriter.Tests
         {
             await Task.Delay(Timeout.Infinite, cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+    }
+
+    /// <summary>Returns a response per call count, used to simulate transient provider failures.</summary>
+    public class RetryingHttpHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+        public Func<int, HttpResponseMessage> Responder { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(Responder(CallCount));
         }
     }
 
@@ -175,9 +190,16 @@ namespace RPAWriter.Tests
         public void OpenAiProvider_ChatAsync_ThrowsTimeoutWhenProviderHangs()
         {
             var handler = new BlockingHttpHandler();
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { TimeoutSeconds = 1 }, new HttpClient(handler));
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                TimeoutSeconds = 1,
+                RetryTimeout = TimeSpan.FromMilliseconds(200),
+                RetryBaseDelay = TimeSpan.FromMilliseconds(10),
+                RetryMaxDelay = TimeSpan.FromMilliseconds(10)
+            }, new HttpClient(handler));
 
-            Assert.ThrowsAsync<TimeoutException>(async () => await provider.ChatAsync("hello"));
+            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hello"));
+            Assert.That(ex.Message, Does.Contain("no response"));
         }
 
         [Test]
@@ -263,7 +285,13 @@ namespace RPAWriter.Tests
                 StatusCode = HttpStatusCode.BadRequest,
                 Responder = req => "{\"error\":{\"message\":\"context length exceeded\"}}"
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                RetryTimeout = TimeSpan.FromMilliseconds(200),
+                RetryBaseDelay = TimeSpan.FromMilliseconds(10),
+                RetryMaxDelay = TimeSpan.FromMilliseconds(10)
+            }, new HttpClient(handler));
 
             var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hi"));
 
@@ -277,6 +305,102 @@ namespace RPAWriter.Tests
             Assert.That(new OpenAiOptions().ContextWindowSize, Is.EqualTo(409600));
             var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(new FakeHttpHandler()));
             Assert.That(provider.ContextWindowSize, Is.EqualTo(409600));
+        }
+
+        [Test]
+        public async Task SendAsync_RetriesNonSuccessThenSucceeds()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => n == 1
+                    ? new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("<html>502</html>") }
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Completion("ok")) }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                RetryBaseDelay = TimeSpan.Zero,
+                RetryMaxDelay = TimeSpan.Zero
+            }, new HttpClient(handler));
+
+            var reply = await provider.ChatAsync("hi");
+
+            Assert.That(reply.Answer, Is.EqualTo("ok"));
+            Assert.That(handler.CallCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SendAsync_ExhaustsBudgetAndThrowsWithStatusAndBody()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"bad key\"}}")
+                }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                RetryTimeout = TimeSpan.FromMilliseconds(150),
+                RetryBaseDelay = TimeSpan.FromMilliseconds(10),
+                RetryMaxDelay = TimeSpan.FromMilliseconds(10)
+            }, new HttpClient(handler));
+
+            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hi"));
+
+            Assert.That(ex.Message, Does.Contain("400"));
+            Assert.That(ex.Message, Does.Contain("bad key"));
+            Assert.That(ex.Message, Does.Contain("attempt(s)"));
+            Assert.That(handler.CallCount, Is.GreaterThanOrEqualTo(2));
+        }
+
+        [Test]
+        public async Task SendAsync_RaisesRetryAttemptWithAttemptCount()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => n <= 2
+                    ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("busy") }
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Completion("done")) }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                RetryBaseDelay = TimeSpan.Zero,
+                RetryMaxDelay = TimeSpan.Zero
+            }, new HttpClient(handler));
+
+            var attempts = new List<RetryAttemptEventArgs>();
+            provider.RetryAttempt += (s, e) => attempts.Add(e);
+
+            await provider.ChatAsync("hi");
+
+            Assert.That(attempts.Count, Is.EqualTo(2));
+            Assert.That(attempts[0].Attempt, Is.EqualTo(1));
+            Assert.That(attempts[0].StatusCode, Is.EqualTo(503));
+            Assert.That(attempts[0].Body, Does.Contain("busy"));
+            Assert.That(attempts[1].Attempt, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SendAsync_CancelsDuringBackoff()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("down") }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                RetryTimeout = TimeSpan.FromMinutes(30),
+                RetryBaseDelay = TimeSpan.FromHours(1),
+                RetryMaxDelay = TimeSpan.FromHours(1)
+            }, new HttpClient(handler));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+            Assert.ThrowsAsync(Is.InstanceOf<OperationCanceledException>(), async () => await provider.ChatAsync("hi", cts.Token));
         }
     }
 }

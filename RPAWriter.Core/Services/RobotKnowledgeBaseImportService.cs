@@ -89,7 +89,8 @@ namespace RPAWriter.Core.Services
             IProgress<string> progress = null,
             IProgress<double> progressValue = null,
             CancellationToken cancellationToken = default,
-            Func<bool> isPaused = null)
+            Func<bool> isPaused = null,
+            bool resume = false)
         {
             var result = new RobotKnowledgeBaseImportResult();
             if (string.IsNullOrWhiteSpace(robotsRoot) || !Directory.Exists(robotsRoot))
@@ -99,6 +100,7 @@ namespace RPAWriter.Core.Services
 
             Directory.CreateDirectory(kbDirectory);
             var kb = new FileKnowledgeBase(kbDirectory);
+            var completedRobots = resume ? LoadCompletedRobots(kbDirectory) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             Action<string> report = message =>
             {
@@ -119,6 +121,14 @@ namespace RPAWriter.Core.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
                 var robotName = Path.GetFileName(robotDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+                if (resume && completedRobots.Contains(robotName))
+                {
+                    report("Skipping robot " + robotName + " (already imported).");
+                    progressValue?.Report((i + 1) * 100.0 / robotDirs.Count);
+                    continue;
+                }
+
                 report("Processing robot " + robotName + "…");
 
                 var input = CollectRobotInput(robotsRoot, robotDir, robotName, report, result.Warnings);
@@ -173,6 +183,8 @@ namespace RPAWriter.Core.Services
                 result.TaskFilesWritten++;
 
                 result.RobotsProcessed++;
+                completedRobots.Add(robotName);
+                SaveCompletedRobots(kbDirectory, completedRobots);
                 progressValue?.Report((i + 1) * 100.0 / robotDirs.Count);
             }
 
@@ -553,6 +565,48 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Приводит путь к единому виду, заменяя обратные слэши на прямые.</summary>
         private static string Normalize(string path) => (path ?? "").Replace('\\', '/');
+
+        private const string ImportStateFileName = "import-state.txt";
+
+        /// <summary>Loads the set of robots already imported by a previous run (resume state).</summary>
+        private static HashSet<string> LoadCompletedRobots(string kbDirectory)
+        {
+            var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var path = Path.Combine(kbDirectory, ImportStateFileName);
+                if (File.Exists(path))
+                {
+                    foreach (var line in File.ReadAllLines(path))
+                    {
+                        var name = line.Trim();
+                        if (!string.IsNullOrEmpty(name)) completed.Add(name);
+                    }
+                }
+            }
+            catch
+            {
+                // ignore read errors — resume state is best-effort
+            }
+            return completed;
+        }
+
+        /// <summary>Persists the robots imported so far so a later run can resume from the same place.</summary>
+        private static void SaveCompletedRobots(string kbDirectory, HashSet<string> completed)
+        {
+            try
+            {
+                var path = Path.Combine(kbDirectory, ImportStateFileName);
+                var tmp = path + ".tmp";
+                File.WriteAllLines(tmp, completed.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
+            }
+            catch
+            {
+                // ignore write errors — resume state is best-effort
+            }
+        }
 
         /// <summary>Собранные исходные данные одного робота.</summary>
         private sealed class RobotInput

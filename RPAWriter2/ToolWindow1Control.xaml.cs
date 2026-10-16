@@ -35,6 +35,7 @@ namespace RPAWriter2
         private RobotTemplateService _robotTemplate;
         private ITokenUsageProvider? _tokenUsage;
         private IMessageNotifier? _messageNotifier;
+        private IRetryNotifier? _retryNotifier;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private CancellationTokenSource? _chatCts;
@@ -74,9 +75,11 @@ namespace RPAWriter2
         {
             UnhookTokenUsage();
             UnhookMessageNotifier();
+            UnhookRetryNotifier();
             _ai = AiProviderFactory.Create(_settings);
             HookTokenUsage();
             HookMessageNotifier();
+            HookRetryNotifier();
             UpdateTokenUsageDisplay();
         }
 
@@ -184,6 +187,20 @@ namespace RPAWriter2
             _messageNotifier = null;
         }
 
+        private void HookRetryNotifier()
+        {
+            _retryNotifier = _ai as IRetryNotifier;
+            if (_retryNotifier != null)
+                _retryNotifier.RetryAttempt += OnRetryAttempt;
+        }
+
+        private void UnhookRetryNotifier()
+        {
+            if (_retryNotifier != null)
+                _retryNotifier.RetryAttempt -= OnRetryAttempt;
+            _retryNotifier = null;
+        }
+
         private void OnAiMessageSent(object? sender, AiMessageEventArgs e)
         {
             if (!Dispatcher.CheckAccess())
@@ -192,6 +209,47 @@ namespace RPAWriter2
                 return;
             }
             AppendKbMessage("→ [" + (e.Role ?? "") + "] " + (e.Content ?? ""));
+        }
+
+        private void OnRetryAttempt(object? sender, RetryAttemptEventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnRetryAttempt(sender, e)));
+                return;
+            }
+
+            var status = e.StatusCode.HasValue
+                ? "HTTP " + e.StatusCode.Value + (string.IsNullOrEmpty(e.ReasonPhrase) ? "" : " (" + e.ReasonPhrase + ")")
+                : "no response";
+
+            string message;
+            if (e.WillRetry)
+            {
+                message = "Retry #" + e.Attempt + " → " + status;
+                if (!string.IsNullOrWhiteSpace(e.Body))
+                    message += ": " + e.Body;
+                var total = e.Elapsed + e.Remaining;
+                message += " (elapsed " + FormatKbDuration(e.Elapsed) + " / " + FormatKbDuration(total) +
+                           ", next attempt in " + FormatKbDuration(e.WaitBeforeRetry) + ")";
+            }
+            else
+            {
+                message = "Retry budget exhausted after " + e.Attempt + " attempt(s): " + status;
+                if (!string.IsNullOrWhiteSpace(e.Body))
+                    message += ": " + e.Body;
+            }
+
+            AppendKbMessage(message);
+            SetKbStatus(message);
+        }
+
+        private static string FormatKbDuration(TimeSpan t)
+        {
+            if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+            if (t.TotalMinutes >= 1) return (int)t.TotalMinutes + "m " + t.Seconds + "s";
+            if (t.TotalSeconds >= 1) return (int)t.TotalSeconds + "s";
+            return (int)t.TotalMilliseconds + "ms";
         }
 
         private void AppendKbMessage(string text)
@@ -532,6 +590,16 @@ namespace RPAWriter2
 
         private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
         {
+            await RunKnowledgeBaseImport(resume: false);
+        }
+
+        private async void OnRetryKnowledgeBaseImport(object sender, RoutedEventArgs e)
+        {
+            await RunKnowledgeBaseImport(resume: true);
+        }
+
+        private async Task RunKnowledgeBaseImport(bool resume)
+        {
             var kbPath = RequireKbPathForKnowledgeBase();
             if (kbPath == null) return;
 
@@ -547,10 +615,11 @@ namespace RPAWriter2
                 return;
             }
 
+            KbRetryButton.Visibility = Visibility.Collapsed;
             _kbImportPaused = false;
             _kbImportCts = new CancellationTokenSource();
             SetKbImportRunning(true);
-            SetKbStatus("Importing robots…");
+            SetKbStatus(resume ? "Resuming import…" : "Importing robots…");
             KbProgressBar.Value = 0;
             KbProgressBar.Visibility = Visibility.Visible;
             var service = new RobotKnowledgeBaseImportService(_ai);
@@ -560,7 +629,7 @@ namespace RPAWriter2
                 var progress = new Progress<string>(SetKbStatus);
                 var progressValue = new Progress<double>(SetKbProgress);
                 var result = await service.ImportFromRobotsAsync(
-                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused);
+                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused, resume);
 
                 var sb = new StringBuilder();
                 sb.AppendLine("Robots processed: " + result.RobotsProcessed);
@@ -582,6 +651,7 @@ namespace RPAWriter2
             {
                 ShowError(ex);
                 SetKbStatus("Import failed.\n\n" + ex.ToString());
+                KbRetryButton.Visibility = Visibility.Visible;
             }
             finally
             {

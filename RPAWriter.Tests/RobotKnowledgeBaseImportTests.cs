@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -232,6 +233,38 @@ namespace RPAWriter.Tests
             Assert.That(result.RobotsProcessed, Is.EqualTo(1));
         }
 
+        [Test]
+        public async Task ImportFromRobots_Resume_SkipsCompletedRobots()
+        {
+            CreateRobotDir(_root, "RPA-0001");
+            CreateRobotDir(_root, "RPA-0002");
+
+            var failingAi = new ResumableTestAiProvider { FailOnRobot = "RPA-0002" };
+            var service = new RobotKnowledgeBaseImportService(failingAi);
+
+            Assert.ThrowsAsync<HttpRequestException>(async () => await service.ImportFromRobotsAsync(_root, _kb));
+
+            Assert.That(File.Exists(Path.Combine(_kb, "RPA-0001-spec.md")), Is.True);
+            Assert.That(File.Exists(Path.Combine(_kb, "import-state.txt")), Is.True);
+
+            var resumingAi = new ResumableTestAiProvider();
+            var resumingService = new RobotKnowledgeBaseImportService(resumingAi);
+            var result = await resumingService.ImportFromRobotsAsync(_root, _kb, resume: true);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            Assert.That(resumingAi.ReconstructedRobots, Is.EquivalentTo(new[] { "RPA-0002" }));
+        }
+
+        private static void CreateRobotDir(string root, string robotName)
+        {
+            var dir = Path.Combine(root, robotName);
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "Main.xaml"),
+                "<Activity><InvokeMethod MethodName=\"OpenBrowser\" /></Activity>");
+            File.WriteAllText(Path.Combine(dir, "RpaActions.cs"),
+                "public static void OpenBrowser() { }");
+        }
+
         private sealed class RecordingAiProvider : IAiProvider
         {
             public string LastRobotName { get; private set; }
@@ -260,6 +293,36 @@ namespace RPAWriter.Tests
 
             public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
                 => Task.FromResult(new ChatResponse { Answer = "stub" });
+        }
+
+        private sealed class ResumableTestAiProvider : IAiProvider
+        {
+            private readonly StubAiProvider _inner = new StubAiProvider();
+            public List<string> ReconstructedRobots { get; } = new List<string>();
+            public string FailOnRobot { get; set; }
+
+            public Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
+            {
+                ReconstructedRobots.Add(robotName);
+                if (robotName == FailOnRobot)
+                    throw new HttpRequestException("AI provider unavailable (simulated)");
+                return _inner.ReconstructSpecAsync(robotName, robotFiles, cancellationToken, platform);
+            }
+
+            public Task<IReadOnlyList<TaskDescriptor>> DecomposeTasksAsync(string text, CancellationToken cancellationToken = default)
+                => _inner.DecomposeTasksAsync(text, cancellationToken);
+
+            public Task<SpecAnalysis> AnalyzeSpecAsync(SpecModel spec, CancellationToken cancellationToken = default)
+                => _inner.AnalyzeSpecAsync(spec, cancellationToken);
+
+            public Task<RobotPlan> GenerateRobotAsync(SpecAnalysis analysis, CancellationToken cancellationToken = default)
+                => _inner.GenerateRobotAsync(analysis, cancellationToken);
+
+            public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
+                => _inner.MapTaskToSolutionAsync(task, robotFiles, cancellationToken, platform);
+
+            public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(message, cancellationToken);
         }
     }
 }

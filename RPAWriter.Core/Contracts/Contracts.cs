@@ -42,6 +42,15 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Optional capability for AI providers that report every retry attempt,
+    /// including the provider's status code and response body.
+    /// </summary>
+    public interface IRetryNotifier
+    {
+        event EventHandler<RetryAttemptEventArgs> RetryAttempt;
+    }
+
+    /// <summary>
     /// Reads specification documents from Word/Excel/plain text.
     /// </summary>
     public interface IDocumentReader
