@@ -78,6 +78,7 @@
                                                                   Margin="{TemplateBinding Padding}"
                                                                   HorizontalAlignment="Left"
                                                                   VerticalAlignment="Center"
+                                                                  TextElement.Foreground="{TemplateBinding Foreground}"
                                                                   Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
@@ -283,6 +284,34 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <DataTemplate x:Key="MessageTemplate">
+            <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
+                                  Foreground="{StaticResource Dark.Text}"
+                                  Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
+                            <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
+                                     Foreground="#C8C8C8" FontStyle="Italic"
+                                     IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                        </Expander>
+                        <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
+                                 Foreground="{StaticResource Dark.Text}"
+                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
+                            Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
+                            ToolTip="Copy message" Click="OnCopyMessage">
+                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
+                    </Button>
+                </Grid>
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
     <TabControl x:Name="MainTabs" Margin="8">
         <TabItem Header="Chat">
@@ -307,42 +336,54 @@
                     </Border>
                 </StackPanel>
 
-                <ScrollViewer Grid.Row="1" x:Name="ChatScroll"
-                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                              Margin="0,0,0,4">
-                    <ItemsControl x:Name="ChatList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
-                                                      Foreground="{StaticResource Dark.Text}"
-                                                      Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
-                                                <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
-                                                         Foreground="#C8C8C8" FontStyle="Italic"
+                <Grid Grid.Row="1" Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Button Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,0,0,4"
+                            Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                            ToolTip="Copy conversation" Click="OnCopyConversation">
+                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
+                    </Button>
+                    <ScrollViewer Grid.Row="1" x:Name="ChatScroll"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="ChatList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
+                                                          Foreground="{StaticResource Dark.Text}"
+                                                          Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
+                                                    <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
+                                                             Foreground="#C8C8C8" FontStyle="Italic"
+                                                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                                                </Expander>
+                                                <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
+                                                         Foreground="{StaticResource Dark.Text}"
                                                          IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                                            </Expander>
-                                            <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
-                                                     Foreground="{StaticResource Dark.Text}"
-                                                     IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
-                                                Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                                ToolTip="Copy message" Click="OnCopyMessage">
-                                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
-                                        </Button>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
+                                                    Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
+                                                    ToolTip="Copy message" Click="OnCopyMessage">
+                                                <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
 
                 <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
                               VerticalAlignment="Center" ResizeDirection="Rows"
@@ -390,27 +431,15 @@
                                   Width="18" Height="18"/>
                         </Button>
                     </Grid>
-                    <Grid Grid.Row="2" Margin="0,4,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal">
-                            <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
-                            <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
-                                         IsChecked="True" Checked="OnModeChanged"
-                                         Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
-                                         Checked="OnModeChanged"
-                                         Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" VerticalAlignment="Center"
-                                Style="{StaticResource IconButtonStyle}" Width="24" Height="24"
-                                ToolTip="Copy conversation" Click="OnCopyConversation">
-                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="16" Height="16"/>
-                        </Button>
-                    </Grid>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
+                        <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
+                                     IsChecked="True" Checked="OnModeChanged"
+                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
+                                     Checked="OnModeChanged"
+                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </TabItem>
@@ -439,9 +468,24 @@
                                      Foreground="{StaticResource Dark.Accent}"/>
                     </StackPanel>
                 </Border>
-                <TextBox x:Name="OutputBox" IsReadOnly="True"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Button Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,0,0,4"
+                            Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                            ToolTip="Copy all" Click="OnCopySpecOutput">
+                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
+                    </Button>
+                    <ScrollViewer Grid.Row="1" x:Name="SpecScroll"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="SpecList" ItemTemplate="{StaticResource MessageTemplate}">
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </DockPanel>
         </TabItem>
 

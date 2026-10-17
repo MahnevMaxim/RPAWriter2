@@ -35,6 +35,7 @@ namespace RPAWriter2
         private SpecModel _currentSpec;
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
+        private OutputWindowService _outputWindow;
         private AgentMode _mode = AgentMode.Plan;
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
@@ -43,6 +44,7 @@ namespace RPAWriter2
         private IRetryNotifier? _retryNotifier;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
+        private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private CancellationTokenSource? _chatCts;
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
@@ -56,10 +58,12 @@ namespace RPAWriter2
         {
             this.InitializeComponent();
             ChatList.ItemsSource = _messages;
+            SpecList.ItemsSource = _specMessages;
             LoadSettings();
             RecreateAiProvider();
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
+            _outputWindow = new OutputWindowService();
             RebuildAgentTools();
             HookSolutionEvents();
             UpdateCreateRobotVisibility();
@@ -136,6 +140,29 @@ namespace RPAWriter2
             ChatScroll.ScrollToEnd();
         }
 
+        private void AppendSpecMessage(ChatMessage message)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendSpecMessage(message)));
+                return;
+            }
+            _specMessages.Add(message);
+            SpecScroll.ScrollToEnd();
+        }
+
+        private void AppendSpecText(string text)
+        {
+            AppendSpecMessage(new ChatMessage { Role = "system", Text = text });
+        }
+
+        private ChatMessage AppendSpecStreaming()
+        {
+            var message = new ChatMessage { Role = "system", IsThinking = true, Text = "Thinking\u2026" };
+            AppendSpecMessage(message);
+            return message;
+        }
+
         private void OnCopyMessage(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement { DataContext: ChatMessage message })
@@ -149,6 +176,19 @@ namespace RPAWriter2
         {
             var sb = new StringBuilder();
             foreach (var m in _messages)
+            {
+                if (sb.Length > 0) sb.AppendLine().AppendLine();
+                sb.Append(FormatMessageForCopy(m));
+            }
+            if (sb.Length == 0) return;
+            try { Clipboard.SetText(sb.ToString()); }
+            catch { /* clipboard busy — ignore */ }
+        }
+
+        private void OnCopySpecOutput(object sender, RoutedEventArgs e)
+        {
+            var sb = new StringBuilder();
+            foreach (var m in _specMessages)
             {
                 if (sb.Length > 0) sb.AppendLine().AppendLine();
                 sb.Append(FormatMessageForCopy(m));
@@ -173,12 +213,7 @@ namespace RPAWriter2
 
         private void SetOutput(string text)
         {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetOutput(text)));
-                return;
-            }
-            OutputBox.Text = text;
+            AppendSpecText(text);
         }
 
         private void SetKbStatus(string status)
@@ -487,8 +522,12 @@ namespace RPAWriter2
 
                 // 2. Decompose the spec into tasks.
                 SetImportStatus("Parsing tasks (AI)…");
+                var parsing = AppendSpecStreaming();
+                parsing.Reasoning = "Decomposing the specification into tasks\u2026";
                 var tasks = await _ai.DecomposeTasksAsync(spec.RawText);
                 spec.Tasks = tasks.ToList();
+                parsing.IsThinking = false;
+                parsing.Text = "Parsed " + tasks.Count + " tasks.";
 
                 // 3. Structured tasks.md.
                 var tasksMarkdown = MarkdownContent.TasksToMarkdown(spec);
@@ -507,7 +546,7 @@ namespace RPAWriter2
                     sb.AppendLine("- " + (t.Action ?? "") + " → " + (t.Target ?? "") + " [" + (t.ActivityType ?? "") + "]");
                 SetOutput(sb.ToString());
 
-                AppendChat("Imported spec: " + spec.Name + " (tasks: " + spec.Tasks.Count + ")");
+                AppendSpecText("Imported spec: " + spec.Name + " (tasks: " + spec.Tasks.Count + ")");
             }
             catch (Exception ex) when (FileLockDetector.IsFileLocked(ex))
             {
@@ -532,7 +571,7 @@ namespace RPAWriter2
             if (!File.Exists(path))
             {
                 File.WriteAllText(path, content);
-                AppendChat("Created " + displayName + ".");
+                AppendSpecText("Created " + displayName + ".");
                 return;
             }
 
@@ -549,7 +588,7 @@ namespace RPAWriter2
             {
                 case MessageBoxResult.Yes:
                     File.WriteAllText(path, content);
-                    AppendChat(displayName + " overwritten.");
+                    AppendSpecText(displayName + " overwritten.");
                     break;
 
                 case MessageBoxResult.No:
@@ -567,21 +606,21 @@ namespace RPAWriter2
                         if (apply == MessageBoxResult.Yes)
                         {
                             File.WriteAllText(path, content);
-                            AppendChat("Fixes applied to " + displayName + ".");
+                            AppendSpecText("Fixes applied to " + displayName + ".");
                         }
                         else
                         {
-                            AppendChat(displayName + " left unchanged.");
+                            AppendSpecText(displayName + " left unchanged.");
                         }
                     }
                     else
                     {
-                        AppendChat(displayName + " has not changed.");
+                        AppendSpecText(displayName + " has not changed.");
                     }
                     break;
 
                 default: // Cancel
-                    AppendChat(displayName + " left unchanged.");
+                    AppendSpecText(displayName + " left unchanged.");
                     break;
             }
         }
@@ -602,7 +641,7 @@ namespace RPAWriter2
                 foreach (var m in matches)
                     sb.AppendLine("[" + m.Score.ToString("P0") + "] " + m.Solution.Name + " — " + string.Join("; ", m.Reasons));
                 SetOutput(sb.Length == 0 ? "No similar tasks found." : sb.ToString());
-                AppendChat("Similar tasks found: " + matches.Count);
+                AppendSpecText("Similar tasks found: " + matches.Count);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -626,7 +665,7 @@ namespace RPAWriter2
                 File.WriteAllText(csPath, result.CSharpCode);
 
                 SetOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
-                AppendChat("Robot generated and saved next to the spec: " + xamlPath + ", " + csPath);
+                AppendSpecText("Robot generated and saved next to the spec: " + xamlPath + ", " + csPath);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -758,7 +797,7 @@ namespace RPAWriter2
                     return;
                 }
                 await _buildFeedback.BuildReleaseAsync();
-                AppendChat("Release build started.");
+                AppendSpecText("Release build started.");
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -779,7 +818,7 @@ namespace RPAWriter2
                 foreach (var f in dlg.FileNames) lines.AddRange(File.ReadAllLines(f));
                 var analysis = new LogAnalyzer().Analyze(lines);
                 SetOutput(analysis.Summary);
-                foreach (var err in analysis.Errors.Take(20)) AppendChat("ERR: " + err.Message);
+                foreach (var err in analysis.Errors.Take(20)) AppendSpecText("ERR: " + err.Message);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -802,7 +841,7 @@ namespace RPAWriter2
                 File.WriteAllText(Path.Combine(dir, baseName + ".wf.xaml"), result.Xaml);
                 File.WriteAllText(Path.Combine(dir, baseName + ".wf.cs"), result.CSharpCode);
                 SetOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
-                AppendChat("Conversion completed. Warnings: " + result.Warnings.Count);
+                AppendSpecText("Conversion completed. Warnings: " + result.Warnings.Count);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -810,9 +849,10 @@ namespace RPAWriter2
         {
             try
             {
+                _outputWindow.Activate();
                 await _robotTemplate.RunPackageManagerCommandAsync(
                     "Update-Package -Reinstall",
-                    new Progress<string>(AppendChat));
+                    _outputWindow.CreateProgress());
             }
             catch (Exception ex)
             {
@@ -832,13 +872,14 @@ namespace RPAWriter2
             var solutionName = "RPA-" + number;
             try
             {
+                _outputWindow.Activate();
                 var result = await _robotTemplate.CreateRobotAsync(
                     solutionName, _settings.RobotsRootPath, _settings.RobotTemplateName,
-                    progress: new Progress<string>(AppendChat));
+                    progress: _outputWindow.CreateProgress());
                 if (result.Success)
-                    AppendChat("Robot created: " + result.SolutionPath);
+                    _outputWindow.WriteLine("Robot created: " + result.SolutionPath);
                 else
-                    AppendChat("Warning: " + result.Message);
+                    _outputWindow.WriteLine("Warning: " + result.Message);
             }
             catch (Exception ex)
             {
