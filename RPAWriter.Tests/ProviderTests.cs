@@ -533,6 +533,7 @@ namespace RPAWriter.Tests
                 "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"step \"}}]}\n\n" +
                 "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"two\"}}]}\n\n" +
                 "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"action\\\":\\\"final\\\",\\\"text\\\":\\\"done\\\"}\"}}]}\n\n" +
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":50,\"total_tokens\":150}}\n\n" +
                 "data: [DONE]\n\n";
 
             var handler = new FakeHttpHandler { Responder = req => sse };
@@ -552,6 +553,72 @@ namespace RPAWriter.Tests
             Assert.That(deltas, Does.Contain("step "));
             Assert.That(deltas, Does.Contain("two"));
             Assert.That(handler.LastBody, Does.Contain("\"stream\":true"));
+            Assert.That(handler.LastBody, Does.Contain("\"stream_options\":{\"include_usage\":true}"));
+            Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(150));
+        }
+
+        [Test]
+        public async Task ChatAsync_NonStreaming_DoesNotSetStreamOptions_AndRecordsUsage()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => "{\"choices\":[{\"message\":{\"content\":\"hello\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            var response = await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system");
+
+            Assert.That(response.Answer, Is.EqualTo("hello"));
+            Assert.That(handler.LastBody, Does.Not.Contain("\"stream\""));
+            Assert.That(handler.LastBody, Does.Not.Contain("stream_options"));
+            Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(15));
+        }
+
+        [Test]
+        public async Task ChatStreamingAsync_EmptyChoicesChunk_DoesNotThrow()
+        {
+            var sse =
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n" +
+                "data: {\"choices\":[]}\n\n" +
+                "data: [DONE]\n\n";
+
+            var handler = new FakeHttpHandler { Responder = req => sse };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            var response = await provider.ChatStreamingAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system",
+                new SyncProgress<ChatStreamDelta>());
+
+            Assert.That(response.Answer, Is.EqualTo("hi"));
+            Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(0));
+        }
+
+        [Test]
+        public async Task ChatStreamingAsync_AccumulatesUsageAcrossRequests()
+        {
+            string Stream(int total) =>
+                "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n" +
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":" + total + ",\"completion_tokens\":0,\"total_tokens\":" + total + "}}\n\n" +
+                "data: [DONE]\n\n";
+
+            var handler = new FakeHttpHandler { Responder = req => Stream(100) };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            await provider.ChatStreamingAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system",
+                new SyncProgress<ChatStreamDelta>());
+
+            handler.Responder = req => Stream(50);
+            await provider.ChatStreamingAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system",
+                new SyncProgress<ChatStreamDelta>());
+
+            Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(150));
         }
     }
 }

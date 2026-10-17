@@ -167,6 +167,9 @@ namespace RPAWriter2
         /// <summary>Message content split into text and code blocks (for syntax-highlighted rendering).</summary>
         public IReadOnlyList<MessageBlock> Blocks => ChatMarkdown.SplitBlocks(DisplayText);
 
+        /// <summary>Raw message text (without the role label) split into text and code blocks.</summary>
+        public IReadOnlyList<MessageBlock> TextBlocks => ChatMarkdown.SplitBlocks(Text);
+
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

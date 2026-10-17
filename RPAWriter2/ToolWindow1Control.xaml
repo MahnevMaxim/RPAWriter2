@@ -356,35 +356,25 @@
     </UserControl.Resources>
     <TabControl x:Name="MainTabs" Margin="8">
         <TabItem Header="Chat">
-            <Grid>
+            <Grid x:Name="ChatRoot">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="3*" MinHeight="60"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="1*" MinHeight="60"/>
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                <StackPanel x:Name="ChatToolbarPanel" Grid.Row="0" Margin="0,0,0,6">
                     <WrapPanel Margin="0,5,0,6">
-                        <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,0"/>
-                        <ComboBox x:Name="HistoryCombo" Width="220" VerticalAlignment="Center" Margin="0,0,4,0"
-                                  DisplayMemberPath="DisplayTitle"
-                                  SelectionChanged="OnHistorySelectionChanged"
-                                  ToolTip="Chat history"/>
-                        <Button Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                                ToolTip="Delete current chat" Click="OnDeleteChat" Margin="0,0,8,0">
-                            <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
-                        </Button>
-                        <Button Content="commit" Click="OnCommit" Margin="0,0,8,0"/>
-                        <Button Content="deploy" Click="OnBuildRelease" Margin="0,0,8,0"/>
-                        <Button Content="generate robot" Click="OnGenerateRobot" Margin="0,0,8,0"/>
-                        <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,0"/>
-                        <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,0"/>
-                        <Button Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                                ToolTip="Copy conversation" Click="OnCopyConversation" Margin="0,0,8,0">
-                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
-                        </Button>
+                        <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
+                        <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
+                        <Button Content="commit" Click="OnCommit" Margin="0,0,8,4"/>
+                        <Button Content="deploy" Click="OnBuildRelease" Margin="0,0,8,4"/>
+                        <Button Content="generate robot" Click="OnGenerateRobot" Margin="0,0,8,4"/>
+                        <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,4"/>
+                        <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
+                        <Button Content="copy" Click="OnCopyConversation" Margin="0,0,8,4"/>
                     </WrapPanel>
                     <Border x:Name="CreateRobotPanel" Margin="0,0,0,6"
                             Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
@@ -398,7 +388,63 @@
                     </Border>
                 </StackPanel>
 
-                <Grid Grid.Row="1" Margin="0,0,0,4">
+                <Border x:Name="PinnedHeaderPanel" Grid.Row="1" Margin="0,0,0,4"
+                        Background="{StaticResource Chat.UserBackground}"
+                        BorderBrush="{StaticResource Chat.UserBorder}"
+                        BorderThickness="1" CornerRadius="2" Padding="8,6"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                    VerticalAlignment="Top" Click="OnPinnedExpandToggle"
+                                    ToolTip="Expand/collapse message">
+                                <Viewbox Width="16" Height="16">
+                                    <Polyline x:Name="PinnedExpandGlyph"
+                                              Points="9,18 15,12 9,6"
+                                              Stroke="{StaticResource Dark.Text}"
+                                              StrokeThickness="2"
+                                              StrokeLineJoin="Round"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              Fill="Transparent"/>
+                                </Viewbox>
+                            </Button>
+                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                    VerticalAlignment="Top" Margin="8,0,0,0"
+                                    ToolTip="Close chat (show history)" Click="OnCloseChat">
+                                <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
+                            </Button>
+                        </Grid>
+                        <ScrollViewer Grid.Row="1" x:Name="PinnedTextScroll" Margin="0,6,0,0" MaxHeight="48"
+                                      VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding TextBlocks, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <ContentControl Content="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <ProgressBar x:Name="ChatContextFillBar" Grid.Row="2" Height="4" Margin="0,6,0,0"
+                                     Minimum="0" Maximum="100" Value="0"
+                                     Foreground="{StaticResource Dark.Accent}"/>
+                        <TextBlock x:Name="ChatTokenUsageText" Grid.Row="3" Margin="0,4,0,0"
+                                   Foreground="#C8C8C8" Text="Context window: —"/>
+                    </Grid>
+                </Border>
+
+                <Grid x:Name="ChatListContainer" Grid.Row="2" Margin="0,0,0,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -477,11 +523,11 @@
                     </ScrollViewer>
                 </Grid>
 
-                <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
+                <GridSplitter x:Name="ChatSplitter" Grid.Row="3" Height="5" HorizontalAlignment="Stretch"
                               VerticalAlignment="Center" ResizeDirection="Rows"
                               ResizeBehavior="PreviousAndNext"/>
 
-                <Grid Grid.Row="3">
+                <Grid x:Name="ChatInputPanel" Grid.Row="4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -507,7 +553,7 @@
                                  VerticalScrollBarVisibility="Auto"
                                  PreviewKeyDown="OnInputKeyDown"/>
                         <Button Grid.Column="1" x:Name="SendButton" Width="28" Height="28"
-                                Margin="8,0,0,0" VerticalAlignment="Bottom" Click="OnSend"
+                                Margin="8,0,0,5" VerticalAlignment="Bottom" Click="OnSend"
                                 Style="{StaticResource IconButtonStyle}"
                                 ToolTip="Send (Enter)">
                             <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
@@ -515,7 +561,7 @@
                                   Width="18" Height="18"/>
                         </Button>
                         <Button Grid.Column="2" x:Name="MicButton" Width="28" Height="28"
-                                Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                Margin="8,0,0,5" VerticalAlignment="Bottom"
                                 Style="{StaticResource IconButtonStyle}"
                                 ToolTip="Microphone">
                             <Path Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18">
@@ -528,7 +574,7 @@
                             </Path>
                         </Button>
                     </Grid>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
                         <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
                                      IsChecked="True" Checked="OnModeChanged"
@@ -543,6 +589,48 @@
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Ask the agent to update the project memory bank"/>
                     </StackPanel>
+                </Grid>
+
+                <Grid x:Name="HistoryViewPanel" Grid.Row="0" Grid.RowSpan="5"
+                      Background="{StaticResource Dark.Window}" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <Button HorizontalAlignment="Left" Content="New chat" Click="OnNewChat" Margin="0,5,0,0"/>
+                        <Button HorizontalAlignment="Right" Content="Clear history" Click="OnClearHistory" Margin="0,5,0,0"/>
+                    </Grid>
+
+                    <TextBlock Grid.Row="1" Text="Chat history" FontWeight="Bold" HorizontalAlignment="Center"
+                               Margin="0,16,0,8" Foreground="{StaticResource Dark.Text}"/>
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  HorizontalAlignment="Center" Width="420">
+                        <ItemsControl x:Name="HistoryList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,6">
+                                        <Button HorizontalContentAlignment="Stretch" Click="OnHistoryCardClick" Padding="10,8,32,8">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding CardTitle}" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource Dark.Text}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding DisplayDate}" Margin="0,4,0,0"
+                                                           Foreground="#9E9E9E"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                                                Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
+                                                ToolTip="Delete chat" Click="OnDeleteHistoryCard">
+                                            <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
         </TabItem>

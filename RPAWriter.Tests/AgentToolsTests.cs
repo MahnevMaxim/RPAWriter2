@@ -157,7 +157,28 @@ namespace RPAWriter.Tests
             Assert.That(sent[0]["content"].Value<string>(), Is.EqualTo("SYSPROMPT"));
             Assert.That(sent[1]["role"].Value<string>(), Is.EqualTo("user"));
             Assert.That(sent[2]["role"].Value<string>(), Is.EqualTo("assistant"));
-            Assert.That(sent[3]["role"].Value<string>(), Is.EqualTo("tool"));
+            Assert.That(sent[3]["role"].Value<string>(), Is.EqualTo("user"));
+        }
+
+        [Test]
+        public async Task ChatAsync_ToolMessageWithoutToolCallId_IsDowngradedToUser()
+        {
+            var handler = new FakeHttpHandler { Responder = req => Completion("ok") };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var messages = new List<ChatMessageData>
+            {
+                new ChatMessageData { Role = "user", Content = "hi" },
+                new ChatMessageData { Role = "assistant", Content = "call" },
+                new ChatMessageData { Role = "tool", Content = "result" }
+            };
+
+            await provider.ChatAsync(messages, "SYS");
+
+            var body = JObject.Parse(handler.LastBody);
+            var sent = (JArray)body["messages"];
+            Assert.That(sent[3]["role"].Value<string>(), Is.EqualTo("user"));
+            Assert.That(sent[3]["tool_call_id"], Is.Null);
         }
     }
 

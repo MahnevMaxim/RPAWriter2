@@ -463,14 +463,15 @@ namespace RPAWriter.Core.Services
 
                         RecordUsage(chunk["usage"]);
 
-                        var fr = chunk["choices"]?[0]?["finish_reason"]?.Value<string>();
+                        var firstChoice = (chunk["choices"] as JArray)?.First;
+                        var fr = firstChoice?["finish_reason"]?.Value<string>();
                         if (!string.IsNullOrWhiteSpace(fr))
                         {
                             finishReason.Clear();
                             finishReason.Append(fr);
                         }
 
-                        var delta = chunk["choices"]?[0]?["delta"];
+                        var delta = firstChoice?["delta"];
                         if (delta == null) continue;
 
                         var reasoningDelta = ExtractReasoning(delta);
@@ -815,7 +816,15 @@ namespace RPAWriter.Core.Services
         {
             var list = new List<object> { new { role = "system", content = systemPrompt ?? "" } };
             foreach (var m in messages ?? new List<ChatMessageData>())
-                list.Add(new { role = string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, content = m?.Content ?? "" });
+            {
+                var role = string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role;
+                // OpenAI requires a tool_call_id on every "tool" message. This provider uses a
+                // JSON-over-chat tool protocol (no native tool_calls), so a bare "tool" role is
+                // invalid and must be downgraded to "user".
+                if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
+                    role = "user";
+                list.Add(new { role = role, content = m?.Content ?? "" });
+            }
 
             var payload = new JObject
             {
@@ -824,7 +833,12 @@ namespace RPAWriter.Core.Services
                 ["messages"] = JArray.FromObject(list)
             };
             if (stream)
+            {
                 payload["stream"] = true;
+                // Ask OpenAI-compatible endpoints to include token usage in the final SSE chunk;
+                // without it the chat context progress bar never receives real token counts during streaming.
+                payload["stream_options"] = new JObject { ["include_usage"] = true };
+            }
 
             var json = payload.ToString(Formatting.None);
 

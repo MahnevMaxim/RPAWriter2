@@ -2,8 +2,11 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System;
+using System.ComponentModel;
 using System.Globalization;
+using System.Windows.Data;
 using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
@@ -12,6 +15,7 @@ using RPAWriter2.Services;
 using RPAWriter2.Services.AgentTools;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.PlatformUI;
 using EnvDTE;
 using EnvDTE80;
 using System.Threading.Tasks;
@@ -39,6 +43,13 @@ namespace RPAWriter2
             Idle,
             Streaming,
             Error
+        }
+
+        /// <summary>Whether the chat tab shows the active conversation or the history list.</summary>
+        private enum ChatViewMode
+        {
+            Conversation,
+            History
         }
 
         private SettingsData _settings;
@@ -69,13 +80,19 @@ namespace RPAWriter2
         private ChatConversation _currentConversation = new ChatConversation();
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         private bool _loadingHistory;
-        private bool _updatingHistoryCombo;
+        private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
+        private ChatMessage? _pinnedMessage;
+        private ICollectionView? _chatListView;
+        private bool _pinnedExpanded;
 
         public ToolWindow1Control()
         {
             this.InitializeComponent();
-            ChatList.ItemsSource = _messages;
+            _chatListView = CollectionViewSource.GetDefaultView(_messages);
+            _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
+            ChatList.ItemsSource = _chatListView;
             SpecList.ItemsSource = _specMessages;
+            HistoryList.ItemsSource = _conversations;
             LoadSettings();
             RecreateAiProvider();
             _buildFeedback = new BuildFeedbackService();
@@ -199,6 +216,8 @@ namespace RPAWriter2
                 return;
             }
             _messages.Add(message);
+            if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
+                RefreshPinnedMessage();
             ChatScroll.ScrollToEnd();
             if (!_loadingHistory)
                 ScheduleHistorySave();
@@ -460,16 +479,21 @@ namespace RPAWriter2
             {
                 TokenUsageText.Text = "Context window: —";
                 ContextFillBar.Value = 0;
+                ChatTokenUsageText.Text = "Context window: —";
+                ChatContextFillBar.Value = 0;
                 return;
             }
             var usage = provider.TotalTokenUsage;
-            TokenUsageText.Text = "Context window: " + usage.TotalTokens.ToString("N0") +
-                                  " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
+            var text = "Context window: " + usage.TotalTokens.ToString("N0") +
+                       " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
+            TokenUsageText.Text = text;
+            ChatTokenUsageText.Text = text;
 
             var ratio = provider.ContextWindowSize > 0
                 ? Math.Min(100.0, 100.0 * usage.TotalTokens / provider.ContextWindowSize)
                 : 0.0;
             ContextFillBar.Value = ratio;
+            ChatContextFillBar.Value = ratio;
         }
 
         private void ShowError(Exception ex)
@@ -1343,6 +1367,7 @@ namespace RPAWriter2
                     _messages.Add(new ChatMessage { Kind = kind, Text = m.Content });
                 }
                 AppendCompaction("Context compacted (summarized).");
+                RefreshPinnedMessage();
                 ScheduleHistorySave();
             }
             catch (Exception ex)
@@ -1392,7 +1417,6 @@ namespace RPAWriter2
         {
             _historySaveTimer.Tick += OnHistorySaveTick;
             this.Unloaded += OnWindowUnloaded;
-            HistoryCombo.ItemsSource = _conversations;
 
             try
             {
@@ -1468,14 +1492,14 @@ namespace RPAWriter2
                     CreatedAtUtc = DateTime.UtcNow,
                     UpdatedAtUtc = DateTime.UtcNow
                 };
-                AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
             }
             finally
             {
                 _loadingHistory = false;
             }
 
-            UpdateHistorySelection();
+            RefreshPinnedMessage();
+            ShowConversationView();
             if (markDirty)
                 ScheduleHistorySave();
         }
@@ -1511,6 +1535,7 @@ namespace RPAWriter2
                     _messages.Add(FromHistoryMessage(m));
                 }
                 _currentConversation = stored;
+                RefreshPinnedMessage();
                 ChatScroll.ScrollToEnd();
             }
             finally
@@ -1518,28 +1543,124 @@ namespace RPAWriter2
                 _loadingHistory = false;
             }
 
-            UpdateHistorySelection();
             if (markDirty)
                 ScheduleHistorySave();
         }
 
-        private void DeleteCurrentConversation()
+        private void RefreshHistoryList()
         {
-            var id = _currentConversation?.Id;
-            if (string.IsNullOrWhiteSpace(id))
+            try
+            {
+                _conversations.Clear();
+                foreach (var conversation in ChatHistoryStore.ListConversations())
+                    _conversations.Add(conversation);
+            }
+            catch
+            {
+                // best-effort refresh of the history list
+            }
+        }
+
+        private void ShowConversationView()
+        {
+            _chatViewMode = ChatViewMode.Conversation;
+            ApplyChatViewMode();
+        }
+
+        private void ShowHistoryView()
+        {
+            _chatViewMode = ChatViewMode.History;
+            RefreshHistoryList();
+            ApplyChatViewMode();
+        }
+
+        private void ApplyChatViewMode()
+        {
+            var conversation = _chatViewMode == ChatViewMode.Conversation;
+            ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            ChatListContainer.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            ChatInputPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            PinnedHeaderPanel.Visibility = conversation && _pinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
+            HistoryViewPanel.Visibility = conversation ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void OnCloseChat(object sender, RoutedEventArgs e)
+        {
+            SaveHistoryNow();
+            ShowHistoryView();
+        }
+
+        private void OnShowHistory(object sender, RoutedEventArgs e)
+        {
+            SaveHistoryNow();
+            ShowHistoryView();
+        }
+
+        private void OnHistoryCardClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: ChatConversation conversation })
+            {
+                OpenConversation(conversation.Id);
+                ShowConversationView();
+            }
+        }
+
+        private void OnDeleteHistoryCard(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is FrameworkElement { DataContext: ChatConversation conversation }))
                 return;
 
-            _chatCts?.Cancel();
+            var result = MessageDialog.Show(
+                "Delete chat",
+                "Delete this chat?\n\n" + conversation.CardTitle,
+                MessageDialogCommandSet.YesNo);
+            if (result != MessageDialogCommand.Yes)
+                return;
 
             try
             {
-                ChatHistoryStore.DeleteConversation(id);
+                ChatHistoryStore.DeleteConversation(conversation.Id);
             }
             catch (Exception ex)
             {
                 AppendExtensionError("Failed to delete chat: " + ex.Message);
                 return;
             }
+
+            if (conversation.Id == _currentConversation?.Id)
+                ResetCurrentConversation();
+
+            RefreshHistoryList();
+        }
+
+        private void OnClearHistory(object sender, RoutedEventArgs e)
+        {
+            var result = MessageDialog.Show(
+                "Clear history",
+                "Delete all chats? This cannot be undone.",
+                MessageDialogCommandSet.YesNo);
+            if (result != MessageDialogCommand.Yes)
+                return;
+
+            try
+            {
+                ChatHistoryStore.DeleteAllConversations();
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to clear chat history: " + ex.Message);
+                return;
+            }
+
+            ResetCurrentConversation();
+            RefreshHistoryList();
+        }
+
+        /// <summary>Resets the in-memory conversation to a fresh empty one without persisting it.</summary>
+        private void ResetCurrentConversation()
+        {
+            _historySaveTimer.Stop();
 
             _loadingHistory = true;
             try
@@ -1551,65 +1672,46 @@ namespace RPAWriter2
                     CreatedAtUtc = DateTime.UtcNow,
                     UpdatedAtUtc = DateTime.UtcNow
                 };
-                AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
             }
             finally
             {
                 _loadingHistory = false;
             }
 
-            RefreshHistoryList();
-            UpdateHistorySelection();
+            RefreshPinnedMessage();
         }
 
-        private void RefreshHistoryList()
+        private const double PinnedCollapsedHeight = 48.0;
+        private const double PinnedExpandedHeight = 240.0;
+
+        private void OnPinnedExpandToggle(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                _conversations.Clear();
-                foreach (var conversation in ChatHistoryStore.ListConversations())
-                    _conversations.Add(conversation);
-                UpdateHistorySelection();
-            }
-            catch
-            {
-                // best-effort refresh of the history dropdown
-            }
+            _pinnedExpanded = !_pinnedExpanded;
+            UpdatePinnedExpandState();
         }
 
-        private void UpdateHistorySelection()
+        private void UpdatePinnedExpandState()
         {
-            if (HistoryCombo == null)
-                return;
+            PinnedTextScroll.MaxHeight = _pinnedExpanded ? PinnedExpandedHeight : PinnedCollapsedHeight;
+            PinnedTextScroll.VerticalScrollBarVisibility = _pinnedExpanded ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+            PinnedExpandGlyph.Points = PointCollection.Parse(_pinnedExpanded ? "6,9 12,15 18,9" : "9,18 15,12 9,6");
+        }
 
-            var currentId = _currentConversation?.Id;
-            _updatingHistoryCombo = true;
-            try
-            {
-                HistoryCombo.SelectedItem = _conversations.FirstOrDefault(c => c.Id == currentId);
-            }
-            finally
-            {
-                _updatingHistoryCombo = false;
-            }
+        private void RefreshPinnedMessage()
+        {
+            _pinnedMessage = _messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User)
+                          ?? _messages.FirstOrDefault();
+            PinnedHeaderPanel.DataContext = _pinnedMessage;
+            _pinnedExpanded = false;
+            UpdatePinnedExpandState();
+            if (_chatListView != null)
+                _chatListView.Refresh();
+            ApplyChatViewMode();
         }
 
         private void OnNewChat(object sender, RoutedEventArgs e)
         {
             StartNewChat();
-        }
-
-        private void OnDeleteChat(object sender, RoutedEventArgs e)
-        {
-            DeleteCurrentConversation();
-        }
-
-        private void OnHistorySelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_updatingHistoryCombo)
-                return;
-            if (HistoryCombo.SelectedItem is ChatConversation conversation && conversation.Id != _currentConversation?.Id)
-                OpenConversation(conversation.Id);
         }
 
         private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)

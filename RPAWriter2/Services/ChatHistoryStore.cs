@@ -38,6 +38,14 @@ namespace RPAWriter2.Services
                 return title + when;
             }
         }
+
+        /// <summary>Title for a history card: the first message text, or a placeholder.</summary>
+        public string CardTitle => string.IsNullOrWhiteSpace(Title) ? "(empty)" : Title;
+
+        /// <summary>Local date shown on a history card.</summary>
+        public string DisplayDate => UpdatedAtUtc == default(DateTime)
+            ? ""
+            : UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -252,6 +260,17 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name);";
             {
                 command.CommandText = "DELETE FROM conversations WHERE id = @id;";
                 command.Parameters.AddWithValue("@id", id);
+                command.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>Deletes every stored conversation and all of their messages.</summary>
+        public static void DeleteAllConversations()
+        {
+            using (var connection = Open())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "DELETE FROM messages; DELETE FROM conversations;";
                 command.ExecuteNonQuery();
             }
         }
