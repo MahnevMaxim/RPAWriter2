@@ -30,5 +30,8 @@ namespace RPAWriter2
             // the object returned by the Content property.
             this.Content = new ToolWindow1Control();
         }
+
+        /// <summary>The hosted user control.</summary>
+        public ToolWindow1Control? Control => this.Content as ToolWindow1Control;
     }
 }

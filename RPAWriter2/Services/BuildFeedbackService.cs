@@ -60,7 +60,11 @@ namespace RPAWriter2.Services
                     Message = item.Description ?? string.Empty,
                     File = item.FileName ?? string.Empty,
                     Line = item.Line,
-                    Severity = MapSeverity(item.ErrorLevel)
+                    Column = item.Column,
+                    Project = item.Project ?? string.Empty,
+                    Severity = MapSeverity(item.ErrorLevel),
+                    ErrorLevel = (int)item.ErrorLevel,
+                    ErrorLevelName = item.ErrorLevel.ToString()
                 });
             }
 

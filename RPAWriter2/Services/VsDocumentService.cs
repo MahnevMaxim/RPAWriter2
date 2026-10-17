@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
@@ -41,11 +42,12 @@ namespace RPAWriter2.Services
 
         /// <summary>
         /// Finds the open document for <paramref name="path"/> or opens it in Visual Studio,
-        /// then activates its tab. Returns the document, or null when it cannot be opened.
+        /// then activates its tab and waits until the editor buffer (TextDocument) is ready.
+        /// Returns the document, or null when it cannot be opened.
         /// </summary>
-        public static Document? OpenOrActivate(DTE2 dte, string path)
+        public static async Task<Document?> OpenOrActivateAsync(DTE2 dte, string path)
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             if (dte == null || string.IsNullOrWhiteSpace(path)) return null;
 
             var doc = FindOpenDocument(dte, path);
@@ -57,8 +59,35 @@ namespace RPAWriter2.Services
             if (doc != null)
             {
                 doc.Activate();
+                await WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
             }
             return doc;
+        }
+
+        /// <summary>
+        /// Waits (bounded, without blocking the UI thread) until the document's TextDocument
+        /// object is available. A freshly opened document may not expose its editor buffer
+        /// immediately, so reading it right away can return null.
+        /// </summary>
+        public static async Task<bool> WaitForDocumentReadyAsync(Document? doc, int maxAttempts = 40, int pollMs = 50)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (doc == null) return false;
+
+            for (var i = 0; i < maxAttempts; i++)
+            {
+                try
+                {
+                    if (doc.Object("TextDocument") is TextDocument) return true;
+                }
+                catch
+                {
+                    // Not ready yet; the editor buffer is still being created.
+                }
+
+                await Task.Delay(pollMs).ConfigureAwait(true);
+            }
+            return false;
         }
 
         /// <summary>Reads the full text of an open text document (the editor tab buffer). Returns null for non-text documents.</summary>

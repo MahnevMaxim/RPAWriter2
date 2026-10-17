@@ -71,8 +71,9 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("read_errors", "Read compiler errors from the Visual Studio Error List.", "{}", false, ReadErrorsAsync));
             registry.Register(new AgentTool("read_output", "Read the Visual Studio Output window text.", "{}", false, ReadOutputAsync));
             registry.Register(new AgentTool("open_file", "Open a file in Visual Studio and activate its tab. Use before read_open_document when the file's tab is not open yet. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
-            registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync));
+            registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
             registry.Register(new AgentTool("analyze_logs", "Analyze log files at the given paths.", "{\"paths\":[\"string\"]}", false, AnalyzeLogsAsync));
+            registry.Register(new AgentTool("read_memory", "Read the project memory bank (memory-bank/*.md) to restore long-term context.", "{}", false, ReadMemoryAsync));
 
             // ---- Mutating tools (Act only) ----
             registry.Register(new AgentTool("generate_robot", "Generate a robot (XAML/C#) from the imported spec and save the artifacts next to the spec.", "{}", mutates: true, GenerateRobotAsync));
@@ -83,6 +84,7 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("convert_uipath", "Convert a UiPath XAML file to Workflow Foundation and write the artifacts.", "{\"path\":\"string\"}", true, ConvertUiPathAsync));
             registry.Register(new AgentTool("kb_import", "Import the knowledge base from the robots directory.", "{\"mode\":\"override|continue\"}", true, KbImportAsync));
             registry.Register(new AgentTool("kb_add", "Add a record to the knowledge base.", "{\"name\":\"string\",\"task\":\"string\",\"xamlFragment\":\"string\",\"csharpCode\":\"string\"}", true, KbAddAsync));
+            registry.Register(new AgentTool("update_memory", "Write a project memory bank file (activeContext.md, progress.md, etc.).", "{\"file\":\"string\",\"content\":\"string\"}", true, UpdateMemoryAsync));
 
             return registry;
         }
@@ -139,7 +141,7 @@ namespace RPAWriter2.Services.AgentTools
 
             try
             {
-                var doc = VsDocumentService.OpenOrActivate(dte, p);
+                var doc = await VsDocumentService.OpenOrActivateAsync(dte, p).ConfigureAwait(true);
                 return doc == null
                     ? "Could not open the file in Visual Studio: " + p
                     : "Opened in Visual Studio: " + p;
@@ -152,28 +154,51 @@ namespace RPAWriter2.Services.AgentTools
 
         private async Task<string> ReadOpenDocumentAsync(JObject args, CancellationToken ct)
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var resolved = ResolveOpenDocument(args);
+            var doc = resolved.Doc;
+            if (doc == null) return resolved.Error ?? "The document is not open in the editor.";
+
+            await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
+            var text = VsDocumentService.ReadDocumentText(doc);
+            if (text == null) return "The document is not ready or not a text document: " + (resolved.Path ?? doc.Name);
+            return Truncate(text);
+        }
+
+        private async Task<string> ReadOpenDocumentDisplayAsync(JObject args, CancellationToken ct)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var resolved = ResolveOpenDocument(args);
+            var doc = resolved.Doc;
+            if (doc == null) return resolved.Error ?? "Document not open.";
+            return resolved.Path ?? doc.Name;
+        }
+
+        private (Document? Doc, string? Path, string? Error) ResolveOpenDocument(JObject args)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             var rawPath = args["path"]?.Value<string>() ?? "";
             var p = string.IsNullOrWhiteSpace(rawPath) ? null : ResolvePath(rawPath);
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
             var dte = _getDte();
-            if (dte == null) return "Visual Studio is not available.";
+            if (dte == null) return (null, null, "Visual Studio is not available.");
 
             Document? doc;
             if (p != null)
             {
                 doc = VsDocumentService.FindOpenDocument(dte, p);
-                if (doc == null) return "The file is not open in the editor: " + p;
+                if (doc == null) return (null, p, "The file is not open in the editor: " + p);
             }
             else
             {
                 doc = dte.ActiveDocument;
-                if (doc == null) return "No document is active in the editor.";
+                if (doc == null) return (null, null, "No document is active in the editor.");
             }
 
-            var text = VsDocumentService.ReadDocumentText(doc);
-            if (text == null) return "The document is not a text document: " + (p ?? doc.Name);
-            return Truncate(text);
+            var fullPath = doc.FullName;
+            if (string.IsNullOrWhiteSpace(fullPath)) fullPath = p;
+            return (doc, fullPath, null);
         }
 
         private Task<string> ReadRobotSourcesAsync(JObject args, CancellationToken ct)
@@ -284,33 +309,51 @@ namespace RPAWriter2.Services.AgentTools
         private async Task<string> ReadErrorsAsync(JObject args, CancellationToken ct)
         {
             var errors = await _buildFeedback.GetCompilationErrorsAsync(ct).ConfigureAwait(false);
-            var all = errors ?? new List<BuildError>();
-            var red = all
-                .Where(e => e != null && string.Equals(e.Severity, "Error", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (red.Count == 0)
-                return await BuildNoErrorsSummaryAsync(all, ct).ConfigureAwait(false);
+            var all = (errors ?? new List<BuildError>()).Where(e => e != null).ToList();
+            if (all.Count == 0)
+                return await BuildNoErrorsSummaryAsync(ct).ConfigureAwait(false);
 
             var sb = new StringBuilder();
-            foreach (var e in red)
+            sb.AppendLine("Error List (" + all.Count + " entries):");
+            foreach (var e in all)
             {
-                var loc = e.File ?? "";
-                if (e.Line > 0) loc = string.IsNullOrEmpty(loc) ? "line " + e.Line : loc + ":" + e.Line;
-                sb.AppendLine("[Error] " + (string.IsNullOrWhiteSpace(e.Code) ? "" : e.Code + ": ") +
-                              (e.Message ?? "") + (string.IsNullOrEmpty(loc) ? "" : " (" + loc + ")"));
+                var severity = string.IsNullOrWhiteSpace(e.Severity) ? "Error" : e.Severity;
+                sb.Append("[").Append(severity).Append("] ");
+                if (!string.IsNullOrWhiteSpace(e.Code)) sb.Append(e.Code).Append(": ");
+                sb.Append(e.Message ?? string.Empty);
+
+                var location = FormatToolLocation(e);
+                if (!string.IsNullOrEmpty(location)) sb.Append(" (").Append(location).Append(")");
+                if (!string.IsNullOrWhiteSpace(e.Project)) sb.Append(" [Project: ").Append(e.Project).Append("]");
+                var level = FormatToolLevel(e);
+                if (!string.IsNullOrEmpty(level)) sb.Append(" [").Append(level).Append("]");
+                sb.AppendLine();
             }
             return sb.ToString();
         }
 
-        private async Task<string> BuildNoErrorsSummaryAsync(IReadOnlyList<BuildError> errors, CancellationToken ct)
+        private static string FormatToolLocation(BuildError e)
         {
-            var warnings = errors.Count(e => e != null && string.Equals(e.Severity, "Warning", StringComparison.OrdinalIgnoreCase));
-            var messages = errors.Count(e => e != null && string.Equals(e.Severity, "Message", StringComparison.OrdinalIgnoreCase));
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(e.File)) parts.Add(e.File);
+            if (e.Line > 0) parts.Add("line " + e.Line);
+            if (e.Column > 0) parts.Add("col " + e.Column);
+            return string.Join(", ", parts);
+        }
 
+        private static string FormatToolLevel(BuildError e)
+        {
+            if (!string.IsNullOrWhiteSpace(e.ErrorLevelName))
+                return e.ErrorLevelName + " = " + e.ErrorLevel;
+            if (e.ErrorLevel != 0)
+                return "level " + e.ErrorLevel;
+            return string.Empty;
+        }
+
+        private async Task<string> BuildNoErrorsSummaryAsync(CancellationToken ct)
+        {
             var sb = new StringBuilder();
-            sb.AppendLine("No compilation errors found.");
-            if (warnings > 0 || messages > 0)
-                sb.AppendLine("Error List contains " + warnings + " warning(s) and " + messages + " message(s), but no Error-level entries.");
+            sb.AppendLine("The Visual Studio Error List is empty.");
 
             string output;
             try
@@ -367,6 +410,47 @@ namespace RPAWriter2.Services.AgentTools
             foreach (var e in analysis.Errors.Take(50)) sb.AppendLine("ERR: " + (e.Message ?? ""));
             foreach (var w in analysis.Warnings.Take(50)) sb.AppendLine("WARN: " + (w.Message ?? ""));
             return Task.FromResult(sb.ToString());
+        }
+
+        private Task<string> ReadMemoryAsync(JObject args, CancellationToken ct)
+        {
+            var root = _getSolutionDir();
+            if (string.IsNullOrWhiteSpace(root))
+                return Task.FromResult("No open solution directory — memory bank unavailable.");
+
+            try
+            {
+                MemoryBankService.EnsureInitialized(root);
+                var text = MemoryBankService.ReadAll(root);
+                return Task.FromResult(string.IsNullOrWhiteSpace(text) ? "(memory bank is empty)" : Truncate(text, 40000));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult("Failed to read memory bank: " + ex.Message);
+            }
+        }
+
+        private Task<string> UpdateMemoryAsync(JObject args, CancellationToken ct)
+        {
+            var root = _getSolutionDir();
+            if (string.IsNullOrWhiteSpace(root))
+                return Task.FromResult("No open solution directory — memory bank unavailable.");
+
+            var file = args["file"]?.Value<string>() ?? "";
+            var content = args["content"]?.Value<string>() ?? "";
+            if (!MemoryBankService.IsAllowed(file))
+                return Task.FromResult("Invalid memory bank file. Use one of: " + string.Join(", ", MemoryBankFiles.Core));
+
+            try
+            {
+                MemoryBankService.EnsureInitialized(root);
+                MemoryBankService.WriteFile(root, file, content);
+                return Task.FromResult("Memory bank updated: " + file);
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult("Failed to update memory bank: " + ex.Message);
+            }
         }
 
         private string ResolvePath(string path)

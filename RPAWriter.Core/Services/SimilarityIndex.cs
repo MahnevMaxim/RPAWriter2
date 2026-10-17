@@ -55,6 +55,15 @@ namespace RPAWriter.Core.Services
 
         private static double Score(TaskDescriptor query, TaskDescriptor candidate, IReadOnlyList<string> queryTokens)
         {
+            var queryIsSap = query != null && query.IsSapTransactionTask;
+            var candidateIsSap = candidate != null && candidate.IsSapTransactionTask;
+            if (queryIsSap || candidateIsSap)
+            {
+                if (queryIsSap && candidateIsSap)
+                    return string.Equals(SapKey(query), SapKey(candidate), StringComparison.Ordinal) ? 1.0 : 0.0;
+                return 0.0;
+            }
+
             var candidateTokens = BuildTokens(candidate);
             if (queryTokens.Count == 0 || candidateTokens.Count == 0) return 0;
 
@@ -75,9 +84,36 @@ namespace RPAWriter.Core.Services
             return Math.Min(1.0, jaccard + activityBoost + actionBoost);
         }
 
+        private static string SapKey(TaskDescriptor task)
+        {
+            return NormalizeSapCode(task?.SapTransactionCode) + "|" + NormalizeSapKind(task?.SapActionKind);
+        }
+
+        private static string NormalizeSapCode(string code)
+        {
+            return (code ?? "").Trim().ToUpperInvariant();
+        }
+
+        private static string NormalizeSapKind(SapActionKind? kind)
+        {
+            switch (kind)
+            {
+                case SapActionKind.Setup: return "setup";
+                case SapActionKind.Work: return "work";
+                case SapActionKind.GetTable: return "gettable";
+                default: return "";
+            }
+        }
+
         private static List<string> BuildReasons(TaskDescriptor query, TaskDescriptor candidate)
         {
             var reasons = new List<string>();
+            if (query != null && candidate != null && query.IsSapTransactionTask && candidate.IsSapTransactionTask)
+            {
+                if (string.Equals(SapKey(query), SapKey(candidate), StringComparison.Ordinal))
+                    reasons.Add("matched SAP transaction: " + NormalizeSapCode(query.SapTransactionCode) + " (" + NormalizeSapKind(query.SapActionKind) + ")");
+                return reasons;
+            }
             if (string.Equals(query.ActivityType, candidate.ActivityType, StringComparison.OrdinalIgnoreCase))
                 reasons.Add("matched activity type: " + query.ActivityType);
             if (string.Equals(query.Action, candidate.Action, StringComparison.OrdinalIgnoreCase))

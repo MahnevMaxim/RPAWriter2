@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace RPAWriter.Core.Models
 {
@@ -25,6 +27,32 @@ namespace RPAWriter.Core.Models
         Act
     }
 
+    /// <summary>
+    /// Kind of a chat entry in the UI transcript. The kind determines the label and the
+    /// renderer, mirroring Cline's discriminated message kinds (say/ask) with a typed payload.
+    /// </summary>
+    public enum ChatMessageKind
+    {
+        /// <summary>A message typed by the user.</summary>
+        User,
+        /// <summary>The agent's final answer (markdown).</summary>
+        AgentText,
+        /// <summary>A tool invocation that was executed.</summary>
+        ToolCall,
+        /// <summary>A tool invocation that was blocked (e.g. mutating tool in Plan mode).</summary>
+        ToolBlocked,
+        /// <summary>An extension-side error.</summary>
+        Error,
+        /// <summary>A system notice (informational).</summary>
+        SystemNotice,
+        /// <summary>A context compaction notice.</summary>
+        Compaction,
+        /// <summary>A Plan/Act mode switch notice.</summary>
+        ModeSwitch,
+        /// <summary>A diff edit produced by apply_fix (reserved for a future renderer).</summary>
+        DiffEdit
+    }
+
     /// <summary>How knowledge-base formation should treat a previous run.</summary>
     public enum KnowledgeBaseFormationMode
     {
@@ -34,6 +62,38 @@ namespace RPAWriter.Core.Models
         Continue
     }
 
+    /// <summary>Class of an AI provider failure, used by the agent loop to recover from context overflow.</summary>
+    public enum ProviderErrorKind
+    {
+        /// <summary>No classification available.</summary>
+        None,
+        /// <summary>Authentication/authorization failed (HTTP 401/403).</summary>
+        Auth,
+        /// <summary>Rate limit exceeded (HTTP 429).</summary>
+        RateLimit,
+        /// <summary>The request exceeded the model's context window.</summary>
+        ContextWindowExceeded,
+        /// <summary>The response was blocked by a content filter.</summary>
+        ContentFilter,
+        /// <summary>A transient provider-side error worth retrying.</summary>
+        Transient,
+        /// <summary>Any other, unclassified failure.</summary>
+        Other
+    }
+
+
+    /// <summary>Kind of a typed SAP transaction task.</summary>
+    public enum SapActionKind
+    {
+        /// <summary>Setup / launch of a SAP transaction (настройка и запуск транзакции).</summary>
+        Setup,
+
+        /// <summary>Working inside a running transaction (работа с транзакцией).</summary>
+        Work,
+
+        /// <summary>Getting a table / data out of the transaction (получение таблицы).</summary>
+        GetTable
+    }
 
     /// <summary>Atomic task extracted from a spec: action, target, inputs/outputs, keywords, activity type.</summary>
     public class TaskDescriptor
@@ -45,6 +105,17 @@ namespace RPAWriter.Core.Models
         public List<string> Outputs { get; set; } = new List<string>();
         public List<string> Keywords { get; set; } = new List<string>();
         public string ActivityType { get; set; }
+
+        /// <summary>SAP transaction code/name (e.g. "VA01", "SE16N"); empty for non-SAP tasks.</summary>
+        public string SapTransactionCode { get; set; }
+
+        /// <summary>Action kind of a typed SAP transaction task; null for non-SAP tasks.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public SapActionKind? SapActionKind { get; set; }
+
+        /// <summary>True when this task is a typed SAP transaction task.</summary>
+        [JsonIgnore]
+        public bool IsSapTransactionTask => !string.IsNullOrWhiteSpace(SapTransactionCode);
     }
 
     /// <summary>Normalized technical specification.</summary>
@@ -177,14 +248,19 @@ namespace RPAWriter.Core.Models
         public List<string> Filters { get; set; } = new List<string>();
     }
 
-    /// <summary>Compiler error/warning.</summary>
+    /// <summary>Compiler error, warning or message from the Visual Studio Error List.</summary>
     public class BuildError
     {
         public string Code { get; set; }
         public string Message { get; set; }
         public string File { get; set; }
         public int Line { get; set; }
+        public int Column { get; set; }
+        public string Project { get; set; }
         public string Severity { get; set; }
+        public int ErrorLevel { get; set; }
+        public string ErrorLevelName { get; set; }
+        public string Category { get; set; }
     }
 
     /// <summary>Log entry.</summary>
@@ -231,6 +307,13 @@ namespace RPAWriter.Core.Models
     {
         public string Reasoning { get; set; }
         public string Answer { get; set; }
+
+        /// <summary>
+        /// Provider-reported completion reason, e.g. "stop" (finished normally) or
+        /// "length" (cut off at the output-token limit). Empty when the provider
+        /// does not report it.
+        /// </summary>
+        public string FinishReason { get; set; }
     }
 
     /// <summary>A single chat message passed to the AI provider (role + content).</summary>

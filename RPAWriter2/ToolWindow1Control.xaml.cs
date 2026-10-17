@@ -1,8 +1,11 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System;
+using System.Globalization;
 using RPAWriter.Core.AgentTools;
+using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 using RPAWriter2.Services;
@@ -30,6 +33,14 @@ namespace RPAWriter2
     /// </summary>
     public partial class ToolWindow1Control : UserControl
     {
+        /// <summary>Explicit UI phase of the current agent turn (drives the footer buttons/indicators).</summary>
+        private enum AgentPhase
+        {
+            Idle,
+            Streaming,
+            Error
+        }
+
         private SettingsData _settings;
         private IAiProvider _ai;
         private SpecModel _currentSpec;
@@ -37,6 +48,7 @@ namespace RPAWriter2
         private RobotTemplateService _robotTemplate;
         private OutputWindowService _outputWindow;
         private AgentMode _mode = AgentMode.Plan;
+        private AgentPhase _phase = AgentPhase.Idle;
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
         private ITokenUsageProvider? _tokenUsage;
@@ -53,6 +65,11 @@ namespace RPAWriter2
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
+        private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
+        private ChatConversation _currentConversation = new ChatConversation();
+        private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
+        private bool _loadingHistory;
+        private bool _updatingHistoryCombo;
 
         public ToolWindow1Control()
         {
@@ -67,7 +84,7 @@ namespace RPAWriter2
             RebuildAgentTools();
             HookSolutionEvents();
             UpdateCreateRobotVisibility();
-            AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+            InitializeChatHistory();
         }
 
         private void LoadSettings()
@@ -81,6 +98,18 @@ namespace RPAWriter2
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
             ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600).ToString();
+            CompactThresholdBox.Text = _settings.CompactThreshold.ToString(CultureInfo.InvariantCulture);
+            ReserveFractionBox.Text = _settings.ReserveFraction.ToString(CultureInfo.InvariantCulture);
+            KeepRecentBox.Text = _settings.KeepRecentMessages.ToString();
+            ToolResultMaxCharsBox.Text = _settings.ToolResultMaxChars.ToString();
+            MaxIterationsBox.Text = _settings.MaxIterations.ToString();
+            AutoCompactCheckBox.IsChecked = _settings.AutoCompact;
+            UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
+            LogFilePathBox.Text = _settings.LogFilePath ?? "";
+            TimeoutSecondsBox.Text = _settings.TimeoutSeconds.ToString();
+            RetryTimeoutMinutesBox.Text = _settings.RetryTimeoutMinutes.ToString();
+            RetryBaseDelaySecondsBox.Text = _settings.RetryBaseDelaySeconds.ToString();
+            RetryMaxDelaySecondsBox.Text = _settings.RetryMaxDelaySeconds.ToString();
         }
 
         private void RecreateAiProvider()
@@ -89,6 +118,7 @@ namespace RPAWriter2
             UnhookMessageNotifier();
             UnhookRetryNotifier();
             _ai = AiProviderFactory.Create(_settings);
+            LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
             HookTokenUsage();
             HookMessageNotifier();
             HookRetryNotifier();
@@ -126,7 +156,39 @@ namespace RPAWriter2
 
         private void AppendChat(string text)
         {
-            AppendChatMessage(new ChatMessage { Role = "system", Text = text });
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = text });
+        }
+
+        private void AppendExtensionError(string text)
+        {
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.Error, Text = text });
+        }
+
+        private void AppendToolCall(string toolName, string result, bool blocked)
+        {
+            AppendChatMessage(new ChatMessage
+            {
+                Kind = blocked ? ChatMessageKind.ToolBlocked : ChatMessageKind.ToolCall,
+                Payload = new ToolCallPayload { ToolName = toolName ?? "", Result = result ?? "", Blocked = blocked }
+            });
+        }
+
+        private void AppendCompaction(string text)
+        {
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.Compaction, Text = text });
+        }
+
+        private void AppendModeSwitch(string text)
+        {
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = text });
+        }
+
+        private void AppendExtensionError(Exception ex)
+        {
+            if (ex == null) return;
+            LogService.Error(ex);
+            AppendExtensionError(ex.Message);
+            AppendExtensionError(ex.ToString());
         }
 
         private void AppendChatMessage(ChatMessage message)
@@ -138,6 +200,8 @@ namespace RPAWriter2
             }
             _messages.Add(message);
             ChatScroll.ScrollToEnd();
+            if (!_loadingHistory)
+                ScheduleHistorySave();
         }
 
         private void AppendSpecMessage(ChatMessage message)
@@ -153,12 +217,12 @@ namespace RPAWriter2
 
         private void AppendSpecText(string text)
         {
-            AppendSpecMessage(new ChatMessage { Role = "system", Text = text });
+            AppendSpecMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = text });
         }
 
         private ChatMessage AppendSpecStreaming()
         {
-            var message = new ChatMessage { Role = "system", IsThinking = true, Text = "Thinking\u2026" };
+            var message = new ChatMessage { Kind = ChatMessageKind.SystemNotice, IsThinking = true, Text = "Thinking\u2026" };
             AppendSpecMessage(message);
             return message;
         }
@@ -170,6 +234,28 @@ namespace RPAWriter2
                 try { Clipboard.SetText(FormatMessageForCopy(message)); }
                 catch { /* clipboard busy — ignore */ }
             }
+        }
+
+        /// <summary>
+        /// Forwards the mouse wheel from the code block's horizontal-only ScrollViewer to its
+        /// parent, so hovering over a code block still scrolls the chat/spec list vertically.
+        /// </summary>
+        private void OnCodeScrollPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (e.Handled)
+                return;
+
+            e.Handled = true;
+
+            var parent = (sender as FrameworkElement)?.Parent as UIElement;
+            if (parent == null)
+                return;
+
+            parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = MouseWheelEvent,
+                Source = parent
+            });
         }
 
         private void OnCopyConversation(object sender, RoutedEventArgs e)
@@ -281,6 +367,7 @@ namespace RPAWriter2
 
         private void OnAiMessageSent(object? sender, AiMessageEventArgs e)
         {
+            LogService.Debug("AI message sent: role=" + (e.Role ?? "") + ", chars=" + (e.Content == null ? 0 : e.Content.Length));
             if (!Dispatcher.CheckAccess())
             {
                 Dispatcher.BeginInvoke(new Action(() => OnAiMessageSent(sender, e)));
@@ -291,6 +378,15 @@ namespace RPAWriter2
 
         private void OnRetryAttempt(object? sender, RetryAttemptEventArgs e)
         {
+            LogService.Warn(
+                "Provider retry #" + e.Attempt +
+                " status=" + (e.StatusCode.HasValue ? e.StatusCode.Value.ToString() : "no-response") +
+                " reason=" + (e.ReasonPhrase ?? "").Replace("\r", " ").Replace("\n", " ") +
+                " willRetry=" + e.WillRetry +
+                " waitBeforeRetry=" + e.WaitBeforeRetry +
+                " elapsed=" + e.Elapsed +
+                " remaining=" + e.Remaining +
+                " body=" + (e.Body ?? "").Replace("\r", " ").Replace("\n", " "));
             if (!Dispatcher.CheckAccess())
             {
                 Dispatcher.BeginInvoke(new Action(() => OnRetryAttempt(sender, e)));
@@ -363,17 +459,22 @@ namespace RPAWriter2
             if (provider == null)
             {
                 TokenUsageText.Text = "Context window: —";
+                ContextFillBar.Value = 0;
                 return;
             }
             var usage = provider.TotalTokenUsage;
             TokenUsageText.Text = "Context window: " + usage.TotalTokens.ToString("N0") +
                                   " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
+
+            var ratio = provider.ContextWindowSize > 0
+                ? Math.Min(100.0, 100.0 * usage.TotalTokens / provider.ContextWindowSize)
+                : 0.0;
+            ContextFillBar.Value = ratio;
         }
 
         private void ShowError(Exception ex)
         {
-            AppendChat("Error: " + ex.Message);
-            AppendChat(ex.ToString());
+            AppendExtensionError(ex);
             SetOutput(ex.ToString());
         }
 
@@ -916,6 +1017,8 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(StartChatStatus));
                 return;
             }
+            SetPhase(AgentPhase.Streaming);
+            AgentStatusText.Visibility = Visibility.Visible;
             _chatStartedAt = DateTime.UtcNow;
             _chatStatusTimer.Tick -= OnChatStatusTick;
             _chatStatusTimer.Tick += OnChatStatusTick;
@@ -926,11 +1029,8 @@ namespace RPAWriter2
         private void OnChatStatusTick(object? sender, EventArgs e)
         {
             var elapsed = (int)(DateTime.UtcNow - _chatStartedAt).TotalSeconds;
-            var phase = elapsed < 2 ? "Sending request…" : "Thinking…";
-            AgentStatusText.Text = phase + " (" + elapsed + " s)";
-            AgentStatusText.Visibility = Visibility.Visible;
-            AgentProgress.Visibility = Visibility.Visible;
-            CancelButton.Visibility = Visibility.Visible;
+            var status = elapsed < 2 ? "Sending request…" : "Thinking…";
+            AgentStatusText.Text = status + " (" + elapsed + " s)";
         }
 
         private void StopChatStatus()
@@ -944,9 +1044,18 @@ namespace RPAWriter2
             _chatStatusTimer.Tick -= OnChatStatusTick;
             AgentStatusText.Text = "";
             AgentStatusText.Visibility = Visibility.Collapsed;
-            AgentProgress.Visibility = Visibility.Collapsed;
-            CancelButton.Visibility = Visibility.Collapsed;
-            SendButton.IsEnabled = true;
+            SetPhase(AgentPhase.Idle);
+        }
+
+        /// <summary>Switches the footer to the given phase and updates the dependent controls.</summary>
+        private void SetPhase(AgentPhase phase)
+        {
+            if (_phase == phase)
+                return;
+            _phase = phase;
+            SendButton.IsEnabled = phase != AgentPhase.Streaming;
+            CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
+            AgentProgress.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ShowChatStatusError(string message)
@@ -960,14 +1069,17 @@ namespace RPAWriter2
             _chatStatusTimer.Tick -= OnChatStatusTick;
             AgentStatusText.Text = "Error: " + message;
             AgentStatusText.Visibility = Visibility.Visible;
-            AgentProgress.Visibility = Visibility.Collapsed;
-            CancelButton.Visibility = Visibility.Collapsed;
-            SendButton.IsEnabled = true;
+            SetPhase(AgentPhase.Error);
         }
 
         private void OnCancelSend(object sender, RoutedEventArgs e)
         {
             _chatCts?.Cancel();
+        }
+
+        private void OnCommit(object sender, RoutedEventArgs e)
+        {
+            // TODO: not implemented yet.
         }
 
         private async Task SendMessageAsync()
@@ -986,7 +1098,7 @@ namespace RPAWriter2
                 var text = await BuildCompilationErrorsContextAsync(errors);
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    AppendChat(await FormatNoCompilationErrorsAsync(errors));
+                    AppendChat(await FormatNoCompilationErrorsAsync());
                     return;
                 }
 
@@ -999,90 +1111,35 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// Builds the primary context the agent receives for compiler errors: the error text
-        /// plus, for each error, a bounded window around the error line read from the open
-        /// editor tab (never from disk). The agent can then decide whether to read more.
+        /// Builds the complete compiler-error context the agent receives: the error text plus,
+        /// for each error, a bounded window around the error line read from the open editor tab
+        /// (never from disk). The whole context is assembled deterministically by
+        /// <see cref="CompilationErrorContextBuilder"/> and returned as one string, so nothing
+        /// reaches the chat until the full context has been built.
         /// </summary>
         private async Task<string> BuildCompilationErrorsContextAsync(IReadOnlyList<BuildError> errors)
         {
-            var red = (errors ?? new List<BuildError>())
-                .Where(e => e != null && string.Equals(e.Severity, "Error", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (red.Count == 0)
-                return string.Empty;
-
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
 
-            var sb = new StringBuilder();
-            sb.AppendLine("Compilation errors from the Visual Studio Error List:");
-            sb.AppendLine();
-
-            var shownSnippets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var shown = 0;
-
-            foreach (var e in red.Take(MaxErrorsWithContext))
-            {
-                shown++;
-
-                var file = e.File ?? string.Empty;
-                var line = e.Line;
-
-                var location = string.Empty;
-                if (!string.IsNullOrEmpty(file)) location = line > 0 ? file + ":" + line : file;
-                else if (line > 0) location = "line " + line;
-
-                sb.Append("[Error] ");
-                if (!string.IsNullOrWhiteSpace(e.Code)) sb.Append(e.Code).Append(": ");
-                sb.Append(e.Message ?? string.Empty);
-                sb.Append(FormatLocation(location));
-                sb.AppendLine();
-
-                // Read a bounded window around the error line from the open editor tab (never from disk).
-                if (!string.IsNullOrEmpty(file) && line > 0 && dte != null)
+            return await CompilationErrorContextBuilder.BuildAsync(
+                errors,
+                async (file, line, ctx) =>
                 {
-                    var key = file + "\u0000" + line;
-                    if (shownSnippets.Add(key))
-                    {
-                        string? snippet = null;
-                        try
-                        {
-                            var doc = VsDocumentService.OpenOrActivate(dte, file);
-                            if (doc != null)
-                                snippet = VsDocumentService.ReadDocumentWindow(doc, line, ErrorContextLines);
-                        }
-                        catch
-                        {
-                            snippet = null;
-                        }
-
-                        if (!string.IsNullOrEmpty(snippet))
-                        {
-                            sb.AppendLine(file + " (around line " + line + "):");
-                            sb.AppendLine(snippet);
-                        }
-                    }
-                }
-
-                sb.AppendLine();
-            }
-
-            if (red.Count > MaxErrorsWithContext)
-                sb.AppendLine("(showing " + MaxErrorsWithContext + " of " + red.Count + " errors)");
-
-            return sb.ToString().TrimEnd();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (dte == null) throw new InvalidOperationException("Visual Studio is not available.");
+                    var doc = await VsDocumentService.OpenOrActivateAsync(dte, file).ConfigureAwait(true);
+                    if (doc == null) throw new InvalidOperationException("could not open in the editor");
+                    return VsDocumentService.ReadDocumentWindow(doc, line, ctx);
+                },
+                MaxErrorsWithContext,
+                ErrorContextLines).ConfigureAwait(true);
         }
 
-        private async Task<string> FormatNoCompilationErrorsAsync(IReadOnlyList<BuildError> errors)
+        private async Task<string> FormatNoCompilationErrorsAsync()
         {
-            var all = errors ?? new List<BuildError>();
-            var warnings = all.Count(e => e != null && string.Equals(e.Severity, "Warning", StringComparison.OrdinalIgnoreCase));
-            var messages = all.Count(e => e != null && string.Equals(e.Severity, "Message", StringComparison.OrdinalIgnoreCase));
-
             var sb = new StringBuilder();
-            sb.AppendLine("No compilation errors found.");
-            if (warnings > 0 || messages > 0)
-                sb.AppendLine("Error List contains " + warnings + " warning(s) and " + messages + " message(s), but no Error-level entries.");
+            sb.AppendLine("The Visual Studio Error List is empty.");
 
             string output;
             try
@@ -1104,11 +1161,6 @@ namespace RPAWriter2
             return sb.ToString().TrimEnd();
         }
 
-        private static string FormatLocation(string location)
-        {
-            return string.IsNullOrEmpty(location) ? string.Empty : " (" + location + ")";
-        }
-
         private async Task SendChatTextAsync(string text)
         {
             if (_chatCts != null) return; // already awaiting the agent's reply
@@ -1116,15 +1168,18 @@ namespace RPAWriter2
             if (_agentRunner == null) return;
 
             var modeName = _mode.ToString();
-            AppendChatMessage(new ChatMessage { Role = "user", Text = text });
+            var history = BuildTranscript();
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = text });
+            if (string.IsNullOrEmpty(_currentConversation.Title))
+                _currentConversation.Title = BuildChatTitle(text);
 
-            var thinking = new ChatMessage { Role = "agent", Mode = modeName, IsThinking = true, Text = "Thinking…" };
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
             var cts = new CancellationTokenSource();
             _chatCts = cts;
-            SendButton.IsEnabled = false;
             StartChatStatus();
+            LogService.Info("Agent chat request started (mode=" + modeName + ", input chars=" + text.Length + ").");
             try
             {
                 var progress = new Progress<ChatStreamDelta>(delta =>
@@ -1132,22 +1187,27 @@ namespace RPAWriter2
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                         thinking.Reasoning += delta.ReasoningDelta;
                 });
-                var result = await _agentRunner.RunAsync(text, _mode, cts.Token, progress);
+                var result = await _agentRunner.RunAsync(history, text, _mode, BuildContextBudget(), cts.Token, progress);
                 thinking.IsThinking = false;
+                thinking.IsPartial = false;
                 thinking.Text = result.FinalText;
                 StopChatStatus();
+                LogService.Info("Agent chat completed (mode=" + modeName + ", answer chars=" + (result.FinalText == null ? 0 : result.FinalText.Length) + ").");
             }
             catch (OperationCanceledException)
             {
                 thinking.IsThinking = false;
-                AppendChat("Request cancelled.");
+                if (_messages.Contains(thinking))
+                    AppendChat("Request cancelled.");
                 StopChatStatus();
+                LogService.Info("Agent chat request cancelled.");
             }
             catch (Exception ex)
             {
                 thinking.IsThinking = false;
-                AppendChat("Error: " + ex.Message);
+                AppendExtensionError(ex);
                 ShowChatStatusError(ex.Message);
+                LogService.Error(ex, "Agent chat request failed.");
             }
             finally
             {
@@ -1156,14 +1216,145 @@ namespace RPAWriter2
             }
         }
 
+        /// <summary>
+        /// Appends a system notice to the chat without invoking the agent.
+        /// Safe to call from any thread.
+        /// </summary>
+        public void AppendSystemMessage(string text)
+        {
+            AppendChat(text);
+        }
+
+        /// <summary>
+        /// Sends an externally produced message (e.g. an Error List item selected by the user)
+        /// to the agent chat. When the agent is still processing a previous request, the message
+        /// is placed into the input box instead of being silently dropped.
+        /// </summary>
+        public async Task SubmitErrorToChatAsync(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            if (_chatCts != null)
+            {
+                InputBox.Text = text;
+                AppendChat("The agent is busy — the message was placed into the input box.");
+                return;
+            }
+
+            await SendChatTextAsync(text);
+        }
+
+        /// <summary>Builds the model transcript from visible chat messages, mapping UI roles to model roles.</summary>
+        private List<ChatMessageData> BuildTranscript()
+        {
+            var transcript = new List<ChatMessageData>();
+            foreach (var message in _messages)
+            {
+                if (string.IsNullOrWhiteSpace(message.Text))
+                    continue;
+
+                switch (message.Kind)
+                {
+                    case ChatMessageKind.User:
+                        transcript.Add(new ChatMessageData { Role = "user", Content = message.Text });
+                        break;
+                    case ChatMessageKind.AgentText:
+                        transcript.Add(new ChatMessageData { Role = "assistant", Content = message.Text });
+                        break;
+                    // Other kinds (tool calls, notices, errors) are UI-only and not part of the model conversation.
+                }
+            }
+            return transcript;
+        }
+
+        /// <summary>Builds the context budget from persisted settings, falling back to defaults.</summary>
+        private ContextBudget BuildContextBudget()
+        {
+            return new ContextBudget
+            {
+                ContextWindowSize = _settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600,
+                CompactThresholdFraction = _settings.CompactThreshold,
+                ReserveFraction = _settings.ReserveFraction,
+                KeepRecentMessages = _settings.KeepRecentMessages,
+                ToolResultMaxChars = _settings.ToolResultMaxChars,
+                UseToolRole = _settings.UseToolRole,
+                MaxIterations = _settings.MaxIterations,
+                AutoCompact = _settings.AutoCompact
+            };
+        }
+
         private void RebuildAgentTools()
         {
             var registry = BuildToolRegistry();
             _toolRegistry = registry;
             if (_agentRunner != null)
+            {
                 _agentRunner.ToolExecuted -= OnAgentToolExecuted;
+                _agentRunner.ContextCompacted -= OnAgentContextCompacted;
+                _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
+            }
             _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry));
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
+            _agentRunner.ContextCompacted += OnAgentContextCompacted;
+            _agentRunner.RetryOccurred += OnAgentRetryOccurred;
+        }
+
+        private void OnAgentRetryOccurred(object? sender, AgentRetryArgs e)
+        {
+            LogService.Warn("Agent retry: " + (e.Kind ?? "") + " attempt " + e.Attempt + "/" + e.AttemptLimit + " - " + (e.Detail ?? ""));
+        }
+
+        private void OnAgentContextCompacted(object? sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAgentContextCompacted(sender, e)));
+                return;
+            }
+            LogService.Info("Agent context compacted (summarized) to fit the context window.");
+            AppendCompaction("Context compacted (summarized) to fit the context window.");
+        }
+
+        private async void OnCompactNow(object sender, RoutedEventArgs e)
+        {
+            if (_agentRunner == null || _chatCts != null)
+                return;
+
+            var transcript = BuildTranscript();
+            if (transcript.Count == 0)
+            {
+                AppendChat("Nothing to compact yet.");
+                return;
+            }
+
+            try
+            {
+                var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
+
+                _messages.Clear();
+                foreach (var m in condensed)
+                {
+                    var kind = m.Role == "assistant" ? ChatMessageKind.AgentText
+                             : m.Role == "user" ? ChatMessageKind.User
+                             : ChatMessageKind.SystemNotice;
+                    _messages.Add(new ChatMessage { Kind = kind, Text = m.Content });
+                }
+                AppendCompaction("Context compacted (summarized).");
+                ScheduleHistorySave();
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Compact failed: " + ex.Message);
+            }
+        }
+
+        private void OnUpdateMemory(object sender, RoutedEventArgs e)
+        {
+            InputBox.Text = "update memory bank: read the current memory bank with read_memory, then update the relevant files with update_memory.";
+            InputBox.Focus();
         }
 
         private AgentToolRegistry BuildToolRegistry()
@@ -1188,15 +1379,279 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => OnAgentToolExecuted(sender, e)));
                 return;
             }
-            AppendChat(e.Blocked
-                ? "⛔ " + e.ToolName + " blocked in Plan mode."
-                : "⚙ " + e.ToolName + " → " + e.Result);
+            var detail = string.IsNullOrWhiteSpace(e.DisplayResult) ? e.Result : e.DisplayResult;
+            LogService.Info("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
+            AppendToolCall(e.ToolName, detail, e.Blocked);
+        }
+
+        // ------------------------------------------------------------------
+        // Chat history (SQLite-backed persistence)
+        // ------------------------------------------------------------------
+
+        private void InitializeChatHistory()
+        {
+            _historySaveTimer.Tick += OnHistorySaveTick;
+            this.Unloaded += OnWindowUnloaded;
+            HistoryCombo.ItemsSource = _conversations;
+
+            try
+            {
+                ChatHistoryStore.Initialize();
+                RefreshHistoryList();
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Chat history unavailable: " + ex.Message);
+            }
+
+            var latest = _conversations.FirstOrDefault();
+            if (latest != null)
+                OpenConversation(latest.Id, markDirty: false);
+            else
+                StartNewChat(markDirty: false);
+        }
+
+        private void OnWindowUnloaded(object sender, RoutedEventArgs e)
+        {
+            SaveHistoryNow();
+        }
+
+        private void ScheduleHistorySave()
+        {
+            _historySaveTimer.Stop();
+            _historySaveTimer.Start();
+        }
+
+        private void OnHistorySaveTick(object? sender, EventArgs e)
+        {
+            _historySaveTimer.Stop();
+            SaveHistoryNow();
+        }
+
+        private void SaveHistoryNow()
+        {
+            if (_currentConversation == null || string.IsNullOrWhiteSpace(_currentConversation.Id))
+                return;
+
+            _currentConversation.Messages = _messages.Select(ToHistoryMessage).ToList();
+            if (string.IsNullOrEmpty(_currentConversation.Title))
+            {
+                var firstUser = _currentConversation.Messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User);
+                if (firstUser != null)
+                    _currentConversation.Title = BuildChatTitle(firstUser.Text);
+            }
+            _currentConversation.UpdatedAtUtc = DateTime.UtcNow;
+
+            try
+            {
+                ChatHistoryStore.SaveConversation(_currentConversation);
+                RefreshHistoryList();
+            }
+            catch
+            {
+                // History persistence is best-effort; never block or spam the chat on failure.
+            }
+        }
+
+        private void StartNewChat(bool markDirty = true)
+        {
+            _chatCts?.Cancel();
+            SaveHistoryNow();
+
+            _loadingHistory = true;
+            try
+            {
+                _messages.Clear();
+                _currentConversation = new ChatConversation
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                };
+                AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+            }
+            finally
+            {
+                _loadingHistory = false;
+            }
+
+            UpdateHistorySelection();
+            if (markDirty)
+                ScheduleHistorySave();
+        }
+        private void OpenConversation(string id, bool markDirty = true)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return;
+            if (id == _currentConversation?.Id)
+                return;
+
+            _chatCts?.Cancel();
+            SaveHistoryNow();
+
+            ChatConversation? stored;
+            try
+            {
+                stored = ChatHistoryStore.LoadConversation(id);
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to open chat: " + ex.Message);
+                return;
+            }
+            if (stored == null)
+                return;
+
+            _loadingHistory = true;
+            try
+            {
+                _messages.Clear();
+                foreach (var m in stored.Messages)
+                {
+                    _messages.Add(FromHistoryMessage(m));
+                }
+                _currentConversation = stored;
+                ChatScroll.ScrollToEnd();
+            }
+            finally
+            {
+                _loadingHistory = false;
+            }
+
+            UpdateHistorySelection();
+            if (markDirty)
+                ScheduleHistorySave();
+        }
+
+        private void DeleteCurrentConversation()
+        {
+            var id = _currentConversation?.Id;
+            if (string.IsNullOrWhiteSpace(id))
+                return;
+
+            _chatCts?.Cancel();
+
+            try
+            {
+                ChatHistoryStore.DeleteConversation(id);
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to delete chat: " + ex.Message);
+                return;
+            }
+
+            _loadingHistory = true;
+            try
+            {
+                _messages.Clear();
+                _currentConversation = new ChatConversation
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                };
+                AppendChat("Agent ready. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+            }
+            finally
+            {
+                _loadingHistory = false;
+            }
+
+            RefreshHistoryList();
+            UpdateHistorySelection();
+        }
+
+        private void RefreshHistoryList()
+        {
+            try
+            {
+                _conversations.Clear();
+                foreach (var conversation in ChatHistoryStore.ListConversations())
+                    _conversations.Add(conversation);
+                UpdateHistorySelection();
+            }
+            catch
+            {
+                // best-effort refresh of the history dropdown
+            }
+        }
+
+        private void UpdateHistorySelection()
+        {
+            if (HistoryCombo == null)
+                return;
+
+            var currentId = _currentConversation?.Id;
+            _updatingHistoryCombo = true;
+            try
+            {
+                HistoryCombo.SelectedItem = _conversations.FirstOrDefault(c => c.Id == currentId);
+            }
+            finally
+            {
+                _updatingHistoryCombo = false;
+            }
+        }
+
+        private void OnNewChat(object sender, RoutedEventArgs e)
+        {
+            StartNewChat();
+        }
+
+        private void OnDeleteChat(object sender, RoutedEventArgs e)
+        {
+            DeleteCurrentConversation();
+        }
+
+        private void OnHistorySelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_updatingHistoryCombo)
+                return;
+            if (HistoryCombo.SelectedItem is ChatConversation conversation && conversation.Id != _currentConversation?.Id)
+                OpenConversation(conversation.Id);
+        }
+
+        private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)
+        {
+            var tool = message.Payload as ToolCallPayload;
+            return new ChatHistoryMessage
+            {
+                Kind = message.Kind,
+                Text = tool != null ? tool.Result : message.Text,
+                ToolName = tool?.ToolName ?? "",
+                Reasoning = message.Reasoning,
+                Mode = message.Mode
+            };
+        }
+
+        private static ChatMessage FromHistoryMessage(ChatHistoryMessage m)
+        {
+            if (m.Kind == ChatMessageKind.ToolCall || m.Kind == ChatMessageKind.ToolBlocked)
+            {
+                return new ChatMessage
+                {
+                    Kind = m.Kind,
+                    Payload = new ToolCallPayload { ToolName = m.ToolName ?? "", Result = m.Text ?? "", Blocked = m.Kind == ChatMessageKind.ToolBlocked }
+                };
+            }
+
+            return new ChatMessage { Kind = m.Kind, Text = m.Text, Reasoning = m.Reasoning, Mode = m.Mode };
+        }
+
+        private static string BuildChatTitle(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "New chat";
+            var singleLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            const int max = 60;
+            return singleLine.Length <= max ? singleLine : singleLine.Substring(0, max) + "…";
         }
 
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
             _mode = ActModeButton?.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
-            AppendChat("Mode: " + _mode);
+            AppendModeSwitch("Mode: " + _mode);
         }
 
         private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
@@ -1222,10 +1677,91 @@ namespace RPAWriter2
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
             _settings.RulesPath = RulesPathBox.Text.Trim();
             _settings.ContextWindowSize = ParseContextWindowSize();
+            _settings.CompactThreshold = ParseFraction(CompactThresholdBox?.Text, 0.85, 0.0, 1.0);
+            _settings.ReserveFraction = ParseFraction(ReserveFractionBox?.Text, 0.12, 0.0, 0.5);
+            _settings.KeepRecentMessages = ParsePositiveInt(KeepRecentBox?.Text, 6);
+            _settings.ToolResultMaxChars = ParsePositiveInt(ToolResultMaxCharsBox?.Text, 12000);
+            _settings.MaxIterations = ParsePositiveInt(MaxIterationsBox?.Text, 8);
+            _settings.AutoCompact = AutoCompactCheckBox?.IsChecked ?? true;
+            _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
+            _settings.LogFilePath = LogFilePathBox.Text.Trim();
+            _settings.TimeoutSeconds = ParsePositiveInt(TimeoutSecondsBox?.Text, 300);
+            _settings.RetryTimeoutMinutes = ParsePositiveInt(RetryTimeoutMinutesBox?.Text, 30);
+            _settings.RetryBaseDelaySeconds = ParsePositiveInt(RetryBaseDelaySecondsBox?.Text, 1);
+            _settings.RetryMaxDelaySeconds = ParsePositiveInt(RetryMaxDelaySecondsBox?.Text, 30);
             SettingsStore.Save(_settings);
+            LogService.Configure(_settings.LogFilePath);
             RecreateAiProvider();
             RebuildAgentTools();
             AppendChat("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+        }
+
+        private void OnOpenLog(object sender, RoutedEventArgs e)
+        {
+            var logFile = LogService.CurrentLogFilePath;
+            if (string.IsNullOrWhiteSpace(logFile))
+            {
+                AppendExtensionError("Log file path is not available.");
+                return;
+            }
+
+            try
+            {
+                var dir = Path.GetDirectoryName(logFile);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
+                if (!File.Exists(logFile))
+                    File.WriteAllText(logFile, "");
+
+                var editor = FindNotepadPlusPlus();
+                if (!string.IsNullOrWhiteSpace(editor))
+                    System.Diagnostics.Process.Start(new ProcessStartInfo(editor, "\"" + logFile + "\"") { UseShellExecute = true });
+                else
+                    System.Diagnostics.Process.Start(new ProcessStartInfo("notepad.exe", "\"" + logFile + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to open log: " + ex.Message);
+                LogService.Error(ex, "Failed to open log file.");
+            }
+        }
+
+        private static string FindNotepadPlusPlus()
+        {
+            var candidates = new List<string>
+            {
+                ReadAppPath("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\notepad++.exe"),
+                ReadAppPath("HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\notepad++.exe")
+            };
+
+            var prog = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var progX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+            if (!string.IsNullOrWhiteSpace(prog)) candidates.Add(Path.Combine(prog, "Notepad++", "notepad++.exe"));
+            if (!string.IsNullOrWhiteSpace(progX86)) candidates.Add(Path.Combine(progX86, "Notepad++", "notepad++.exe"));
+            if (!string.IsNullOrWhiteSpace(local)) candidates.Add(Path.Combine(local, "Notepad++", "notepad++.exe"));
+            if (!string.IsNullOrWhiteSpace(roaming)) candidates.Add(Path.Combine(roaming, "Notepad++", "notepad++.exe"));
+
+            foreach (var candidate in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+                    return candidate;
+            }
+            return null;
+        }
+
+        private static string ReadAppPath(string registryKeyPath)
+        {
+            try
+            {
+                return Registry.GetValue(registryKeyPath, "", null) as string;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private int ParseContextWindowSize()
@@ -1233,6 +1769,20 @@ namespace RPAWriter2
             if (int.TryParse((ContextWindowBox?.Text ?? "").Trim(), out var value) && value > 0)
                 return value;
             return 409600;
+        }
+
+        private static double ParseFraction(string text, double fallback, double min, double max)
+        {
+            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value >= min && value <= max)
+                return value;
+            return fallback;
+        }
+
+        private static int ParsePositiveInt(string text, int fallback)
+        {
+            if (int.TryParse((text ?? "").Trim(), out var value) && value > 0)
+                return value;
+            return fallback;
         }
     }
 }

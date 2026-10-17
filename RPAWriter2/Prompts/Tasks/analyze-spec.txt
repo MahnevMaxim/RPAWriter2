@@ -1,4 +1,9 @@
-Analyze the technical specification and return JSON of the form {"summary":"...","tasks":[{"action":"...","target":"...","description":"...","activityType":"..."}]}.
+Analyze the technical specification and return JSON of the form {"summary":"...","tasks":[{"action":"...","target":"...","description":"...","activityType":"...","sapTransactionCode":"...","sapActionKind":"..."}]}.
+
+For SAP transaction tasks, split the work per transaction and set the SAP fields:
+- "sapTransactionCode": the SAP transaction name/code (e.g. "VA01", "SE16N").
+- "sapActionKind": one of "setup" (настройка и запуск транзакции), "work" (работа с транзакцией), "gettable" (получение таблицы/данных из транзакции).
+Omit both sapTransactionCode and sapActionKind for tasks that are not SAP transaction tasks.
 
 Spec:
 {spec}

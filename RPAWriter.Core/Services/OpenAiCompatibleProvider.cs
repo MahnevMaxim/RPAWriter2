@@ -149,15 +149,7 @@ namespace RPAWriter.Core.Services
             var obj = ParseJson(content);
             var analysis = new SpecAnalysis { Summary = obj.Value<string>("summary") ?? "" };
             foreach (var t in obj["tasks"] ?? new JArray())
-            {
-                analysis.Tasks.Add(new TaskDescriptor
-                {
-                    Action = t.Value<string>("action"),
-                    Target = t.Value<string>("target"),
-                    Description = t.Value<string>("description"),
-                    ActivityType = t.Value<string>("activityType")
-                });
-            }
+                analysis.Tasks.Add(ParseTask(t));
             return analysis;
         }
 
@@ -187,18 +179,8 @@ namespace RPAWriter.Core.Services
             var array = ParseArray(content);
             var result = new List<TaskDescriptor>();
             if (array != null)
-            {
                 foreach (var t in array)
-                {
-                    result.Add(new TaskDescriptor
-                    {
-                        Action = t.Value<string>("action"),
-                        Target = t.Value<string>("target"),
-                        Description = t.Value<string>("description"),
-                        ActivityType = t.Value<string>("activityType")
-                    });
-                }
-            }
+                    result.Add(ParseTask(t));
             return result;
         }
 
@@ -249,6 +231,42 @@ namespace RPAWriter.Core.Services
             return record;
         }
 
+        private static TaskDescriptor ParseTask(JToken t)
+        {
+            return new TaskDescriptor
+            {
+                Action = t.Value<string>("action"),
+                Target = t.Value<string>("target"),
+                Description = t.Value<string>("description"),
+                ActivityType = t.Value<string>("activityType"),
+                SapTransactionCode = t.Value<string>("sapTransactionCode"),
+                SapActionKind = ParseSapActionKind(t.Value<string>("sapActionKind"))
+            };
+        }
+
+        private static SapActionKind? ParseSapActionKind(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            switch (value.Trim().ToLowerInvariant())
+            {
+                case "setup":
+                case "настройка":
+                case "запуск":
+                case "настройка и запуск":
+                    return SapActionKind.Setup;
+                case "work":
+                case "работа":
+                case "работа с транзакцией":
+                    return SapActionKind.Work;
+                case "gettable":
+                case "получение таблицы":
+                case "получение данных":
+                    return SapActionKind.GetTable;
+                default:
+                    return null;
+            }
+        }
+
         private static void AddStringArray(List<string> target, JToken token)
         {
             if (!(token is JArray array)) return;
@@ -276,9 +294,10 @@ namespace RPAWriter.Core.Services
             var messageObj = obj["choices"]?[0]?["message"];
             var content = messageObj?["content"]?.Value<string>();
             var reasoning = ExtractReasoning(messageObj);
+            var finishReason = obj["choices"]?[0]?["finish_reason"]?.Value<string>();
             if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(reasoning))
                 throw new InvalidOperationException("Empty response from the AI provider.");
-            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
+            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning, FinishReason = finishReason };
         }
 
         public async Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
@@ -291,9 +310,10 @@ namespace RPAWriter.Core.Services
             var messageObj = obj["choices"]?[0]?["message"];
             var content = messageObj?["content"]?.Value<string>();
             var reasoning = ExtractReasoning(messageObj);
+            var finishReason = obj["choices"]?[0]?["finish_reason"]?.Value<string>();
             if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(reasoning))
                 throw new InvalidOperationException("Empty response from the AI provider.");
-            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning };
+            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning, FinishReason = finishReason };
         }
 
         public async Task<ChatResponse> ChatStreamingAsync(
@@ -308,6 +328,7 @@ namespace RPAWriter.Core.Services
 
             var reasoning = new StringBuilder();
             var content = new StringBuilder();
+            var finishReason = new StringBuilder();
 
             var startedAt = DateTime.UtcNow;
             var deadline = startedAt + _options.RetryTimeout;
@@ -344,13 +365,13 @@ namespace RPAWriter.Core.Services
                     {
                         try
                         {
-                            await ReadSseStreamAsync(response, reasoning, content, progress, cancellationToken).ConfigureAwait(false);
+                            await ReadSseStreamAsync(response, reasoning, content, finishReason, progress, cancellationToken).ConfigureAwait(false);
                         }
                         finally
                         {
                             response.Dispose();
                         }
-                        return new ChatResponse { Answer = content.ToString(), Reasoning = reasoning.ToString() };
+                        return new ChatResponse { Answer = content.ToString(), Reasoning = reasoning.ToString(), FinishReason = finishReason.ToString() };
                     }
 
                     var retryAfter = ReadRetryAfter(response);
@@ -397,7 +418,7 @@ namespace RPAWriter.Core.Services
                 }
             }
 
-            throw new HttpRequestException(BuildFinalErrorMessage(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody));
+            throw BuildProviderErrorException(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody);
         }
 
         /// <summary>
@@ -409,6 +430,7 @@ namespace RPAWriter.Core.Services
             HttpResponseMessage response,
             StringBuilder reasoning,
             StringBuilder content,
+            StringBuilder finishReason,
             IProgress<ChatStreamDelta> progress,
             CancellationToken cancellationToken)
         {
@@ -440,6 +462,13 @@ namespace RPAWriter.Core.Services
                         catch { continue; }
 
                         RecordUsage(chunk["usage"]);
+
+                        var fr = chunk["choices"]?[0]?["finish_reason"]?.Value<string>();
+                        if (!string.IsNullOrWhiteSpace(fr))
+                        {
+                            finishReason.Clear();
+                            finishReason.Append(fr);
+                        }
 
                         var delta = chunk["choices"]?[0]?["delta"];
                         if (delta == null) continue;
@@ -482,6 +511,13 @@ namespace RPAWriter.Core.Services
                             progress.Report(new ChatStreamDelta { ReasoningDelta = r, ContentDelta = c });
 
                         RecordUsage(obj["usage"]);
+
+                        var fr = obj["choices"]?[0]?["finish_reason"]?.Value<string>();
+                        if (!string.IsNullOrWhiteSpace(fr))
+                        {
+                            finishReason.Clear();
+                            finishReason.Append(fr);
+                        }
                         return;
                     }
                     // otherwise: ignore (e.g. an SSE "event:" line)
@@ -591,7 +627,7 @@ namespace RPAWriter.Core.Services
                 }
             }
 
-            throw new HttpRequestException(BuildFinalErrorMessage(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody));
+            throw BuildProviderErrorException(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody);
         }
 
         private TimeSpan ComputeBackoff(int attempt)
@@ -647,6 +683,47 @@ namespace RPAWriter.Core.Services
                    ". Last status: " + status + ". Response: " + TruncateForLog(body);
         }
 
+        private static ProviderErrorException BuildProviderErrorException(int attempt, TimeSpan elapsed, int? statusCode, string reason, string body)
+        {
+            var kind = ClassifyProviderError(statusCode, body);
+            var message = BuildFinalErrorMessage(attempt, elapsed, statusCode, reason, body);
+            return new ProviderErrorException(kind, message, statusCode, body);
+        }
+
+        private static ProviderErrorKind ClassifyProviderError(int? statusCode, string body)
+        {
+            if (statusCode == 401 || statusCode == 403) return ProviderErrorKind.Auth;
+            if (statusCode == 429) return ProviderErrorKind.RateLimit;
+            if (statusCode >= 500) return ProviderErrorKind.Transient;
+            if (ContainsContextOverflowKeywords(body)) return ProviderErrorKind.ContextWindowExceeded;
+            if (statusCode == 400 && ContainsContentFilterKeywords(body)) return ProviderErrorKind.ContentFilter;
+            return ProviderErrorKind.Other;
+        }
+
+        private static bool ContainsContextOverflowKeywords(string body)
+        {
+            if (string.IsNullOrEmpty(body)) return false;
+            var b = body.ToLowerInvariant();
+            return b.Contains("context length") ||
+                   b.Contains("context window") ||
+                   b.Contains("too many tokens") ||
+                   b.Contains("maximum context") ||
+                   b.Contains("max tokens") ||
+                   b.Contains("token limit") ||
+                   b.Contains("context_length_exceeded") ||
+                   b.Contains("prompt is too long") ||
+                   b.Contains("input is too long");
+        }
+
+        private static bool ContainsContentFilterKeywords(string body)
+        {
+            if (string.IsNullOrEmpty(body)) return false;
+            var b = body.ToLowerInvariant();
+            return b.Contains("content filter") ||
+                   b.Contains("content_filter") ||
+                   b.Contains("safety");
+        }
+
         private static string FormatDuration(TimeSpan t)
         {
             if (t < TimeSpan.Zero) t = TimeSpan.Zero;
@@ -682,7 +759,8 @@ namespace RPAWriter.Core.Services
 
         private static int ReadTokenCount(JToken usage, string name)
         {
-            var token = usage?[name];
+            if (!(usage is JObject obj)) return 0;
+            var token = obj[name];
             if (token == null) return 0;
             if (token.Type == JTokenType.Integer) return token.Value<int>();
             if (token.Type == JTokenType.String && int.TryParse(token.Value<string>(), out var parsed)) return parsed;
@@ -696,13 +774,13 @@ namespace RPAWriter.Core.Services
         /// </summary>
         private static string ExtractReasoning(JToken message)
         {
-            if (message == null) return null;
+            if (!(message is JObject obj)) return null;
 
-            var rc = message["reasoning_content"];
+            var rc = obj["reasoning_content"];
             if (rc != null)
                 return rc.Type == JTokenType.String ? rc.Value<string>() : ExtractReasoningInner(rc);
 
-            var r = message["reasoning"];
+            var r = obj["reasoning"];
             if (r != null)
                 return r.Type == JTokenType.String ? r.Value<string>() : ExtractReasoningInner(r);
 
@@ -711,10 +789,10 @@ namespace RPAWriter.Core.Services
 
         private static string ExtractReasoningInner(JToken token)
         {
-            if (token == null) return null;
-            return token["content"]?.Value<string>()
-                ?? token["summary"]?.Value<string>()
-                ?? token.ToString();
+            if (!(token is JObject obj)) return token?.ToString();
+            return obj["content"]?.Value<string>()
+                ?? obj["summary"]?.Value<string>()
+                ?? obj.ToString();
         }
 
         internal HttpRequestMessage BuildRequest(string userMessage)

@@ -15,6 +15,7 @@ namespace RPAWriter.Core.Services
         public string MapTaskToSolution { get; set; }
         public string AgentPlanSystemPrompt { get; set; }
         public string AgentActSystemPrompt { get; set; }
+        public string AgentCompactSystemPrompt { get; set; }
 
         /// <summary>Loads every prompt template from <paramref name="promptsPath"/> with built-in fallbacks.</summary>
         public static PromptSet Load(string promptsPath)
@@ -29,7 +30,8 @@ namespace RPAWriter.Core.Services
                 ReconstructSpec = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "reconstruct-spec.txt", PromptDefaults.ReconstructSpec),
                 MapTaskToSolution = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "map-task-to-solution.txt", PromptDefaults.MapTaskToSolution),
                 AgentPlanSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-plan-system.txt", PromptDefaults.AgentPlanSystemPrompt),
-                AgentActSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-act-system.txt", PromptDefaults.AgentActSystemPrompt)
+                AgentActSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-act-system.txt", PromptDefaults.AgentActSystemPrompt),
+                AgentCompactSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-compact.txt", PromptDefaults.AgentCompactSystemPrompt)
             };
         }
     }

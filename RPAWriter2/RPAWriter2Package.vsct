@@ -35,6 +35,13 @@
          other menus or buttons (commands); from a visual point of view you can see the
          group as the part of a menu contained between two lines. The parent of a group
          must be a menu. -->
+    <Groups>
+      <!-- Places the "Send to RPA Writer" command into the Error List context menu. -->
+      <Group guid="guidRPAWriter2PackageCmdSet" id="grpidErrorListContextMenu" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ERRORLIST" />
+      </Group>
+    </Groups>
+
     <!--Buttons section. -->
     <!--This section defines the elements the user can interact with, like a menu command or a button
         or combo box in a toolbar. -->
@@ -51,6 +58,12 @@
         <Icon guid="guidImages1" id="bmpPic1" />
         <Strings>
           <ButtonText>RPA Writer</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidRPAWriter2PackageCmdSet" id="cmdidSendErrorToChat" priority="0x0100" type="Button">
+        <Parent guid="guidRPAWriter2PackageCmdSet" id="grpidErrorListContextMenu" />
+        <Strings>
+          <ButtonText>Send to RPA Writer</ButtonText>
         </Strings>
       </Button>
     </Buttons>
@@ -73,6 +86,8 @@
     <!-- This is the guid used to group the menu commands together -->
     <GuidSymbol name="guidRPAWriter2PackageCmdSet" value="{d648562d-8124-4a1f-9574-4874fa421738}">
       <IDSymbol value="4129" name="cmdidToolWindow1Command" />
+      <IDSymbol value="4130" name="cmdidSendErrorToChat" />
+      <IDSymbol value="4131" name="grpidErrorListContextMenu" />
     </GuidSymbol>
 
 

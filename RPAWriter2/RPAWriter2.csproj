@@ -19,6 +19,8 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NLog" Version="4.6.8" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -37,7 +39,30 @@
     <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it
          because RPAWriter.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
     <VSIXSourceItem Include="$(OutputPath)Newtonsoft.Json.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NLog.dll" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
+         managed provider can locate SQLite.Interop.dll at runtime inside the VSIX.
+         The package's buildTransitive targets do not copy the interop for SDK-style
+         projects, so we copy it ourselves and then package it. -->
+    <Content Include="$(OutputPath)x86\SQLite.Interop.dll">
+      <Link>x86\SQLite.Interop.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="$(OutputPath)x64\SQLite.Interop.dll">
+      <Link>x64\SQLite.Interop.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+  <Target Name="CopySqliteInteropToOutput" BeforeTargets="GetVsixSourceItems">
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll"
+          DestinationFolder="$(OutputPath)x86"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll"
+          DestinationFolder="$(OutputPath)x64"
+          SkipUnchangedFiles="true" />
+  </Target>
   <ItemGroup>
     <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->
     <Content Include="Prompts\**\*">

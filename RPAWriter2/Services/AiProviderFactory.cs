@@ -1,3 +1,4 @@
+﻿using System;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 
@@ -22,7 +23,11 @@ namespace RPAWriter2.Services
                 ApiKey = apiKey,
                 Model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim(),
                 RulesPath = rulesPath,
-                ContextWindowSize = settings.ContextWindowSize > 0 ? settings.ContextWindowSize : 409600
+                ContextWindowSize = settings.ContextWindowSize > 0 ? settings.ContextWindowSize : 409600,
+                TimeoutSeconds = settings.TimeoutSeconds > 0 ? settings.TimeoutSeconds : 300,
+                RetryTimeout = TimeSpan.FromMinutes(settings.RetryTimeoutMinutes > 0 ? settings.RetryTimeoutMinutes : 30),
+                RetryBaseDelay = TimeSpan.FromSeconds(settings.RetryBaseDelaySeconds > 0 ? settings.RetryBaseDelaySeconds : 1),
+                RetryMaxDelay = TimeSpan.FromSeconds(settings.RetryMaxDelaySeconds > 0 ? settings.RetryMaxDelaySeconds : 30)
             });
         }
     }

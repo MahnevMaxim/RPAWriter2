@@ -46,6 +46,37 @@ namespace RPAWriter.Tests
             Assert.That(result.IsFinal, Is.True);
             Assert.That(result.Text, Is.EqualTo("Просто ответ без JSON."));
         }
+
+        [Test]
+        public void Parse_FinalWithCodeFencesInsideText_ExtractsHumanReadableText()
+        {
+            var content = "{\"action\":\"final\",\"text\":\"## Fix\\n\\n```csharp\\nstatic void Main(string[] args)\\n```\\n\\nInvalid C#.\"}";
+            var result = AgentResponseParser.Parse(content);
+
+            Assert.That(result.IsFinal, Is.True);
+            Assert.That(result.Text, Does.Contain("## Fix"));
+            Assert.That(result.Text, Does.Contain("```csharp"));
+            Assert.That(result.Text, Does.Contain("static void Main"));
+            Assert.That(result.Text, Does.Not.Contain("\"action\":\"final\""));
+        }
+
+        [Test]
+        public void Parse_FinalWrappedInCodeFence_ExtractsText()
+        {
+            var result = AgentResponseParser.Parse("```json\n{\"action\":\"final\",\"text\":\"ok\"}\n```");
+
+            Assert.That(result.IsFinal, Is.True);
+            Assert.That(result.Text, Is.EqualTo("ok"));
+        }
+
+        [Test]
+        public void Parse_EmptyOrWhitespaceContent_ReturnsFinalEmpty()
+        {
+            var result = AgentResponseParser.Parse("   ");
+
+            Assert.That(result.IsFinal, Is.True);
+            Assert.That(result.Text, Is.EqualTo(""));
+        }
     }
 
     [TestFixture]

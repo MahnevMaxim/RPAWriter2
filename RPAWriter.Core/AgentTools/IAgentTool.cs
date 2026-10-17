@@ -21,5 +21,11 @@ namespace RPAWriter.Core.AgentTools
 
         /// <summary>Executes the tool and returns a text result fed back to the model.</summary>
         Task<string> ExecuteAsync(JObject arguments, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Produces a short text for the chat progress line (e.g. a file path), or null when
+        /// the full execution result should be shown instead.
+        /// </summary>
+        Task<string> GetDisplayResultAsync(JObject arguments, CancellationToken cancellationToken);
     }
 }

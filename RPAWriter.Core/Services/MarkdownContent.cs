@@ -59,7 +59,7 @@ namespace RPAWriter.Core.Services
 
             var rows = new List<IReadOnlyList<string>>
             {
-                new List<string> { "#", "Действие", "Объект", "Тип активности", "Ключевые слова" }
+                new List<string> { "#", "Действие", "Объект", "Тип активности", "Ключевые слова", "Транзакция SAP", "Вид действия" }
             };
 
             var tasks = spec?.Tasks ?? new List<TaskDescriptor>();
@@ -72,7 +72,9 @@ namespace RPAWriter.Core.Services
                     t?.Action ?? "",
                     t?.Target ?? "",
                     t?.ActivityType ?? "",
-                    string.Join(", ", t?.Keywords ?? new List<string>())
+                    string.Join(", ", t?.Keywords ?? new List<string>()),
+                    t?.SapTransactionCode ?? "",
+                    SapActionKindLabel(t?.SapActionKind)
                 });
             }
 
@@ -125,7 +127,7 @@ namespace RPAWriter.Core.Services
 
             var rows = new List<IReadOnlyList<string>>
             {
-                new List<string> { "#", "Задача", "Описание", "Тип активности", "Файл(ы) решения" }
+                new List<string> { "#", "Задача", "Описание", "Тип активности", "Файл(ы) решения", "Транзакция SAP", "Вид действия" }
             };
 
             var list = tasks ?? new List<RobotTaskEntry>();
@@ -139,12 +141,25 @@ namespace RPAWriter.Core.Services
                     (task?.Action ?? "") + (string.IsNullOrWhiteSpace(task?.Target) ? "" : " → " + task.Target),
                     task?.Description ?? "",
                     task?.ActivityType ?? "",
-                    string.Join(", ", entry?.SolutionPaths ?? new List<string>())
+                    string.Join(", ", entry?.SolutionPaths ?? new List<string>()),
+                    task?.SapTransactionCode ?? "",
+                    SapActionKindLabel(task?.SapActionKind)
                 });
             }
 
             sb.Append(Table(rows));
             return sb.ToString();
+        }
+
+        private static string SapActionKindLabel(SapActionKind? kind)
+        {
+            switch (kind)
+            {
+                case SapActionKind.Setup: return "настройка";
+                case SapActionKind.Work: return "работа с транзакцией";
+                case SapActionKind.GetTable: return "получение таблицы";
+                default: return "";
+            }
         }
 
         private static void AppendList(StringBuilder sb, string heading, List<string> items)

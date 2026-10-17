@@ -30,8 +30,8 @@ namespace RPAWriter.Tests
             var md = MarkdownContent.TasksToMarkdown(spec);
 
             Assert.That(md, Does.Contain("# Задачи — Test"));
-            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова |"));
-            Assert.That(md, Does.Contain("| open | site | OpenBrowser | browser |"));
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия |"));
+            Assert.That(md, Does.Contain("| open | site | OpenBrowser | browser |  |  |"));
         }
 
         [Test]
@@ -71,8 +71,73 @@ namespace RPAWriter.Tests
 
             Assert.That(md, Does.Contain("# Задачи — RPA-0001"));
             Assert.That(md, Does.Contain("Сформировано: 2026-10-16 14:30:05 UTC"));
-            Assert.That(md, Does.Contain("| # | Задача | Описание | Тип активности | Файл(ы) решения |"));
+            Assert.That(md, Does.Contain("| # | Задача | Описание | Тип активности | Файл(ы) решения | Транзакция SAP | Вид действия |"));
             Assert.That(md, Does.Contain("RPA-0001/Main.xaml, RPA-0001/RpaActions.cs"));
+        }
+
+        [Test]
+        public void RobotTasksToMarkdown_RendersSapTransactionColumns()
+        {
+            var entries = new List<RobotTaskEntry>
+            {
+                new RobotTaskEntry
+                {
+                    Task = new TaskDescriptor
+                    {
+                        Action = "настроить",
+                        Target = "VA01",
+                        Description = "Настройка и запуск транзакции VA01",
+                        ActivityType = "SapSetup",
+                        SapTransactionCode = "VA01",
+                        SapActionKind = SapActionKind.Setup
+                    },
+                    SolutionPaths = new List<string> { "RPA-0001/Main.xaml" }
+                },
+                new RobotTaskEntry
+                {
+                    Task = new TaskDescriptor
+                    {
+                        Action = "получить таблицу",
+                        Target = "SE16N",
+                        Description = "Получение таблицы из транзакции SE16N",
+                        ActivityType = "SapGetTable",
+                        SapTransactionCode = "SE16N",
+                        SapActionKind = SapActionKind.GetTable
+                    },
+                    SolutionPaths = new List<string> { "RPA-0001/Main.xaml" }
+                }
+            };
+
+            var md = MarkdownContent.RobotTasksToMarkdown("RPA-0001", entries, new DateTime(2026, 10, 16, 14, 30, 5, DateTimeKind.Utc));
+
+            Assert.That(md, Does.Contain("| # | Задача | Описание | Тип активности | Файл(ы) решения | Транзакция SAP | Вид действия |"));
+            Assert.That(md, Does.Contain("| VA01 | настройка |"));
+            Assert.That(md, Does.Contain("| SE16N | получение таблицы |"));
+        }
+
+        [Test]
+        public void TasksToMarkdown_RendersSapTransactionColumns()
+        {
+            var spec = new SpecModel
+            {
+                Name = "SAP",
+                Tasks = new List<TaskDescriptor>
+                {
+                    new TaskDescriptor
+                    {
+                        Action = "настроить",
+                        Target = "VA01",
+                        ActivityType = "SapSetup",
+                        SapTransactionCode = "VA01",
+                        SapActionKind = SapActionKind.Setup
+                    }
+                }
+            };
+
+            var md = MarkdownContent.TasksToMarkdown(spec);
+
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия |"));
+            Assert.That(md, Does.Contain("| VA01 | настройка |"));
         }
 
         [Test]

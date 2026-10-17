@@ -58,21 +58,9 @@ namespace RPAWriter.Core.AgentTools
         {
             var text = content.Trim();
 
-            // Strip markdown code fences if present.
-            var fenceIdx = text.IndexOf("```", StringComparison.Ordinal);
-            if (fenceIdx >= 0)
-            {
-                var afterFence = text.Substring(fenceIdx + 3);
-                var nl = afterFence.IndexOf('\n');
-                if (nl >= 0)
-                    afterFence = afterFence.Substring(nl + 1);
-                var end = afterFence.LastIndexOf("```", StringComparison.Ordinal);
-                if (end >= 0)
-                    afterFence = afterFence.Substring(0, end);
-                text = afterFence.Trim();
-            }
-
-            // Take the first balanced JSON object.
+            // Take the first balanced JSON object. Markdown code fences (```) are ignored whether
+            // they wrap the JSON or appear inside the "text" value, because braces inside string
+            // values are skipped by the scan below.
             var start = text.IndexOf('{');
             if (start < 0)
                 return null;

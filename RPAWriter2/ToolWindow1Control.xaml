@@ -4,6 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:core="clr-namespace:RPAWriter.Core.Services;assembly=RPAWriter.Core"
+             xmlns:conv="clr-namespace:RPAWriter2.Converters"
              Background="#2D2D30"
              Foreground="#F1F1F1"
              mc:Ignorable="d"
@@ -18,8 +20,43 @@
         <SolidColorBrush x:Key="Dark.Border" Color="#3F3F46"/>
         <SolidColorBrush x:Key="Dark.Text" Color="#F1F1F1"/>
         <SolidColorBrush x:Key="Dark.Accent" Color="#264F78"/>
+        <SolidColorBrush x:Key="Dark.ErrorText" Color="#F48771"/>
+        <SolidColorBrush x:Key="Chat.UserBorder" Color="#CC64B5F6"/>
+        <SolidColorBrush x:Key="Chat.UserBackground" Color="#3364B5F6"/>
 
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
+        <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
+
+        <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
+            <EventSetter Event="PreviewMouseWheel" Handler="OnCodeScrollPreviewMouseWheel"/>
+        </Style>
+
+        <DataTemplate DataType="{x:Type core:TextMessageBlock}">
+            <TextBox Text="{Binding Text, Mode=OneWay}" TextWrapping="Wrap"
+                     IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0">
+                <TextBox.Style>
+                    <Style TargetType="TextBox">
+                        <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding DataContext.KindName, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="Error">
+                                <Setter Property="Foreground" Value="{StaticResource Dark.ErrorText}"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBox.Style>
+            </TextBox>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type core:CodeMessageBlock}">
+            <Border Background="{StaticResource Code.Background}" BorderBrush="{StaticResource Dark.Border}"
+                    BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,4,0,0">
+                <ScrollViewer Style="{StaticResource CodeScrollViewerStyle}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <ContentControl Content="{Binding Tokens, Mode=OneWay, Converter={StaticResource CodeToTextBlock}}"/>
+                </ScrollViewer>
+            </Border>
+        </DataTemplate>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
@@ -78,7 +115,7 @@
                                                                   Margin="{TemplateBinding Padding}"
                                                                   HorizontalAlignment="Left"
                                                                   VerticalAlignment="Center"
-                                                                  TextElement.Foreground="{TemplateBinding Foreground}"
+                                                                  TextElement.Foreground="{StaticResource Dark.Text}"
                                                                   Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
@@ -299,9 +336,13 @@
                                      Foreground="#C8C8C8" FontStyle="Italic"
                                      IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
                         </Expander>
-                        <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
-                                 Foreground="{StaticResource Dark.Text}"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                        <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ContentControl Content="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                     <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
                             Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
@@ -324,6 +365,27 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                    <WrapPanel Margin="0,5,0,6">
+                        <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="HistoryCombo" Width="220" VerticalAlignment="Center" Margin="0,0,4,0"
+                                  DisplayMemberPath="DisplayTitle"
+                                  SelectionChanged="OnHistorySelectionChanged"
+                                  ToolTip="Chat history"/>
+                        <Button Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                ToolTip="Delete current chat" Click="OnDeleteChat" Margin="0,0,8,0">
+                            <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
+                        </Button>
+                        <Button Content="commit" Click="OnCommit" Margin="0,0,8,0"/>
+                        <Button Content="deploy" Click="OnBuildRelease" Margin="0,0,8,0"/>
+                        <Button Content="generate robot" Click="OnGenerateRobot" Margin="0,0,8,0"/>
+                        <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,0"/>
+                        <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,0"/>
+                        <Button Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                ToolTip="Copy conversation" Click="OnCopyConversation" Margin="0,0,8,0">
+                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
+                        </Button>
+                    </WrapPanel>
                     <Border x:Name="CreateRobotPanel" Margin="0,0,0,6"
                             Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                             BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
@@ -341,19 +403,45 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Button Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
-                            Margin="0,0,0,4"
-                            Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                            ToolTip="Copy conversation" Click="OnCopyConversation">
-                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
-                    </Button>
                     <ScrollViewer Grid.Row="1" x:Name="ChatScroll"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl x:Name="ChatList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
+                                    <Border CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+                                                <Setter Property="BorderThickness" Value="1"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="User">
+                                                        <Setter Property="BorderBrush" Value="{StaticResource Chat.UserBorder}"/>
+                                                        <Setter Property="Background" Value="{StaticResource Chat.UserBackground}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="ToolCall">
+                                                        <Setter Property="BorderBrush" Value="#3B7A57"/>
+                                                        <Setter Property="Background" Value="#1F2E24"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="ToolBlocked">
+                                                        <Setter Property="BorderBrush" Value="#B0563C"/>
+                                                        <Setter Property="Background" Value="#33221E"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="Error">
+                                                        <Setter Property="BorderBrush" Value="#B0563C"/>
+                                                        <Setter Property="Background" Value="#331F1F"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="Compaction">
+                                                        <Setter Property="BorderBrush" Value="#6B6B2E"/>
+                                                        <Setter Property="Background" Value="#262618"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                                                        <Setter Property="BorderBrush" Value="#4A6B9A"/>
+                                                        <Setter Property="Background" Value="#1E2733"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -367,9 +455,13 @@
                                                              Foreground="#C8C8C8" FontStyle="Italic"
                                                              IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
                                                 </Expander>
-                                                <TextBox Text="{Binding DisplayText, Mode=OneWay}" TextWrapping="Wrap"
-                                                         Foreground="{StaticResource Dark.Text}"
-                                                         IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                                                <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <ContentControl Content="{Binding}"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </StackPanel>
                                             <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
                                                     Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
@@ -422,13 +514,18 @@
                                   Fill="{StaticResource Dark.Text}" Stretch="Uniform"
                                   Width="18" Height="18"/>
                         </Button>
-                        <Button Grid.Column="2" x:Name="SendErrorsButton" Width="28" Height="28"
-                                Margin="8,0,0,0" VerticalAlignment="Bottom" Click="OnSendErrors"
+                        <Button Grid.Column="2" x:Name="MicButton" Width="28" Height="28"
+                                Margin="8,0,0,0" VerticalAlignment="Bottom"
                                 Style="{StaticResource IconButtonStyle}"
-                                ToolTip="Send compilation errors to chat">
-                            <Path Data="M 11,2 L 13,2 L 13,14 L 11,14 Z M 11,16.5 L 13,16.5 L 13,18.5 L 11,18.5 Z"
-                                  Fill="#E51400" Stretch="Uniform"
-                                  Width="18" Height="18"/>
+                                ToolTip="Microphone">
+                            <Path Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18">
+                                <Path.Data>
+                                    <GeometryGroup FillRule="Nonzero">
+                                        <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
+                                        <PathGeometry Figures="M19,11 C19,14.53 16.39,17.44 13,17.93 L13,21 L11,21 L11,17.93 C7.61,17.44 5,14.53 5,11 L7,11 C7,13.76 9.24,16 12,16 C14.76,16 17,13.76 17,11 L19,11 Z"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
                         </Button>
                     </Grid>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
@@ -439,6 +536,12 @@
                         <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
                                      Checked="OnModeChanged"
                                      Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                        <Button x:Name="CompactNowButton" Content="Compact now" Click="OnCompactNow"
+                                Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Summarize the conversation to free context space"/>
+                        <Button x:Name="UpdateMemoryButton" Content="Memory bank" Click="OnUpdateMemory"
+                                Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Ask the agent to update the project memory bank"/>
                     </StackPanel>
                 </Grid>
             </Grid>
@@ -449,9 +552,6 @@
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Button Content="Import spec" Click="OnImportSpec" Margin="0,5,8,0"/>
                     <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
-                    <Button Content="Generate robot" Click="OnGenerateRobot" Margin="0,5,8,0"/>
-                    <Button Content="Publish" Click="OnBuildRelease" Margin="0,5,8,0"/>
-                    <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,5,8,0"/>
                     <Button Content="UiPath → WF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
                 </WrapPanel>
                 <Border x:Name="NoticeBar" DockPanel.Dock="Top" Background="#4DFF8C00"
@@ -524,8 +624,13 @@
                     <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
                                  Minimum="0" Maximum="100" Value="0"
                                  Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
-                    <TextBlock Grid.Row="2" x:Name="TokenUsageText" Margin="0,4,0,0" Foreground="#C8C8C8"
-                               TextWrapping="Wrap" Text="Context window: —"/>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                        <ProgressBar x:Name="ContextFillBar" Width="120" Height="12"
+                                     Minimum="0" Maximum="100" Value="0"
+                                     Foreground="{StaticResource Dark.Accent}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TokenUsageText" Margin="8,0,0,0" Foreground="#C8C8C8"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" Text="Context window: —"/>
+                    </StackPanel>
                 </Grid>
 
                 <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
@@ -575,6 +680,18 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -601,9 +718,49 @@
                 <TextBlock Grid.Row="7" Grid.Column="0" Text="Context window (tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <TextBox Grid.Row="7" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4"/>
 
-                <Button Grid.Row="8" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+                <TextBlock Grid.Row="8" Grid.Column="0" Text="Compact threshold (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="8" Grid.Column="1" x:Name="CompactThresholdBox" Margin="0,0,0,4"/>
 
-                <Border Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
+                <TextBlock Grid.Row="9" Grid.Column="0" Text="Reserve fraction (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="9" Grid.Column="1" x:Name="ReserveFractionBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="10" Grid.Column="0" Text="Keep recent messages" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="10" Grid.Column="1" x:Name="KeepRecentBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="11" Grid.Column="0" Text="Tool result max chars" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="11" Grid.Column="1" x:Name="ToolResultMaxCharsBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="12" Grid.Column="0" Text="Max agent iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="12" Grid.Column="1" x:Name="MaxIterationsBox" Margin="0,0,0,4"/>
+
+                <CheckBox Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCompactCheckBox"
+                          Content="Auto-compact (summarize)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                <CheckBox Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox"
+                          Content="Use 'tool' role for tool results" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+
+                <TextBlock Grid.Row="15" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="15" Grid.Column="1" Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Click="OnOpenLog" Margin="8,0,0,0"/>
+                    <TextBox x:Name="LogFilePathBox"/>
+                </DockPanel>
+
+                <TextBlock Grid.Row="16" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="16" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="17" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="17" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="18" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="18" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="19" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="19" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
+
+                <Button Grid.Row="20" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+
+                <Border Grid.Row="21" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
                         Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                         BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,12,0,0" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">
@@ -613,7 +770,14 @@
                     </StackPanel>
                 </Border>
 
-                <Button Grid.Row="10" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
+                <Button Grid.Row="22" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
+            </Grid>
+        </TabItem>
+
+        <TabItem x:Name="PackagesTab" Header="Packages">
+            <Grid Margin="8">
+                <TextBlock Text="No package operations yet." Foreground="#C8C8C8"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,8,0,0"/>
             </Grid>
         </TabItem>
     </TabControl>

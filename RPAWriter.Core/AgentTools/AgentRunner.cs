@@ -1,9 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter.Core.AgentTools
 {
@@ -12,6 +14,9 @@ namespace RPAWriter.Core.AgentTools
     {
         public string ToolName { get; set; } = "";
         public string Result { get; set; } = "";
+
+        /// <summary>Short text for the chat progress line (e.g. a file path). Empty means use <see cref="Result"/>.</summary>
+        public string DisplayResult { get; set; } = "";
         public bool Blocked { get; set; }
     }
 
@@ -28,51 +33,105 @@ namespace RPAWriter.Core.AgentTools
     /// Runs the agentic tool loop: sends the user message, executes tool calls,
     /// feeds results back, and returns the final answer.
     /// </summary>
+    /// <summary>Raised when the agent loop performs a recovery retry (overflow compact or max-tokens nudge).</summary>
+    public sealed class AgentRetryArgs : EventArgs
+    {
+        public string Kind { get; set; } = "";
+        public int Attempt { get; set; }
+        public int AttemptLimit { get; set; }
+        public string Detail { get; set; } = "";
+    }
+
     public sealed class AgentRunner
     {
+        private const int MaxTokensRecoveryLimit = 3;
+        private const string MaxTokensRecoveryNudge =
+            "Your previous response was cut off because it reached the output-token limit before finishing. " +
+            "Keep responses concise: take one small step at a time and finish with the JSON final answer.";
+
         private readonly IAiProvider _ai;
         private readonly AgentToolRegistry _registry;
         private readonly Func<AgentMode, string> _systemPromptFactory;
-        private readonly int _maxIterations;
+        private readonly ContextBudget _budget;
+        private readonly ITokenEstimator _estimator;
+        private readonly IContextCondenser _condenser;
+        private readonly ContextAssembler _assembler;
 
         /// <summary>Raised after each tool execution (or blocked attempt).</summary>
         public event EventHandler<AgentToolCall> ToolExecuted;
 
+        /// <summary>Raised when the context is automatically compacted, so the UI can show a notice.</summary>
+        public event EventHandler ContextCompacted;
+
+        /// <summary>Raised for every recovery retry (overflow compact or max-tokens nudge).</summary>
+        public event EventHandler<AgentRetryArgs> RetryOccurred;
+
+        /// <summary>Backward-compatible constructor: a fixed iteration cap with default budget thresholds.</summary>
         public AgentRunner(
             IAiProvider ai,
             AgentToolRegistry registry,
             Func<AgentMode, string> systemPromptFactory,
             int maxIterations = 8)
+            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations })
+        {
+        }
+
+        public AgentRunner(
+            IAiProvider ai,
+            AgentToolRegistry registry,
+            Func<AgentMode, string> systemPromptFactory,
+            ContextBudget budget,
+            string compactSystemPrompt = null)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _systemPromptFactory = systemPromptFactory ?? throw new ArgumentNullException(nameof(systemPromptFactory));
-            _maxIterations = maxIterations > 0 ? maxIterations : 8;
+            _budget = budget ?? new ContextBudget();
+
+            _estimator = new TokenEstimator();
+            var prompt = compactSystemPrompt ?? PromptLibrary.Load(
+                PromptPaths.ResolvePromptsDirectory(),
+                PromptLibrary.Categories.System,
+                "agent-compact.txt",
+                PromptDefaults.AgentCompactSystemPrompt);
+            _condenser = new ContextCondenser(_ai, _estimator, prompt);
+            _assembler = new ContextAssembler(_estimator, _condenser);
         }
 
-        public async Task<AgentRunResult> RunAsync(string userText, AgentMode mode, CancellationToken cancellationToken, IProgress<ChatStreamDelta> progress = null)
+        /// <summary>Backward-compatible single-shot run: no prior transcript, default budget.</summary>
+        public Task<AgentRunResult> RunAsync(string userText, AgentMode mode, CancellationToken cancellationToken, IProgress<ChatStreamDelta> progress = null)
         {
-            var systemPrompt = _systemPromptFactory(mode);
-            var messages = new List<ChatMessageData>
-            {
-                new ChatMessageData { Role = "user", Content = userText ?? "" }
-            };
+            return RunAsync(Array.Empty<ChatMessageData>(), userText, mode, _budget, cancellationToken, progress);
+        }
 
-            for (var i = 0; i < _maxIterations; i++)
+        /// <summary>
+        /// Runs the agentic tool loop over a transcript (prior conversation history), appending
+        /// the new user message. The transcript is not mutated; tool results are appended per-turn.
+        /// </summary>
+        public async Task<AgentRunResult> RunAsync(
+            IReadOnlyList<ChatMessageData> history,
+            string userText,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress = null)
+        {
+            var effectiveBudget = budget ?? _budget;
+            var systemPrompt = _systemPromptFactory(mode);
+
+            var messages = new List<ChatMessageData>();
+            if (history != null)
+                messages.AddRange(history);
+            messages.Add(new ChatMessageData { Role = "user", Content = userText ?? "" });
+
+            var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
+
+            for (var i = 0; i < maxIterations; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                ChatResponse response;
-                if (_ai is IStreamingAiProvider streaming)
-                {
-                    response = await streaming.ChatStreamingAsync(messages, systemPrompt, progress, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    response = await _ai.ChatAsync(messages, systemPrompt, cancellationToken).ConfigureAwait(false);
-                    if (progress != null && !string.IsNullOrEmpty(response.Reasoning))
-                        progress.Report(new ChatStreamDelta { ReasoningDelta = response.Reasoning });
-                }
+                var prepared = await PrepareContextAsync(messages, systemPrompt, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                var response = await CallWithRecoveryAsync(prepared, effectiveBudget, cancellationToken, progress).ConfigureAwait(false);
                 var action = AgentResponseParser.Parse(response.Answer);
 
                 if (action.IsFinal)
@@ -86,7 +145,7 @@ namespace RPAWriter.Core.AgentTools
                 {
                     messages.Add(new ChatMessageData
                     {
-                        Role = "tool",
+                        Role = "user",
                         Content = "Unknown tool: \"" + toolName + "\". Use one of the tools listed in the system prompt."
                     });
                     continue;
@@ -101,7 +160,7 @@ namespace RPAWriter.Core.AgentTools
                         Result = "Blocked: this mutating tool is not allowed in Plan mode."
                     };
                     ToolExecuted?.Invoke(this, blocked);
-                    messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result });
+                    messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
                     continue;
                 }
 
@@ -119,20 +178,160 @@ namespace RPAWriter.Core.AgentTools
                     resultText = "Tool \"" + tool.Name + "\" failed: " + ex.Message;
                 }
 
-                ToolExecuted?.Invoke(this, new AgentToolCall { ToolName = tool.Name, Result = Truncate(resultText), Blocked = false });
-                messages.Add(new ChatMessageData { Role = "tool", Content = Truncate(resultText) });
+                string displayText = null;
+                try
+                {
+                    displayText = await tool.GetDisplayResultAsync(action.Arguments, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Display text is best-effort; fall back to the full result below.
+                }
+
+                var truncated = Truncate(resultText, effectiveBudget.ToolResultMaxChars);
+                ToolExecuted?.Invoke(this, new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Result = truncated,
+                    DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
+                    Blocked = false
+                });
+
+                var toolRole = effectiveBudget.UseToolRole ? "tool" : "user";
+                messages.Add(new ChatMessageData
+                {
+                    Role = toolRole,
+                    Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated
+                });
             }
 
             return new AgentRunResult
             {
-                FinalText = "Достигнут лимит шагов агента (" + _maxIterations + "). Уточните запрос или разбейте задачу.",
+                FinalText = "Достигнут лимит шагов агента (" + maxIterations + "). Уточните запрос или разбейте задачу.",
                 Reasoning = ""
             };
         }
 
-        private static string Truncate(string text, int max = 12000)
+        private async Task<PreparedContext> PrepareContextAsync(
+            IReadOnlyList<ChatMessageData> messages,
+            string systemPrompt,
+            ContextBudget budget,
+            CancellationToken cancellationToken)
         {
-            if (string.IsNullOrEmpty(text) || text.Length <= max) return text;
+            var prepared = await _assembler.PrepareAsync(messages, systemPrompt, budget, cancellationToken).ConfigureAwait(false);
+            if (prepared.WasCondensed)
+                ContextCompacted?.Invoke(this, EventArgs.Empty);
+            return prepared;
+        }
+
+        private async Task<ChatResponse> CallWithRecoveryAsync(
+            PreparedContext prepared,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress)
+        {
+            var current = prepared;
+            var overflowRecovered = false;
+            var maxTokensAttempts = 0;
+
+            while (true)
+            {
+                ChatResponse response;
+                try
+                {
+                    response = await CallModelAsync(current, cancellationToken, progress).ConfigureAwait(false);
+                }
+                catch (ProviderErrorException ex) when (ex.Kind == ProviderErrorKind.ContextWindowExceeded && !overflowRecovered)
+                {
+                    overflowRecovered = true;
+                    RetryOccurred?.Invoke(this, new AgentRetryArgs
+                    {
+                        Kind = "context-overflow",
+                        Attempt = 1,
+                        AttemptLimit = 1,
+                        Detail = "Context window exceeded -> compact + retry"
+                    });
+                    var condensed = await _condenser.CondenseAsync(current.Messages, budget, cancellationToken).ConfigureAwait(false);
+                    ContextCompacted?.Invoke(this, EventArgs.Empty);
+                    var effective = condensed ?? current.Messages;
+                    current = new PreparedContext
+                    {
+                        SystemPrompt = current.SystemPrompt,
+                        Messages = effective,
+                        WasCondensed = true,
+                        EstimatedInputTokens = _estimator.Estimate(current.SystemPrompt, effective)
+                    };
+                    continue;
+                }
+
+                if (maxTokensAttempts < MaxTokensRecoveryLimit && IsTruncatedWithoutToolCall(response))
+                {
+                    maxTokensAttempts++;
+                    RetryOccurred?.Invoke(this, new AgentRetryArgs
+                    {
+                        Kind = "max-tokens",
+                        Attempt = maxTokensAttempts,
+                        AttemptLimit = MaxTokensRecoveryLimit,
+                        Detail = "Response truncated at output limit -> nudge + retry"
+                    });
+                    current = new PreparedContext
+                    {
+                        SystemPrompt = current.SystemPrompt,
+                        Messages = AppendNudge(current.Messages, response),
+                        WasCondensed = current.WasCondensed,
+                        EstimatedInputTokens = current.EstimatedInputTokens
+                    };
+                    continue;
+                }
+
+                return response;
+            }
+        }
+
+        private async Task<ChatResponse> CallModelAsync(
+            PreparedContext prepared,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress)
+        {
+            if (_ai is IStreamingAiProvider streaming)
+                return await streaming.ChatStreamingAsync(prepared.Messages, prepared.SystemPrompt, progress, cancellationToken).ConfigureAwait(false);
+
+            var response = await _ai.ChatAsync(prepared.Messages, prepared.SystemPrompt, cancellationToken).ConfigureAwait(false);
+            if (progress != null && !string.IsNullOrEmpty(response?.Reasoning))
+                progress.Report(new ChatStreamDelta { ReasoningDelta = response.Reasoning });
+            return response;
+        }
+
+        /// <summary>Manually condenses a transcript (e.g. "Compact now" in the UI).</summary>
+        public Task<IReadOnlyList<ChatMessageData>> CompactAsync(
+            IReadOnlyList<ChatMessageData> transcript,
+            ContextBudget budget,
+            CancellationToken cancellationToken)
+        {
+            return _condenser.CondenseAsync(transcript, budget, cancellationToken);
+        }
+
+        private static bool IsTruncatedWithoutToolCall(ChatResponse response)
+        {
+            if (response == null || !string.Equals(response.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                return false;
+            return AgentResponseParser.Parse(response.Answer).IsFinal;
+        }
+
+        private static IReadOnlyList<ChatMessageData> AppendNudge(IReadOnlyList<ChatMessageData> messages, ChatResponse response)
+        {
+            var list = new List<ChatMessageData>(messages);
+            list.Add(new ChatMessageData { Role = "assistant", Content = response?.Answer ?? "" });
+            list.Add(new ChatMessageData { Role = "user", Content = MaxTokensRecoveryNudge });
+            return list;
+        }
+
+        private static string Truncate(string text, int max)
+        {
+            if (max <= 0)
+                max = 12000;
+            if (string.IsNullOrEmpty(text) || text.Length <= max)
+                return text;
             return text.Substring(0, max) + "\n…(truncated)";
         }
     }

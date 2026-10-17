@@ -18,7 +18,11 @@ namespace RPAWriter.Core.Services
 
         public const string AnalyzeSpec =
             "Analyze the technical specification and return JSON of the form " +
-            "{\"summary\":\"...\",\"tasks\":[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}]}.\n\n" +
+            "{\"summary\":\"...\",\"tasks\":[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\",\"sapTransactionCode\":\"...\",\"sapActionKind\":\"...\"}]}.\n\n" +
+            "For SAP transaction tasks, split the work per transaction and set the SAP fields:\n" +
+            "- \"sapTransactionCode\": the SAP transaction name/code (e.g. \"VA01\", \"SE16N\").\n" +
+            "- \"sapActionKind\": one of \"setup\" (настройка и запуск транзакции), \"work\" (работа с транзакцией), \"gettable\" (получение таблицы/данных из транзакции).\n" +
+            "Omit both sapTransactionCode and sapActionKind for tasks that are not SAP transaction tasks.\n\n" +
             "Spec:\n{spec}";
 
         public const string GenerateRobot =
@@ -29,8 +33,12 @@ namespace RPAWriter.Core.Services
 
         public const string DecomposeTasks =
             "Decompose the document into small atomic tasks. Return a JSON array: " +
-            "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\"}]. " +
+            "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\",\"sapTransactionCode\":\"...\",\"sapActionKind\":\"...\"}]. " +
             "Write the action, target and description of each task in Russian.\n\n" +
+            "For SAP transaction tasks, split the work per transaction and set the SAP fields:\n" +
+            "- \"sapTransactionCode\": the SAP transaction name/code (e.g. \"VA01\", \"SE16N\").\n" +
+            "- \"sapActionKind\": one of \"setup\" (настройка и запуск транзакции), \"work\" (работа с транзакцией), \"gettable\" (получение таблицы/данных из транзакции).\n" +
+            "Omit both sapTransactionCode and sapActionKind for tasks that are not SAP transaction tasks.\n\n" +
             "Document:\n{document}";
 
         public const string ReconstructSpec =
@@ -69,5 +77,11 @@ namespace RPAWriter.Core.Services
             "To give the final answer, output EXACTLY one JSON object and nothing else:\n" +
             "{\"action\":\"final\",\"text\":\"<your answer in Russian>\"}\n\n" +
             "You may call several tools one after another, then finish with a final answer.";
+
+        public const string AgentCompactSystemPrompt =
+            "You are a conversation summarizer for an RPA robot development agent.\n" +
+            "Condense the provided conversation into a compact summary that preserves all technical details, " +
+            "decisions, code changes, file paths, task progress, and any unfinished work, so the agent can continue seamlessly.\n" +
+            "Return only the summary text — no JSON, no commentary.";
     }
 }

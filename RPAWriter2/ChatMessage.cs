@@ -1,30 +1,88 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using RPAWriter.Core.Models;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2
 {
-    /// <summary>A chat message from the agent: role, text, and (optionally) the model's "reasoning".</summary>
+    /// <summary>
+    /// A single chat entry: a <see cref="Kind"/> (what the entry is), a typed
+    /// <see cref="Payload"/> (its content), and optionally the model's "reasoning".
+    /// Rendered per-kind by the chat list.
+    /// </summary>
     public class ChatMessage : INotifyPropertyChanged
     {
-        private string _role = "";
-        private string _text = "";
+        private ChatMessageKind _kind;
+        private ChatPayload _payload = new TextPayload();
         private string _reasoning = "";
         private string _mode = "";
         private bool _isThinking;
+        private bool _isPartial;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        /// <summary>Role: "user" | "agent" | "system".</summary>
-        public string Role
+        /// <summary>What kind of entry this is; drives the label and the renderer.</summary>
+        public ChatMessageKind Kind
         {
-            get => _role;
-            set { if (_role != value) { _role = value; OnPropertyChanged(); OnPropertyChanged(nameof(Label)); OnPropertyChanged(nameof(DisplayText)); } }
+            get => _kind;
+            set
+            {
+                if (_kind != value)
+                {
+                    _kind = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(Label));
+                    OnPropertyChanged(nameof(DisplayText));
+                    OnPropertyChanged(nameof(Blocks));
+                    OnPropertyChanged(nameof(KindName));
+                }
+            }
         }
 
+        /// <summary>String form of <see cref="Kind"/>, for XAML data triggers.</summary>
+        public string KindName => Kind.ToString();
+
+        /// <summary>Typed content payload. <see cref="TextPayload"/> for text entries, <see cref="ToolCallPayload"/> for tool calls.</summary>
+        public ChatPayload Payload
+        {
+            get => _payload;
+            set
+            {
+                if (!ReferenceEquals(_payload, value))
+                {
+                    _payload = value ?? new TextPayload();
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(Text));
+                    OnPropertyChanged(nameof(Label));
+                    OnPropertyChanged(nameof(DisplayText));
+                    OnPropertyChanged(nameof(Blocks));
+                }
+            }
+        }
+
+        /// <summary>Plain text of the entry (proxies into a <see cref="TextPayload"/>). Empty for tool calls.</summary>
         public string Text
         {
-            get => _text;
-            set { if (_text != value) { _text = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayText)); } }
+            get => (Payload as TextPayload)?.Text ?? "";
+            set
+            {
+                if (Payload is TextPayload current)
+                {
+                    if (current.Text != value)
+                    {
+                        current.Text = value;
+                        OnPropertyChanged();
+                        OnPropertyChanged(nameof(DisplayText));
+                        OnPropertyChanged(nameof(Blocks));
+                    }
+                }
+                else
+                {
+                    Payload = new TextPayload(value);
+                }
+            }
         }
 
         public string Reasoning
@@ -37,15 +95,34 @@ namespace RPAWriter2
         public string Mode
         {
             get => _mode;
-            set { if (_mode != value) { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(Label)); OnPropertyChanged(nameof(DisplayText)); } }
+            set { if (_mode != value) { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(Label)); OnPropertyChanged(nameof(DisplayText)); OnPropertyChanged(nameof(Blocks)); } }
         }
 
         /// <summary>True while the model is still generating; the reasoning control shows "Thinking…".</summary>
         public bool IsThinking
         {
             get => _isThinking;
-            set { if (_isThinking != value) { _isThinking = value; OnPropertyChanged(); OnPropertyChanged(nameof(ReasoningHeader)); OnPropertyChanged(nameof(ShowReasoning)); } }
+            set
+            {
+                if (_isThinking != value)
+                {
+                    _isThinking = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(ReasoningHeader));
+                    OnPropertyChanged(nameof(ShowReasoning));
+                }
+            }
         }
+
+        /// <summary>True while the entry's text is still being streamed in.</summary>
+        public bool IsPartial
+        {
+            get => _isPartial;
+            set { if (_isPartial != value) { _isPartial = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>When this entry was created (UTC).</summary>
+        public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
         public bool HasReasoning => !string.IsNullOrWhiteSpace(Reasoning);
 
@@ -59,16 +136,36 @@ namespace RPAWriter2
         {
             get
             {
-                switch (Role)
+                switch (Kind)
                 {
-                    case "user": return "You: ";
-                    case "agent": return string.IsNullOrWhiteSpace(Mode) ? "Agent: " : "Agent [" + Mode + "]: ";
+                    case ChatMessageKind.User: return "You: ";
+                    case ChatMessageKind.AgentText: return string.IsNullOrWhiteSpace(Mode) ? "Agent: " : "Agent [" + Mode + "]: ";
+                    case ChatMessageKind.Error: return "⚠ Extension error: ";
                     default: return "";
                 }
             }
         }
 
-        public string DisplayText => string.IsNullOrEmpty(Label) ? (Text ?? "") : Label + (Text ?? "");
+        public string DisplayText
+        {
+            get
+            {
+                if (Kind == ChatMessageKind.ToolCall || Kind == ChatMessageKind.ToolBlocked)
+                {
+                    var p = Payload as ToolCallPayload;
+                    var name = p?.ToolName ?? "";
+                    if (Kind == ChatMessageKind.ToolBlocked)
+                        return "⛔ " + name + " blocked in Plan mode.";
+                    return "⚙ " + name + " → " + (p?.Result ?? "");
+                }
+
+                var t = Text ?? "";
+                return string.IsNullOrEmpty(Label) ? t : Label + t;
+            }
+        }
+
+        /// <summary>Message content split into text and code blocks (for syntax-highlighted rendering).</summary>
+        public IReadOnlyList<MessageBlock> Blocks => ChatMarkdown.SplitBlocks(DisplayText);
 
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {

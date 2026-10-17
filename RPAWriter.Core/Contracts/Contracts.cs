@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using RPAWriter.Core.Context;
 using RPAWriter.Core.Models;
 
 namespace RPAWriter.Core.Contracts
@@ -143,5 +144,47 @@ namespace RPAWriter.Core.Contracts
     public interface IUiPathConverter
     {
         UiPathConversionResult Convert(string uipathXaml);
+    }
+
+    /// <summary>
+    /// Raised by providers instead of a bare transport exception, so the agent
+    /// loop can react to the failure class (e.g. compact and retry on context overflow).
+    /// </summary>
+    public class ProviderErrorException : Exception
+    {
+        public ProviderErrorException(ProviderErrorKind kind, string message, int? statusCode = null, string body = null, Exception innerException = null)
+            : base(message, innerException)
+        {
+            Kind = kind;
+            StatusCode = statusCode;
+            Body = body;
+        }
+
+        /// <summary>Classified failure kind.</summary>
+        public ProviderErrorKind Kind { get; }
+
+        /// <summary>HTTP status code returned by the provider, or null when no response was received.</summary>
+        public int? StatusCode { get; }
+
+        /// <summary>Response body returned by the provider (may be truncated), or null.</summary>
+        public string Body { get; }
+    }
+
+    /// <summary>Estimates the number of tokens an outgoing request will consume.</summary>
+    public interface ITokenEstimator
+    {
+        int Estimate(string systemPrompt, IReadOnlyList<ChatMessageData> messages);
+    }
+
+    /// <summary>
+    /// Condenses a conversation transcript so it fits the context budget: summarization
+    /// of older messages with a fallback to rule-based truncation.
+    /// </summary>
+    public interface IContextCondenser
+    {
+        Task<IReadOnlyList<ChatMessageData>> CondenseAsync(
+            IReadOnlyList<ChatMessageData> transcript,
+            ContextBudget budget,
+            CancellationToken cancellationToken);
     }
 }

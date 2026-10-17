@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
 
@@ -207,7 +208,7 @@ namespace RPAWriter.Tests
                 RetryMaxDelay = TimeSpan.FromMilliseconds(10)
             }, new HttpClient(handler));
 
-            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hello"));
+            var ex = Assert.ThrowsAsync<ProviderErrorException>(async () => await provider.ChatAsync("hello"));
             Assert.That(ex.Message, Does.Contain("no response"));
         }
 
@@ -263,6 +264,43 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task DecomposeTasksAsync_ParsesSapTransactionFields()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion(
+                    "[{\"action\":\"настроить\",\"target\":\"VA01\",\"sapTransactionCode\":\"VA01\",\"sapActionKind\":\"setup\"}," +
+                    "{\"action\":\"получить таблицу\",\"target\":\"SE16N\",\"sapTransactionCode\":\"SE16N\",\"sapActionKind\":\"gettable\"}]")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+
+            var tasks = await provider.DecomposeTasksAsync("SAP VA01");
+
+            Assert.That(tasks.Count, Is.EqualTo(2));
+            Assert.That(tasks[0].SapTransactionCode, Is.EqualTo("VA01"));
+            Assert.That(tasks[0].SapActionKind, Is.EqualTo(SapActionKind.Setup));
+            Assert.That(tasks[1].SapTransactionCode, Is.EqualTo("SE16N"));
+            Assert.That(tasks[1].SapActionKind, Is.EqualTo(SapActionKind.GetTable));
+        }
+
+        [Test]
+        public async Task AnalyzeSpecAsync_ParsesSapTransactionFields()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion(
+                    "{\"summary\":\"s\",\"tasks\":[{\"action\":\"настроить\",\"target\":\"VA01\",\"sapTransactionCode\":\"VA01\",\"sapActionKind\":\"setup\"}]}")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+
+            var analysis = await provider.AnalyzeSpecAsync(new SpecModel { RawText = "SAP VA01" });
+
+            Assert.That(analysis.Tasks.Count, Is.EqualTo(1));
+            Assert.That(analysis.Tasks[0].SapTransactionCode, Is.EqualTo("VA01"));
+            Assert.That(analysis.Tasks[0].SapActionKind, Is.EqualTo(SapActionKind.Setup));
+        }
+
+        [Test]
         public async Task ReconstructSpecAsync_IncludesPlatformRulesFromSubfolder()
         {
             var dir = Path.Combine(Path.GetTempPath(), "rpawriter_rules_" + Guid.NewGuid().ToString("N"));
@@ -302,8 +340,9 @@ namespace RPAWriter.Tests
                 RetryMaxDelay = TimeSpan.FromMilliseconds(10)
             }, new HttpClient(handler));
 
-            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hi"));
+            var ex = Assert.ThrowsAsync<ProviderErrorException>(async () => await provider.ChatAsync("hi"));
 
+            Assert.That(ex.Kind, Is.EqualTo(ProviderErrorKind.ContextWindowExceeded));
             Assert.That(ex.Message, Does.Contain("400"));
             Assert.That(ex.Message, Does.Contain("context length exceeded"));
         }
@@ -356,7 +395,7 @@ namespace RPAWriter.Tests
                 RetryMaxDelay = TimeSpan.FromMilliseconds(10)
             }, new HttpClient(handler));
 
-            var ex = Assert.ThrowsAsync<HttpRequestException>(async () => await provider.ChatAsync("hi"));
+            var ex = Assert.ThrowsAsync<ProviderErrorException>(async () => await provider.ChatAsync("hi"));
 
             Assert.That(ex.Message, Does.Contain("400"));
             Assert.That(ex.Message, Does.Contain("bad key"));

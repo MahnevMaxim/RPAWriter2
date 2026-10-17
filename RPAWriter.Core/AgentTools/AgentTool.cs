@@ -9,19 +9,22 @@ namespace RPAWriter.Core.AgentTools
     public sealed class AgentTool : IAgentTool
     {
         private readonly Func<JObject, CancellationToken, Task<string>> _handler;
+        private readonly Func<JObject, CancellationToken, Task<string>> _displayHandler;
 
         public AgentTool(
             string name,
             string description,
             string parametersSchema,
             bool mutates,
-            Func<JObject, CancellationToken, Task<string>> handler)
+            Func<JObject, CancellationToken, Task<string>> handler,
+            Func<JObject, CancellationToken, Task<string>> displayHandler = null)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             Description = description ?? "";
             ParametersSchema = parametersSchema ?? "{}";
             Mutates = mutates;
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+            _displayHandler = displayHandler;
         }
 
         public string Name { get; }
@@ -32,6 +35,13 @@ namespace RPAWriter.Core.AgentTools
         public Task<string> ExecuteAsync(JObject arguments, CancellationToken cancellationToken)
         {
             return _handler(arguments ?? new JObject(), cancellationToken);
+        }
+
+        public Task<string> GetDisplayResultAsync(JObject arguments, CancellationToken cancellationToken)
+        {
+            return _displayHandler != null
+                ? _displayHandler(arguments ?? new JObject(), cancellationToken)
+                : Task.FromResult<string>(null);
         }
     }
 }

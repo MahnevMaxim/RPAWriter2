@@ -56,7 +56,9 @@ namespace RPAWriter.Core.Services
                 Action = source.Action,
                 Target = source.Target,
                 Description = source.Description,
-                ActivityType = source.ActivityType
+                ActivityType = source.ActivityType,
+                SapTransactionCode = source.SapTransactionCode,
+                SapActionKind = source.SapActionKind
             };
             if (source.Inputs != null) t.Inputs.AddRange(source.Inputs);
             if (source.Outputs != null) t.Outputs.AddRange(source.Outputs);
