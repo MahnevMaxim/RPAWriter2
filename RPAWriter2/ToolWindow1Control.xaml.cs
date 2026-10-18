@@ -1046,15 +1046,18 @@ namespace RPAWriter2
             if (_logProviders != null) return;
 
             var discovered = LogProviderLoader.Discover(ResolveLogProvidersDirectory());
-            var providers = new List<IProdLogProvider> { new StubProdLogProvider() };
-            foreach (var provider in discovered)
+            if (discovered.Count > 0)
             {
-                if (provider != null && !(provider is StubProdLogProvider))
-                    providers.Add(provider);
+                // Prefer external providers; fall back to the offline stub only when none are present.
+                _logProviders = discovered;
+                _selectedLogProvider = discovered[0];
             }
-
-            _logProviders = providers;
-            _selectedLogProvider = providers.Count > 0 ? providers[0] : null;
+            else
+            {
+                var fallback = new List<IProdLogProvider> { new StubProdLogProvider() };
+                _logProviders = fallback;
+                _selectedLogProvider = fallback[0];
+            }
         }
 
         private string ResolveLogProvidersDirectory()

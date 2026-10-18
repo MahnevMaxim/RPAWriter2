@@ -42,6 +42,19 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ExampleProdLogProvider.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Copy the built provider DLL into the extension's providers directory so it is
+       picked up automatically after a build (no manual copying required). -->
+  <Target Name="CopyToProvidersDir" AfterTargets="Build">
+    <PropertyGroup>
+      <ProvidersDir>$(AppData)\RPAWriter2\Providers</ProvidersDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(ProvidersDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProvidersDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -13,6 +13,8 @@ namespace RPAWriter.Core.Services
     /// </summary>
     public static class LogProviderLoader
     {
+        private static readonly string CoreAssemblyFullName = typeof(IProdLogProvider).Assembly.FullName;
+
         public static IReadOnlyList<IProdLogProvider> Discover(string directory)
         {
             var result = new List<IProdLogProvider>();
@@ -23,6 +25,12 @@ namespace RPAWriter.Core.Services
             {
                 try
                 {
+                    // Never load a second copy of RPAWriter.Core: providers reference the
+                    // same IProdLogProvider type, and loading another copy of Core would
+                    // break IsAssignableFrom via a type-identity mismatch.
+                    if (string.Equals(AssemblyName.GetAssemblyName(file).FullName, CoreAssemblyFullName, StringComparison.Ordinal))
+                        continue;
+
                     var assembly = Assembly.LoadFrom(file);
                     foreach (var type in assembly.GetExportedTypes())
                     {
