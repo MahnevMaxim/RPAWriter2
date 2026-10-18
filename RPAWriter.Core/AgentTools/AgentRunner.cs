@@ -50,6 +50,14 @@ namespace RPAWriter.Core.AgentTools
             "Your previous response was cut off because it reached the output-token limit before finishing. " +
             "Keep responses concise: take one small step at a time and finish with the JSON final answer.";
 
+        private const int ProtocolRecoveryLimit = 2;
+        private const string ProtocolRecoveryNudge =
+            "Your last reply was not in the required format. I cannot understand XML/DSML tool-call markup such as <invoke> or <parameter>. " +
+            "Answer with EXACTLY ONE JSON object and nothing else. To call a tool: " +
+            "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}. " +
+            "To answer the user: {\"action\":\"final\",\"text\":\"...\"}. " +
+            "No markdown fences, no XML/DSML tags, no text before or after the JSON.";
+
         private readonly IAiProvider _ai;
         private readonly AgentToolRegistry _registry;
         private readonly Func<AgentMode, string> _systemPromptFactory;
@@ -135,6 +143,7 @@ namespace RPAWriter.Core.AgentTools
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
             var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
+            var protocolAttempts = 0;
 
             for (var i = 0; i < maxIterations; i++)
             {
@@ -163,7 +172,17 @@ namespace RPAWriter.Core.AgentTools
                 var action = AgentResponseParser.Parse(response.Answer);
 
                 if (action.IsFinal)
+                {
+                    if (AgentResponseParser.LooksLikeToolMarkup(response.Answer) && protocolAttempts < ProtocolRecoveryLimit)
+                    {
+                        protocolAttempts++;
+                        messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer });
+                        messages.Add(new ChatMessageData { Role = "user", Content = ProtocolRecoveryNudge });
+                        continue;
+                    }
+
                     return new AgentRunResult { FinalText = action.Text, Reasoning = response.Reasoning };
+                }
 
                 messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer });
 

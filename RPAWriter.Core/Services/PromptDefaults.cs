@@ -71,7 +71,7 @@ namespace RPAWriter.Core.Services
             "Hard rules:\n" +
             "1. Output ONLY the JSON - no text before, after or around it.\n" +
             "2. No markdown code fences (``` or ```json). The JSON must be raw.\n" +
-            "3. No XML, DSML or function-call tags: never output <...> blocks, <invoke>, <parameter> or any similar markup.\n" +
+            "3. No XML, NO DSML or function-call tags: never output <...> blocks, <invoke>, <parameter> or any similar markup.\n" +
             "4. No [Reasoning] section, no \"Let me ...\" commentary, no prose outside the JSON.\n" +
             "5. \"action\" is exactly \"tool_call\" or \"final\". \"tool\" is exactly one of the tool names listed above. \"arguments\" contains exactly the listed parameters.\n" +
             "6. You may emit several tool calls in one turn when they are independent; otherwise emit one per turn.\n\n" +

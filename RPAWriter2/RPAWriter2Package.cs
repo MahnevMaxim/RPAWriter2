@@ -50,6 +50,7 @@ namespace RPAWriter2
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             await ToolWindow1Command.InitializeAsync(this);
             await SendErrorToChatCommand.InitializeAsync(this);
+            await SendSelectionToMessageboxCommand.InitializeAsync(this);
         }
 
         #endregion

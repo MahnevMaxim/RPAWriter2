@@ -34,6 +34,16 @@ namespace RPAWriter.Core.AgentTools
                 return AgentResponse.Final("");
 
             var json = ExtractJson(content);
+
+            // Some models emit tool calls as DSML/XML markup instead of the JSON protocol.
+            // Normalize that markup into JSON tool_call objects before parsing.
+            if (LooksLikeToolMarkup(content))
+            {
+                var normalized = DsmlNormalizer.Normalize(content);
+                if (normalized != null)
+                    json = normalized;
+            }
+
             if (json == null)
                 return AgentResponse.Final(content.Trim());
 
@@ -75,6 +85,12 @@ namespace RPAWriter.Core.AgentTools
             {
                 return AgentResponse.Final(content.Trim());
             }
+        }
+
+        /// <summary>True when the content looks like tool-call markup (DSML/XML) rather than JSON.</summary>
+        public static bool LooksLikeToolMarkup(string content)
+        {
+            return DsmlNormalizer.LooksLikeMarkup(content);
         }
 
         private static AgentToolCallSpec ParseCall(JObject obj)

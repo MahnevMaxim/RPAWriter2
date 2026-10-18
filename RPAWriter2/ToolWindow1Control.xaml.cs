@@ -2183,6 +2183,31 @@ namespace RPAWriter2
         }
 
         /// <summary>
+        /// Appends an externally produced text (e.g. an editor selection) into the chat input box
+        /// without sending it. Safe to call from any thread.
+        /// </summary>
+        public void AppendSelectionToInput(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendSelectionToInput(text)));
+                return;
+            }
+
+            ShowConversationView();
+
+            var existing = InputBox.Text;
+            InputBox.Text = string.IsNullOrWhiteSpace(existing)
+                ? text
+                : existing.TrimEnd() + Environment.NewLine + text;
+            InputBox.CaretIndex = InputBox.Text.Length;
+            InputBox.Focus();
+        }
+
+        /// <summary>
         /// Sends an externally produced message (e.g. an Error List item selected by the user)
         /// to the agent chat. When the agent is still processing a previous request, the message
         /// is placed into the input box instead of being silently dropped.

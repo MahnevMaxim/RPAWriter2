@@ -101,6 +101,76 @@ namespace RPAWriter.Tests
             Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
             Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_spec"));
         }
+
+        [Test]
+        public void Parse_DsmlToolCalls_ReturnsToolCalls()
+        {
+            var content =
+                "Agent [Plan]: <｜DSML｜ calls>\n" +
+                "<｜DSML｜ invoke name=\"tool_call\">\n" +
+                "<｜DSML｜ parameter name=\"tool\" string=\"true\">list_directory</｜DSML｜ parameter>\n" +
+                "<｜DSML｜ parameter name=\"arguments\" string=\"false\">{\"path\": \".\", \"recursive\": true}</｜DSML｜ parameter>\n" +
+                "</｜DSML｜ invoke>\n" +
+                "<｜DSML｜ invoke name=\"tool_call\">\n" +
+                "<｜DSML｜ parameter name=\"tool\" string=\"true\">git_status</｜DSML｜ parameter>\n" +
+                "<｜DSML｜ parameter name=\"arguments\" string=\"false\">{}</｜DSML｜ parameter>\n" +
+                "</｜DSML｜ invoke>\n" +
+                "</｜DSML｜ calls>";
+
+            var result = AgentResponseParser.Parse(content);
+
+            Assert.That(result.IsFinal, Is.False);
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(2));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("list_directory"));
+            Assert.That(result.ToolCalls[0].Arguments.Value<string>("path"), Is.EqualTo("."));
+            Assert.That(result.ToolCalls[0].Arguments.Value<bool>("recursive"), Is.True);
+            Assert.That(result.ToolCalls[1].ToolName, Is.EqualTo("git_status"));
+        }
+
+        [Test]
+        public void Parse_DsmlPipeAndLowercaseVariant_ReturnsToolCall()
+        {
+            var content =
+                "<dsml|invoke name=\"tool_call\">\n" +
+                "<dsml|parameter name=\"tool\" string=\"true\">read_file</dsml|parameter>\n" +
+                "<dsml|parameter name=\"arguments\" string=\"false\">{\"path\":\"a.txt\"}</dsml|parameter>\n" +
+                "</dsml|invoke>";
+
+            var result = AgentResponseParser.Parse(content);
+
+            Assert.That(result.IsFinal, Is.False);
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_file"));
+            Assert.That(result.ToolCalls[0].Arguments.Value<string>("path"), Is.EqualTo("a.txt"));
+        }
+
+        [Test]
+        public void Parse_PlainXmlInvoke_ReturnsToolCall()
+        {
+            var content =
+                "<invoke name=\"tool_call\">" +
+                "<parameter name=\"tool\" string=\"true\">read_spec</parameter>" +
+                "<parameter name=\"arguments\" string=\"false\">{}</parameter>" +
+                "</invoke>";
+
+            var result = AgentResponseParser.Parse(content);
+
+            Assert.That(result.IsFinal, Is.False);
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_spec"));
+        }
+
+        [Test]
+        public void LooksLikeToolMarkup_Dsml_ReturnsTrue()
+        {
+            Assert.That(AgentResponseParser.LooksLikeToolMarkup("<｜DSML｜ invoke name=\"tool_call\">"), Is.True);
+        }
+
+        [Test]
+        public void LooksLikeToolMarkup_Json_ReturnsFalse()
+        {
+            Assert.That(AgentResponseParser.LooksLikeToolMarkup("{\"action\":\"final\",\"text\":\"ok\"}"), Is.False);
+        }
     }
 
     [TestFixture]
@@ -338,6 +408,24 @@ namespace RPAWriter.Tests
 
             Assert.That(executed, Is.False);
             Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_DsmlGarbage_RecoversThenReturnsFinal()
+        {
+            var registry = new AgentToolRegistry();
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("<｜DSML｜ invoke name=\"tool_call\">\n</｜DSML｜ invoke>"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"готово\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Plan, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("готово"));
         }
     }
 

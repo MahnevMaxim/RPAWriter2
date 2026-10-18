@@ -40,6 +40,10 @@
       <Group guid="guidRPAWriter2PackageCmdSet" id="grpidErrorListContextMenu" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ERRORLIST" />
       </Group>
+      <!-- Places the "Send to RPA Writer" command into the code editor context menu. -->
+      <Group guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
+      </Group>
     </Groups>
 
     <!--Buttons section. -->
@@ -66,6 +70,12 @@
           <ButtonText>Send to RPA Writer</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidRPAWriter2PackageCmdSet" id="cmdidSendSelectionToMessagebox" priority="0x0100" type="Button">
+        <Parent guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" />
+        <Strings>
+          <ButtonText>Send to RPA Writer</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
 
     <!--The bitmaps section is used to define the bitmaps that are used for the commands.-->
@@ -88,6 +98,8 @@
       <IDSymbol value="4129" name="cmdidToolWindow1Command" />
       <IDSymbol value="4130" name="cmdidSendErrorToChat" />
       <IDSymbol value="4131" name="grpidErrorListContextMenu" />
+      <IDSymbol value="4132" name="cmdidSendSelectionToMessagebox" />
+      <IDSymbol value="4133" name="grpidEditorContextMenu" />
     </GuidSymbol>
 
 
