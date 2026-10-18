@@ -620,5 +620,110 @@ namespace RPAWriter.Tests
 
             Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(150));
         }
+
+        [Test]
+        public async Task ChatAsync_RecordsDeepSeekCacheTokens_AndEstimatesCost()
+        {
+            // DeepSeek reports prompt_cache_hit_tokens / prompt_cache_miss_tokens.
+            var handler = new FakeHttpHandler
+            {
+                Responder = req =>
+                    "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]," +
+                    "\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":4,\"total_tokens\":15," +
+                    "\"prompt_cache_hit_tokens\":3,\"prompt_cache_miss_tokens\":8}}"
+            };
+            var provider = new OpenAiCompatibleProvider(
+                new OpenAiOptions
+                {
+                    ApiKey = "sk-test",
+                    Model = "test-model",
+                    InputPricePerMillion = 0.27,
+                    CacheHitPricePerMillion = 0.07,
+                    OutputPricePerMillion = 1.10
+                },
+                new HttpClient(handler));
+
+            await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system");
+
+            Assert.That(provider.TotalTokenUsage.CacheHitTokens, Is.EqualTo(3));
+            Assert.That(provider.TotalTokenUsage.CacheMissTokens, Is.EqualTo(8));
+
+            // 8 miss * 0.27/M + 3 hit * 0.07/M + 4 out * 1.10/M
+            var expected = 8 / 1000000.0 * 0.27 + 3 / 1000000.0 * 0.07 + 4 / 1000000.0 * 1.10;
+            Assert.That(provider.TotalTokenUsage.EstimatedCostUsd, Is.EqualTo(expected).Within(1e-12));
+        }
+
+        [Test]
+        public async Task ChatAsync_RecordsOpenAICachedTokens_AsCacheHit()
+        {
+            // OpenAI reports prompt_tokens_details.cached_tokens instead of DeepSeek fields.
+            var handler = new FakeHttpHandler
+            {
+                Responder = req =>
+                    "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]," +
+                    "\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110," +
+                    "\"prompt_tokens_details\":{\"cached_tokens\":90}}}"
+            };
+            var provider = new OpenAiCompatibleProvider(
+                new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" },
+                new HttpClient(handler));
+
+            await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system");
+
+            Assert.That(provider.TotalTokenUsage.CacheHitTokens, Is.EqualTo(90));
+            Assert.That(provider.TotalTokenUsage.CacheMissTokens, Is.EqualTo(10));
+        }
+
+        [Test]
+        public async Task ChatAsync_NoCacheInfo_TreatsAllInputAsCacheMiss()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req =>
+                    "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]," +
+                    "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
+            };
+            var provider = new OpenAiCompatibleProvider(
+                new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" },
+                new HttpClient(handler));
+
+            await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system");
+
+            Assert.That(provider.TotalTokenUsage.CacheHitTokens, Is.EqualTo(0));
+            Assert.That(provider.TotalTokenUsage.CacheMissTokens, Is.EqualTo(10));
+        }
+
+        [Test]
+        public async Task ChatAsync_RaisesPromptAssembled_WithSystemPromptAndMessages()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion("ok")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            PromptAssembledEventArgs captured = null;
+            provider.PromptAssembled += (s, e) => { captured = e; };
+
+            await provider.ChatAsync(
+                new List<ChatMessageData>
+                {
+                    new ChatMessageData { Role = "user", Content = "hello" },
+                    new ChatMessageData { Role = "assistant", Content = "hi" }
+                },
+                "sys-prompt");
+
+            Assert.That(captured, Is.Not.Null);
+            Assert.That(captured.SystemPrompt, Is.EqualTo("sys-prompt"));
+            Assert.That(captured.Messages.Count, Is.EqualTo(2));
+            Assert.That(captured.Messages[0].Content, Is.EqualTo("hello"));
+            Assert.That(captured.EstimatedInputTokens, Is.GreaterThan(0));
+        }
     }
 }

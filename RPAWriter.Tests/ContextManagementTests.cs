@@ -36,6 +36,9 @@ namespace RPAWriter.Tests
             return Task.FromResult((ChatResponse)next);
         }
 
+        public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default) =>
+            ChatAsync(messages, systemPrompt, cancellationToken);
+
         public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
         public Task<SpecAnalysis> AnalyzeSpecAsync(SpecModel spec, CancellationToken cancellationToken = default) =>

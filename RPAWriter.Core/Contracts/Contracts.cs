@@ -26,6 +26,13 @@ namespace RPAWriter.Core.Contracts
         /// and an explicit system prompt. Used by the agentic tool loop.
         /// </summary>
         Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Multi-turn chat that also passes the available tools. In native tool-calling mode the
+        /// provider emits a <c>tools</c> array and returns <see cref="ChatResponse.ToolCalls"/>;
+        /// in JSON-over-chat mode the tools are ignored and the model returns JSON text instead.
+        /// </summary>
+        Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -39,6 +46,14 @@ namespace RPAWriter.Core.Contracts
         Task<ChatResponse> ChatStreamingAsync(
             IReadOnlyList<ChatMessageData> messages,
             string systemPrompt,
+            IProgress<ChatStreamDelta> progress,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>Streaming variant that also passes the available tools (native tool calling).</summary>
+        Task<ChatResponse> ChatStreamingAsync(
+            IReadOnlyList<ChatMessageData> messages,
+            string systemPrompt,
+            IReadOnlyList<ToolDefinition> tools,
             IProgress<ChatStreamDelta> progress,
             CancellationToken cancellationToken = default);
     }
@@ -61,6 +76,15 @@ namespace RPAWriter.Core.Contracts
     public interface IMessageNotifier
     {
         event EventHandler<AiMessageEventArgs> MessageSent;
+    }
+
+    /// <summary>
+    /// Optional capability for AI providers that report the full assembled request
+    /// (system prompt + all messages) right before it is sent to the model.
+    /// </summary>
+    public interface IPromptNotifier
+    {
+        event EventHandler<PromptAssembledEventArgs> PromptAssembled;
     }
 
     /// <summary>

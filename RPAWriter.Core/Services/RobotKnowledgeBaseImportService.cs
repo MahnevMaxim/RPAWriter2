@@ -172,7 +172,7 @@ namespace RPAWriter.Core.Services
                     await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
                     var taskLabel = string.IsNullOrWhiteSpace(task?.Description) ? (task?.Action ?? "task") : task.Description;
                     report("Mapping solution for task \"" + taskLabel + "\"…");
-                    var solution = await _ai.MapTaskToSolutionAsync(task, files, cancellationToken, input.Platform).ConfigureAwait(false);
+                    var solution = await MapTaskToSolutionWithRetryAsync(task, files, taskLabel, input.Platform, report, cancellationToken, isPaused).ConfigureAwait(false);
                     solution.Name = robotName + " — " + (string.IsNullOrWhiteSpace(task?.Description) ? task?.Action : task.Description);
                     solution.SourceRobot = robotName;
                     solution.SpecGeneratedUtc = generatedUtc;
@@ -214,6 +214,48 @@ namespace RPAWriter.Core.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// Maps a task to its solution file(s), retrying transient failures up to
+        /// <see cref="MaxSolutionMappingAttempts"/> times. After the last attempt the
+        /// original exception is rethrown so the import stops (resume state is preserved).
+        /// </summary>
+        private async Task<SolutionRecord> MapTaskToSolutionWithRetryAsync(
+            TaskDescriptor task,
+            IReadOnlyList<RobotSourceFile> files,
+            string taskLabel,
+            RobotPlatform platform,
+            Action<string> report,
+            CancellationToken cancellationToken,
+            Func<bool> isPaused)
+        {
+            Exception lastError = null;
+            for (var attempt = 1; attempt <= MaxSolutionMappingAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await WaitWhilePausedAsync(isPaused, cancellationToken).ConfigureAwait(false);
+
+                try
+                {
+                    return await _ai.MapTaskToSolutionAsync(task, files, cancellationToken, platform).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    if (attempt < MaxSolutionMappingAttempts)
+                    {
+                        report("Mapping failed for task \"" + taskLabel + "\" (attempt " + attempt + " of " + MaxSolutionMappingAttempts + "): " + ex.Message + ". Retrying…");
+                        await Task.Delay(SolutionMappingRetryDelay, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            throw lastError;
         }
 
         /// <summary>
@@ -578,6 +620,12 @@ namespace RPAWriter.Core.Services
         private static string Normalize(string path) => (path ?? "").Replace('\\', '/');
 
         private const string ImportStateFileName = "import-state.txt";
+
+        /// <summary>Number of attempts to map a task to its solution files before giving up.</summary>
+        private const int MaxSolutionMappingAttempts = 5;
+
+        /// <summary>Delay between attempts when mapping a task to its solution files fails.</summary>
+        private static readonly TimeSpan SolutionMappingRetryDelay = TimeSpan.FromSeconds(1);
 
         /// <summary>Loads the set of robots already imported by a previous run (resume state).</summary>
         private static HashSet<string> LoadCompletedRobots(string kbDirectory)

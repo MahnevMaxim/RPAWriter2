@@ -27,6 +27,15 @@ namespace RPAWriter.Core.Models
         Act
     }
 
+    /// <summary>How the agent talks to the model about tools.</summary>
+    public enum ToolCallingMode
+    {
+        /// <summary>Model outputs JSON {"action":"final"/"tool_call",...} in plain text.</summary>
+        JsonChat,
+        /// <summary>Native OpenAI-style tools / tool_calls.</summary>
+        Native
+    }
+
     /// <summary>
     /// Kind of a chat entry in the UI transcript. The kind determines the label and the
     /// renderer, mirroring Cline's discriminated message kinds (say/ask) with a typed payload.
@@ -314,6 +323,32 @@ namespace RPAWriter.Core.Models
         /// does not report it.
         /// </summary>
         public string FinishReason { get; set; }
+
+        /// <summary>Native tool calls returned by the model (empty in JSON-over-chat mode).</summary>
+        public IReadOnlyList<NativeToolCall> ToolCalls { get; set; } = new List<NativeToolCall>();
+    }
+
+    /// <summary>OpenAI function-calling schema for one tool.</summary>
+    public sealed class ToolDefinition
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+
+        /// <summary>OpenAI JSON Schema of arguments ({"type":"object","properties":...}).</summary>
+        public Newtonsoft.Json.Linq.JObject Parameters { get; set; }
+    }
+
+    /// <summary>One native tool_call returned by the model.</summary>
+    public sealed class NativeToolCall
+    {
+        /// <summary>tool_call_id that must be echoed back in the tool-result message.</summary>
+        public string Id { get; set; }
+
+        /// <summary>function.name.</summary>
+        public string Name { get; set; }
+
+        /// <summary>function.arguments parsed as JSON.</summary>
+        public Newtonsoft.Json.Linq.JObject Arguments { get; set; }
     }
 
     /// <summary>A single chat message passed to the AI provider (role + content).</summary>
@@ -322,6 +357,12 @@ namespace RPAWriter.Core.Models
         /// <summary>Message role: "system" | "user" | "assistant" | "tool".</summary>
         public string Role { get; set; } = "";
         public string Content { get; set; } = "";
+
+        /// <summary>tool_call_id of the native tool call this message answers (role "tool" only).</summary>
+        public string ToolCallId { get; set; } = "";
+
+        /// <summary>Native tool calls made by an assistant message (role "assistant" only).</summary>
+        public IReadOnlyList<NativeToolCall> ToolCalls { get; set; } = new List<NativeToolCall>();
     }
 
     /// <summary>A single incremental chunk of a streamed chat response.</summary>
@@ -340,6 +381,18 @@ namespace RPAWriter.Core.Models
         public int PromptTokens { get; set; }
         public int CompletionTokens { get; set; }
         public int TotalTokens { get; set; }
+
+        /// <summary>
+        /// Input tokens served from the provider's prompt cache.
+        /// DeepSeek: <c>prompt_cache_hit_tokens</c>; OpenAI: <c>prompt_tokens_details.cached_tokens</c>.
+        /// </summary>
+        public int CacheHitTokens { get; set; }
+
+        /// <summary>Input tokens not served from cache (DeepSeek: <c>prompt_cache_miss_tokens</c>).</summary>
+        public int CacheMissTokens { get; set; }
+
+        /// <summary>Estimated cost of all requests in USD, computed from per-million token prices.</summary>
+        public double EstimatedCostUsd { get; set; }
     }
 
     /// <summary>Outgoing AI message reported by a provider right before it is sent.</summary>
@@ -349,6 +402,14 @@ namespace RPAWriter.Core.Models
         public string Role { get; set; }
         /// <summary>Message text sent to the AI provider.</summary>
         public string Content { get; set; }
+    }
+
+    // Reported by a provider when a full outgoing request (system prompt + all messages) is assembled.
+    public class PromptAssembledEventArgs : EventArgs
+    {
+        public string SystemPrompt { get; set; }
+        public IReadOnlyList<ChatMessageData> Messages { get; set; }
+        public int EstimatedInputTokens { get; set; }
     }
 
     /// <summary>Reported by a provider on each retry attempt while a request keeps failing.</summary>

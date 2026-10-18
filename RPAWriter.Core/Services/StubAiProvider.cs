@@ -164,6 +164,11 @@ namespace RPAWriter.Core.Services
             });
         }
 
+        public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default)
+        {
+            return ChatAsync(messages, systemPrompt, cancellationToken);
+        }
+
         private static string MethodNameFor(TaskDescriptor task)
         {
             var action = task?.Action ?? "Run";

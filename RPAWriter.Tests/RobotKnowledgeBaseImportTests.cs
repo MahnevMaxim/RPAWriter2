@@ -288,6 +288,32 @@ namespace RPAWriter.Tests
             Assert.That(count1, Is.EqualTo(count2));
         }
 
+        [Test]
+        public async Task ImportFromRobots_MappingRetriesThenSucceeds()
+        {
+            CreateRobotDir(_root, "RPA-0001");
+
+            var ai = new FlakySolutionAiProvider { FailuresBeforeSuccess = 2 };
+            var service = new RobotKnowledgeBaseImportService(ai);
+            var result = await service.ImportFromRobotsAsync(_root, _kb);
+
+            Assert.That(result.RobotsProcessed, Is.EqualTo(1));
+            Assert.That(result.TasksAdded, Is.EqualTo(1));
+            Assert.That(ai.MappingCalls, Is.EqualTo(3));
+        }
+
+        [Test]
+        public async Task ImportFromRobots_MappingFailsAllRetries_Throws()
+        {
+            CreateRobotDir(_root, "RPA-0001");
+
+            var ai = new FlakySolutionAiProvider { AlwaysFail = true };
+            var service = new RobotKnowledgeBaseImportService(ai);
+
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.ImportFromRobotsAsync(_root, _kb));
+            Assert.That(ai.MappingCalls, Is.EqualTo(5));
+        }
+
         private static void CreateRobotDir(string root, string robotName)
         {
             var dir = Path.Combine(root, robotName);
@@ -329,6 +355,9 @@ namespace RPAWriter.Tests
 
             public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
                 => Task.FromResult(new ChatResponse { Answer = "stub" });
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default)
+                => Task.FromResult(new ChatResponse { Answer = "stub" });
         }
 
         private sealed class ResumableTestAiProvider : IAiProvider
@@ -362,6 +391,53 @@ namespace RPAWriter.Tests
 
             public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
                 => _inner.ChatAsync(messages, systemPrompt, cancellationToken);
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(messages, systemPrompt, tools, cancellationToken);
+        }
+
+        private sealed class FlakySolutionAiProvider : IAiProvider
+        {
+            private readonly StubAiProvider _inner = new StubAiProvider();
+            public int MappingCalls { get; private set; }
+            public int FailuresBeforeSuccess { get; set; }
+            public bool AlwaysFail { get; set; }
+
+            public Task<SpecModel> ReconstructSpecAsync(string robotName, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
+                => _inner.ReconstructSpecAsync(robotName, robotFiles, cancellationToken, platform);
+
+            public Task<IReadOnlyList<TaskDescriptor>> DecomposeTasksAsync(string text, CancellationToken cancellationToken = default)
+                => Task.FromResult<IReadOnlyList<TaskDescriptor>>(new List<TaskDescriptor>
+                {
+                    new TaskDescriptor { Action = "open", Description = "Open browser" }
+                });
+
+            public Task<SpecAnalysis> AnalyzeSpecAsync(SpecModel spec, CancellationToken cancellationToken = default)
+                => _inner.AnalyzeSpecAsync(spec, cancellationToken);
+
+            public Task<RobotPlan> GenerateRobotAsync(SpecAnalysis analysis, CancellationToken cancellationToken = default)
+                => _inner.GenerateRobotAsync(analysis, cancellationToken);
+
+            public Task<SolutionRecord> MapTaskToSolutionAsync(TaskDescriptor task, IReadOnlyList<RobotSourceFile> robotFiles, CancellationToken cancellationToken = default, RobotPlatform platform = RobotPlatform.Mwf)
+            {
+                MappingCalls++;
+                if (AlwaysFail || MappingCalls <= FailuresBeforeSuccess)
+                    throw new InvalidOperationException("JsonToken EndConstructor is not valid for closing JsonType Object.");
+                return Task.FromResult(new SolutionRecord
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    SolutionPaths = new List<string> { "Main.xaml" }
+                });
+            }
+
+            public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(message, cancellationToken);
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(messages, systemPrompt, cancellationToken);
+
+            public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default)
+                => _inner.ChatAsync(messages, systemPrompt, tools, cancellationToken);
         }
     }
 }

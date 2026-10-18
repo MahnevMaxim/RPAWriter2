@@ -65,6 +65,7 @@ namespace RPAWriter2
         private ITokenUsageProvider? _tokenUsage;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
+        private IPromptNotifier? _promptNotifier;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
@@ -122,11 +123,15 @@ namespace RPAWriter2
             MaxIterationsBox.Text = _settings.MaxIterations.ToString();
             AutoCompactCheckBox.IsChecked = _settings.AutoCompact;
             UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
+            ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             LogFilePathBox.Text = _settings.LogFilePath ?? "";
             TimeoutSecondsBox.Text = _settings.TimeoutSeconds.ToString();
             RetryTimeoutMinutesBox.Text = _settings.RetryTimeoutMinutes.ToString();
             RetryBaseDelaySecondsBox.Text = _settings.RetryBaseDelaySeconds.ToString();
             RetryMaxDelaySecondsBox.Text = _settings.RetryMaxDelaySeconds.ToString();
+            InputPriceBox.Text = _settings.InputPricePerMillion.ToString(CultureInfo.InvariantCulture);
+            CacheHitPriceBox.Text = _settings.CacheHitPricePerMillion.ToString(CultureInfo.InvariantCulture);
+            OutputPriceBox.Text = _settings.OutputPricePerMillion.ToString(CultureInfo.InvariantCulture);
         }
 
         private void RecreateAiProvider()
@@ -134,11 +139,13 @@ namespace RPAWriter2
             UnhookTokenUsage();
             UnhookMessageNotifier();
             UnhookRetryNotifier();
+            UnhookPromptNotifier();
             _ai = AiProviderFactory.Create(_settings);
             LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
             HookTokenUsage();
             HookMessageNotifier();
             HookRetryNotifier();
+            HookPromptNotifier();
             UpdateTokenUsageDisplay();
         }
 
@@ -384,6 +391,20 @@ namespace RPAWriter2
             _retryNotifier = null;
         }
 
+        private void HookPromptNotifier()
+        {
+            _promptNotifier = _ai as IPromptNotifier;
+            if (_promptNotifier != null)
+                _promptNotifier.PromptAssembled += OnPromptAssembled;
+        }
+
+        private void UnhookPromptNotifier()
+        {
+            if (_promptNotifier != null)
+                _promptNotifier.PromptAssembled -= OnPromptAssembled;
+            _promptNotifier = null;
+        }
+
         private void OnAiMessageSent(object? sender, AiMessageEventArgs e)
         {
             LogService.Debug("AI message sent: role=" + (e.Role ?? "") + ", chars=" + (e.Content == null ? 0 : e.Content.Length));
@@ -393,6 +414,48 @@ namespace RPAWriter2
                 return;
             }
             AppendKbMessage("→ [" + (e.Role ?? "") + "] " + (e.Content ?? ""));
+        }
+
+        private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
+        {
+            var dump = FormatPromptDump(e);
+            LogService.Info(dump);
+            try
+            {
+                if (_outputWindow != null)
+                    _outputWindow.WriteLine(dump);
+            }
+            catch
+            {
+                // Logging to the output pane must never break an outgoing request.
+            }
+        }
+
+        private static string FormatPromptDump(PromptAssembledEventArgs e)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("===== FULL PROMPT ASSEMBLED =====");
+            sb.AppendLine("Estimated input tokens: " + e.EstimatedInputTokens);
+            sb.AppendLine("System prompt (" + (e.SystemPrompt == null ? 0 : e.SystemPrompt.Length) + " chars):");
+            sb.AppendLine("-----");
+            sb.AppendLine(e.SystemPrompt ?? "");
+            sb.AppendLine("-----");
+
+            var messages = e.Messages ?? new List<ChatMessageData>();
+            sb.AppendLine("Messages (" + messages.Count + "):");
+            for (var i = 0; i < messages.Count; i++)
+            {
+                var m = messages[i];
+                if (m == null)
+                    continue;
+                var role = string.IsNullOrWhiteSpace(m.Role) ? "user" : m.Role;
+                sb.AppendLine("[" + i + "] role=" + role + " (" + (m.Content == null ? 0 : m.Content.Length) + " chars):");
+                sb.AppendLine(m.Content ?? "");
+                sb.AppendLine("-----");
+            }
+
+            sb.AppendLine("===== END FULL PROMPT =====");
+            return sb.ToString();
         }
 
         private void OnRetryAttempt(object? sender, RetryAttemptEventArgs e)
@@ -486,6 +549,10 @@ namespace RPAWriter2
             var usage = provider.TotalTokenUsage;
             var text = "Context window: " + usage.TotalTokens.ToString("N0") +
                        " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
+            if (usage.CacheHitTokens > 0)
+                text += " · cache hit " + usage.CacheHitTokens.ToString("N0");
+            if (usage.EstimatedCostUsd > 0)
+                text += " · $" + usage.EstimatedCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
             TokenUsageText.Text = text;
             ChatTokenUsageText.Text = text;
 
@@ -858,7 +925,8 @@ namespace RPAWriter2
             catch (Exception ex)
             {
                 ShowError(ex);
-                SetKbStatus("Import failed.\n\n" + ex.ToString() + "\n\nSelect \"Continue (resume)\" and run again to resume from the last completed robot.");
+                AppendKbMessage("Import failed.\n\n" + ex.ToString() + "\n\nSelect \"Continue (resume)\" and run again to resume from the last completed robot.");
+                SetKbStatus("Import failed. Select \"Continue (resume)\" and run again to resume from the last completed robot.");
             }
             finally
             {
@@ -1025,9 +1093,9 @@ namespace RPAWriter2
             {
                 var kb = new FileKnowledgeBase(kbPath);
                 var records = await kb.GetAllAsync();
-                var items = records.Select(r => (r.Name ?? "<unnamed>") + " — tasks: " + (r.Tasks?.Count ?? 0)).ToList();
-                KbListBox.ItemsSource = items;
                 KbStatusText.Text = "Solutions in the knowledge base: " + records.Count;
+                foreach (var r in records)
+                    AppendKbMessage((r.Name ?? "<unnamed>") + " — tasks: " + (r.Tasks?.Count ?? 0));
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -1212,9 +1280,38 @@ namespace RPAWriter2
                         thinking.Reasoning += delta.ReasoningDelta;
                 });
                 var result = await _agentRunner.RunAsync(history, text, _mode, BuildContextBudget(), cts.Token, progress);
+
+                // Finalize the "Thinking…" placeholder in place: it keeps its streamed
+                // reasoning (so the thoughts stay visible) and the final answer is appended
+                // as a NEW message after any tool calls.
                 thinking.IsThinking = false;
                 thinking.IsPartial = false;
-                thinking.Text = result.FinalText;
+
+                // Fall back to the result's reasoning when nothing was streamed.
+                if (string.IsNullOrWhiteSpace(thinking.Reasoning) && !string.IsNullOrWhiteSpace(result.Reasoning))
+                    thinking.Reasoning = result.Reasoning;
+
+                if (thinking.HasReasoning)
+                {
+                    // Keep the placeholder as a reasoning-only block above the tool calls.
+                    thinking.Text = string.Empty;
+                }
+                else
+                {
+                    // No reasoning to show — drop the empty placeholder.
+                    _messages.Remove(thinking);
+                }
+
+                // Emit the final answer as a new message so it appears after the tool calls.
+                if (!string.IsNullOrWhiteSpace(result.FinalText))
+                {
+                    AppendChatMessage(new ChatMessage
+                    {
+                        Kind = ChatMessageKind.AgentText,
+                        Mode = modeName,
+                        Text = result.FinalText
+                    });
+                }
                 StopChatStatus();
                 LogService.Info("Agent chat completed (mode=" + modeName + ", answer chars=" + (result.FinalText == null ? 0 : result.FinalText.Length) + ").");
             }
@@ -1320,7 +1417,10 @@ namespace RPAWriter2
                 _agentRunner.ContextCompacted -= OnAgentContextCompacted;
                 _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
             }
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry));
+            var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
+                ? ToolCallingMode.Native
+                : ToolCallingMode.JsonChat;
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode), toolCallingMode: toolCallingMode);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
@@ -1786,11 +1886,15 @@ namespace RPAWriter2
             _settings.MaxIterations = ParsePositiveInt(MaxIterationsBox?.Text, 8);
             _settings.AutoCompact = AutoCompactCheckBox?.IsChecked ?? true;
             _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
+            _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
             _settings.TimeoutSeconds = ParsePositiveInt(TimeoutSecondsBox?.Text, 300);
             _settings.RetryTimeoutMinutes = ParsePositiveInt(RetryTimeoutMinutesBox?.Text, 30);
             _settings.RetryBaseDelaySeconds = ParsePositiveInt(RetryBaseDelaySecondsBox?.Text, 1);
             _settings.RetryMaxDelaySeconds = ParsePositiveInt(RetryMaxDelaySecondsBox?.Text, 30);
+            _settings.InputPricePerMillion = ParsePrice(InputPriceBox?.Text, 0.27);
+            _settings.CacheHitPricePerMillion = ParsePrice(CacheHitPriceBox?.Text, 0.07);
+            _settings.OutputPricePerMillion = ParsePrice(OutputPriceBox?.Text, 1.10);
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath);
             RecreateAiProvider();
@@ -1883,6 +1987,13 @@ namespace RPAWriter2
         private static int ParsePositiveInt(string text, int fallback)
         {
             if (int.TryParse((text ?? "").Trim(), out var value) && value > 0)
+                return value;
+            return fallback;
+        }
+
+        private static double ParsePrice(string text, double fallback)
+        {
+            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value >= 0)
                 return value;
             return fallback;
         }

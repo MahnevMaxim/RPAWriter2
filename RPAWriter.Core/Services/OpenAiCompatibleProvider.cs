@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 
@@ -20,6 +22,9 @@ namespace RPAWriter.Core.Services
         public string ApiKey { get; set; }
         public string Model { get; set; } = "gpt-4o-mini";
         public double Temperature { get; set; } = 0.2;
+
+        /// <summary>How the agent talks to the model about tools: native function calling or JSON over chat.</summary>
+        public ToolCallingMode ToolCallingMode { get; set; } = ToolCallingMode.JsonChat;
         public int TimeoutSeconds { get; set; } = 300;
         /// <summary>Base directory of the prompt template files (System/, Tasks/) shipped with the extension.</summary>
         public string PromptsPath { get; set; } = PromptPaths.ResolvePromptsDirectory();
@@ -38,13 +43,22 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Maximum delay between retries.</summary>
         public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>Price per 1M uncached input (cache-miss) tokens, in USD.</summary>
+        public double InputPricePerMillion { get; set; } = 0.27;
+
+        /// <summary>Price per 1M cache-hit input tokens, in USD.</summary>
+        public double CacheHitPricePerMillion { get; set; } = 0.07;
+
+        /// <summary>Price per 1M output tokens, in USD.</summary>
+        public double OutputPricePerMillion { get; set; } = 1.10;
     }
 
     /// <summary>
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable, IStreamingAiProvider
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable, IStreamingAiProvider, IPromptNotifier
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
@@ -99,7 +113,10 @@ namespace RPAWriter.Core.Services
                     {
                         PromptTokens = _totalUsage.PromptTokens,
                         CompletionTokens = _totalUsage.CompletionTokens,
-                        TotalTokens = _totalUsage.TotalTokens
+                        TotalTokens = _totalUsage.TotalTokens,
+                        CacheHitTokens = _totalUsage.CacheHitTokens,
+                        CacheMissTokens = _totalUsage.CacheMissTokens,
+                        EstimatedCostUsd = _totalUsage.EstimatedCostUsd
                     };
                 }
             }
@@ -114,9 +131,22 @@ namespace RPAWriter.Core.Services
         /// <summary>Raised right before an outgoing message is sent to the AI provider.</summary>
         public event EventHandler<AiMessageEventArgs> MessageSent;
 
+        // Raised right before a full request (system prompt + all messages) is sent to the AI provider.
+        public event EventHandler<PromptAssembledEventArgs> PromptAssembled;
+
         private void RaiseMessageSent(string role, string content)
         {
             MessageSent?.Invoke(this, new AiMessageEventArgs { Role = role, Content = content ?? "" });
+        }
+
+        private void RaisePromptAssembled(string systemPrompt, IReadOnlyList<ChatMessageData> messages)
+        {
+            PromptAssembled?.Invoke(this, new PromptAssembledEventArgs
+            {
+                SystemPrompt = systemPrompt ?? "",
+                Messages = messages ?? new List<ChatMessageData>(),
+                EstimatedInputTokens = new TokenEstimator().Estimate(systemPrompt, messages)
+            });
         }
 
         /// <summary>Reads spec-processing rules from the configured directory (when set) and prepends them to the prompt.</summary>
@@ -290,6 +320,7 @@ namespace RPAWriter.Core.Services
         public async Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)
         {
             RaiseMessageSent("user", message);
+            RaisePromptAssembled(_prompts.ChatSystemPrompt, new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = message } });
             var obj = await SendAsync(() => BuildRequest(message, _prompts.ChatSystemPrompt), cancellationToken).ConfigureAwait(false);
             var messageObj = obj["choices"]?[0]?["message"];
             var content = messageObj?["content"]?.Value<string>();
@@ -300,25 +331,35 @@ namespace RPAWriter.Core.Services
             return new ChatResponse { Answer = content ?? "", Reasoning = reasoning, FinishReason = finishReason };
         }
 
-        public async Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+        public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
+        {
+            return ChatAsync(messages, systemPrompt, null, cancellationToken);
+        }
+
+        public async Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken = default)
         {
             if (messages == null) throw new ArgumentNullException(nameof(messages));
             foreach (var m in messages)
                 RaiseMessageSent(string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, m?.Content ?? "");
 
-            var obj = await SendAsync(() => BuildRequest(messages, systemPrompt), cancellationToken).ConfigureAwait(false);
-            var messageObj = obj["choices"]?[0]?["message"];
-            var content = messageObj?["content"]?.Value<string>();
-            var reasoning = ExtractReasoning(messageObj);
-            var finishReason = obj["choices"]?[0]?["finish_reason"]?.Value<string>();
-            if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(reasoning))
-                throw new InvalidOperationException("Empty response from the AI provider.");
-            return new ChatResponse { Answer = content ?? "", Reasoning = reasoning, FinishReason = finishReason };
+            RaisePromptAssembled(systemPrompt, messages);
+            var obj = await SendAsync(() => BuildRequest(messages, systemPrompt, tools, stream: false), cancellationToken).ConfigureAwait(false);
+            return ParseChatResponse(obj);
+        }
+
+        public Task<ChatResponse> ChatStreamingAsync(
+            IReadOnlyList<ChatMessageData> messages,
+            string systemPrompt,
+            IProgress<ChatStreamDelta> progress,
+            CancellationToken cancellationToken = default)
+        {
+            return ChatStreamingAsync(messages, systemPrompt, null, progress, cancellationToken);
         }
 
         public async Task<ChatResponse> ChatStreamingAsync(
             IReadOnlyList<ChatMessageData> messages,
             string systemPrompt,
+            IReadOnlyList<ToolDefinition> tools,
             IProgress<ChatStreamDelta> progress,
             CancellationToken cancellationToken = default)
         {
@@ -326,9 +367,11 @@ namespace RPAWriter.Core.Services
             foreach (var m in messages)
                 RaiseMessageSent(string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role, m?.Content ?? "");
 
+            RaisePromptAssembled(systemPrompt, messages);
             var reasoning = new StringBuilder();
             var content = new StringBuilder();
             var finishReason = new StringBuilder();
+            var toolCalls = new List<NativeToolCall>();
 
             var startedAt = DateTime.UtcNow;
             var deadline = startedAt + _options.RetryTimeout;
@@ -346,7 +389,7 @@ namespace RPAWriter.Core.Services
                 try
                 {
                     response = await _http.SendAsync(
-                        BuildRequest(messages, systemPrompt, stream: true),
+                        BuildRequest(messages, systemPrompt, tools, stream: true),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -365,13 +408,13 @@ namespace RPAWriter.Core.Services
                     {
                         try
                         {
-                            await ReadSseStreamAsync(response, reasoning, content, finishReason, progress, cancellationToken).ConfigureAwait(false);
+                            await ReadSseStreamAsync(response, reasoning, content, finishReason, toolCalls, progress, cancellationToken).ConfigureAwait(false);
                         }
                         finally
                         {
                             response.Dispose();
                         }
-                        return new ChatResponse { Answer = content.ToString(), Reasoning = reasoning.ToString(), FinishReason = finishReason.ToString() };
+                        return new ChatResponse { Answer = content.ToString(), Reasoning = reasoning.ToString(), FinishReason = finishReason.ToString(), ToolCalls = toolCalls };
                     }
 
                     var retryAfter = ReadRetryAfter(response);
@@ -431,9 +474,11 @@ namespace RPAWriter.Core.Services
             StringBuilder reasoning,
             StringBuilder content,
             StringBuilder finishReason,
+            List<NativeToolCall> toolCalls,
             IProgress<ChatStreamDelta> progress,
             CancellationToken cancellationToken)
         {
+            var toolAcc = new Dictionary<int, ToolCallAccumulator>();
             using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
             using (var reader = new StreamReader(stream, Encoding.UTF8))
             {
@@ -477,6 +522,8 @@ namespace RPAWriter.Core.Services
                         var reasoningDelta = ExtractReasoning(delta);
                         var contentDelta = delta["content"]?.Value<string>();
 
+                        AccumulateToolCalls(delta["tool_calls"], toolAcc);
+
                         if (!string.IsNullOrEmpty(reasoningDelta))
                             reasoning.Append(reasoningDelta);
                         if (!string.IsNullOrEmpty(contentDelta))
@@ -519,11 +566,14 @@ namespace RPAWriter.Core.Services
                             finishReason.Clear();
                             finishReason.Append(fr);
                         }
+                        toolCalls.AddRange(ParseToolCalls(messageObj));
                         return;
                     }
                     // otherwise: ignore (e.g. an SSE "event:" line)
                 }
             }
+
+            FinalizeToolCalls(toolCalls, toolAcc);
         }
 
         internal async Task<string> CompleteAsync(string userMessage, CancellationToken cancellationToken, bool notifyMessageSent = true)
@@ -535,6 +585,7 @@ namespace RPAWriter.Core.Services
         {
             if (notifyMessageSent)
                 RaiseMessageSent("user", userMessage);
+            RaisePromptAssembled(systemPrompt, new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = userMessage } });
             var obj = await SendAsync(() => BuildRequest(userMessage, systemPrompt), cancellationToken).ConfigureAwait(false);
             var content = obj["choices"]?[0]?["message"]?["content"]?.Value<string>();
             if (string.IsNullOrWhiteSpace(content))
@@ -748,14 +799,59 @@ namespace RPAWriter.Core.Services
             if (total == 0) total = prompt + completion;
             if (total == 0) return;
 
+            ReadCacheTokens(usage, prompt, out var cacheHit, out var cacheMiss);
+            var cost = CalculateCost(cacheHit, cacheMiss, completion);
+
             lock (_usageLock)
             {
                 _totalUsage.PromptTokens += prompt;
                 _totalUsage.CompletionTokens += completion;
                 _totalUsage.TotalTokens += total;
+                _totalUsage.CacheHitTokens += cacheHit;
+                _totalUsage.CacheMissTokens += cacheMiss;
+                _totalUsage.EstimatedCostUsd += cost;
             }
 
             TokenUsageUpdated?.Invoke(this, TotalTokenUsage);
+        }
+
+        /// <summary>
+        /// Splits reported input tokens into cache-hit and cache-miss counts.
+        /// DeepSeek reports <c>prompt_cache_hit_tokens</c>/<c>prompt_cache_miss_tokens</c>;
+        /// OpenAI reports <c>prompt_tokens_details.cached_tokens</c>. When the provider
+        /// does not report a cache split, the whole input is treated as a cache miss.
+        /// </summary>
+        private static void ReadCacheTokens(JToken usage, int promptTokens, out int hitTokens, out int missTokens)
+        {
+            hitTokens = 0;
+            missTokens = 0;
+
+            if (usage is JObject obj)
+            {
+                hitTokens = ReadTokenCount(obj, "prompt_cache_hit_tokens");
+                missTokens = ReadTokenCount(obj, "prompt_cache_miss_tokens");
+
+                if (hitTokens == 0 && missTokens == 0)
+                {
+                    // OpenAI-style cache reporting lives in prompt_tokens_details.
+                    if (obj["prompt_tokens_details"] is JObject details)
+                        hitTokens = ReadTokenCount(details, "cached_tokens");
+                }
+            }
+
+            if (hitTokens == 0 && missTokens == 0)
+                missTokens = Math.Max(0, promptTokens);
+            else if (missTokens == 0)
+                missTokens = Math.Max(0, promptTokens - hitTokens);
+        }
+
+        /// <summary>Estimates the cost of one request from its token split and per-million prices.</summary>
+        private double CalculateCost(int cacheHitTokens, int cacheMissTokens, int completionTokens)
+        {
+            var inputCost = cacheMissTokens / 1000000.0 * _options.InputPricePerMillion
+                          + cacheHitTokens / 1000000.0 * _options.CacheHitPricePerMillion;
+            var outputCost = completionTokens / 1000000.0 * _options.OutputPricePerMillion;
+            return inputCost + outputCost;
         }
 
         private static int ReadTokenCount(JToken usage, string name)
@@ -804,26 +900,66 @@ namespace RPAWriter.Core.Services
         internal HttpRequestMessage BuildRequest(string userMessage, string systemPrompt)
         {
             var messages = new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = userMessage } };
-            return BuildRequest(messages, systemPrompt);
+            return BuildRequest(messages, systemPrompt, null, stream: false);
         }
 
         internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt)
         {
-            return BuildRequest(messages, systemPrompt, stream: false);
+            return BuildRequest(messages, systemPrompt, null, stream: false);
         }
 
         internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt, bool stream)
         {
+            return BuildRequest(messages, systemPrompt, null, stream);
+        }
+
+        internal HttpRequestMessage BuildRequest(IReadOnlyList<ChatMessageData> messages, string systemPrompt, IReadOnlyList<ToolDefinition> tools, bool stream)
+        {
+            var native = _options.ToolCallingMode == ToolCallingMode.Native;
             var list = new List<object> { new { role = "system", content = systemPrompt ?? "" } };
             foreach (var m in messages ?? new List<ChatMessageData>())
             {
                 var role = string.IsNullOrWhiteSpace(m?.Role) ? "user" : m.Role;
-                // OpenAI requires a tool_call_id on every "tool" message. This provider uses a
-                // JSON-over-chat tool protocol (no native tool_calls), so a bare "tool" role is
-                // invalid and must be downgraded to "user".
-                if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
-                    role = "user";
-                list.Add(new { role = role, content = m?.Content ?? "" });
+                var content = m?.Content ?? "";
+
+                if (native && string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Native tool calling: keep the "tool" role and echo the tool_call_id.
+                    list.Add(new { role = "tool", content = content, tool_call_id = m.ToolCallId ?? "" });
+                }
+                else if (native && string.Equals(role, "assistant", StringComparison.OrdinalIgnoreCase) && m.ToolCalls != null && m.ToolCalls.Count > 0)
+                {
+                    // Native tool calling: replay the assistant's tool_calls so the model can
+                    // associate the following "tool" results with their calls.
+                    var tcArray = new JArray();
+                    foreach (var tc in m.ToolCalls)
+                    {
+                        tcArray.Add(new JObject
+                        {
+                            ["id"] = tc.Id ?? "",
+                            ["type"] = "function",
+                            ["function"] = new JObject
+                            {
+                                ["name"] = tc.Name ?? "",
+                                ["arguments"] = (tc.Arguments ?? new JObject()).ToString(Formatting.None)
+                            }
+                        });
+                    }
+                    list.Add(new JObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = content,
+                        ["tool_calls"] = tcArray
+                    });
+                }
+                else
+                {
+                    // JSON-over-chat protocol: OpenAI requires a tool_call_id on every "tool"
+                    // message, so a bare "tool" role is invalid and must be downgraded to "user".
+                    if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
+                        role = "user";
+                    list.Add(new { role = role, content = content });
+                }
             }
 
             var payload = new JObject
@@ -832,6 +968,27 @@ namespace RPAWriter.Core.Services
                 ["temperature"] = _options.Temperature,
                 ["messages"] = JArray.FromObject(list)
             };
+
+            if (native && tools != null && tools.Count > 0)
+            {
+                var toolsArray = new JArray();
+                foreach (var t in tools)
+                {
+                    toolsArray.Add(new JObject
+                    {
+                        ["type"] = "function",
+                        ["function"] = new JObject
+                        {
+                            ["name"] = t.Name ?? "",
+                            ["description"] = t.Description ?? "",
+                            ["parameters"] = t.Parameters ?? new JObject()
+                        }
+                    });
+                }
+                payload["tools"] = toolsArray;
+                payload["tool_choice"] = "auto";
+            }
+
             if (stream)
             {
                 payload["stream"] = true;
@@ -860,6 +1017,98 @@ namespace RPAWriter.Core.Services
         private static JArray ParseArray(string content)
         {
             return JArray.Parse(CleanContent(content));
+        }
+
+        /// <summary>Parses a non-streaming chat completion JSON into a ChatResponse (content + reasoning + finish_reason + tool calls).</summary>
+        private static ChatResponse ParseChatResponse(JObject obj)
+        {
+            var messageObj = obj["choices"]?[0]?["message"];
+            var content = messageObj?["content"]?.Value<string>();
+            var reasoning = ExtractReasoning(messageObj);
+            var finishReason = obj["choices"]?[0]?["finish_reason"]?.Value<string>();
+            var toolCalls = ParseToolCalls(messageObj);
+            if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(reasoning) && toolCalls.Count == 0)
+                throw new InvalidOperationException("Empty response from the AI provider.");
+            return new ChatResponse
+            {
+                Answer = content ?? "",
+                Reasoning = reasoning,
+                FinishReason = finishReason,
+                ToolCalls = toolCalls
+            };
+        }
+
+        private static IReadOnlyList<NativeToolCall> ParseToolCalls(JToken message)
+        {
+            var result = new List<NativeToolCall>();
+            if (!(message is JObject obj)) return result;
+            if (!(obj["tool_calls"] is JArray arr)) return result;
+            foreach (var item in arr)
+            {
+                var fn = item["function"];
+                result.Add(new NativeToolCall
+                {
+                    Id = item["id"]?.Value<string>() ?? "",
+                    Name = fn?["name"]?.Value<string>() ?? "",
+                    Arguments = ParseArguments(fn?["arguments"]?.Value<string>())
+                });
+            }
+            return result;
+        }
+
+        private static JObject ParseArguments(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments)) return new JObject();
+            try { return JObject.Parse(arguments); }
+            catch { return new JObject(); }
+        }
+
+        /// <summary>Accumulates streamed tool-call fragments (name + arguments) keyed by index.</summary>
+        private sealed class ToolCallAccumulator
+        {
+            public int Index;
+            public string Id = "";
+            public string Name = "";
+            public readonly StringBuilder Arguments = new StringBuilder();
+        }
+
+        private static void AccumulateToolCalls(JToken toolCallsToken, Dictionary<int, ToolCallAccumulator> accumulators)
+        {
+            if (!(toolCallsToken is JArray arr)) return;
+            foreach (var item in arr)
+            {
+                var index = item["index"]?.Value<int>() ?? 0;
+                if (!accumulators.TryGetValue(index, out var acc))
+                {
+                    acc = new ToolCallAccumulator { Index = index };
+                    accumulators[index] = acc;
+                }
+
+                var id = item["id"]?.Value<string>();
+                if (!string.IsNullOrEmpty(id)) acc.Id = id;
+
+                var fn = item["function"];
+                if (fn == null) continue;
+
+                var name = fn["name"]?.Value<string>();
+                if (!string.IsNullOrEmpty(name)) acc.Name = name;
+
+                var args = fn["arguments"]?.Value<string>();
+                if (!string.IsNullOrEmpty(args)) acc.Arguments.Append(args);
+            }
+        }
+
+        private static void FinalizeToolCalls(List<NativeToolCall> target, Dictionary<int, ToolCallAccumulator> accumulators)
+        {
+            foreach (var acc in accumulators.Values.OrderBy(a => a.Index))
+            {
+                target.Add(new NativeToolCall
+                {
+                    Id = acc.Id,
+                    Name = acc.Name,
+                    Arguments = ParseArguments(acc.Arguments.ToString())
+                });
+            }
         }
 
         private static string CleanContent(string content)

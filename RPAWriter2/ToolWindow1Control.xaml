@@ -261,6 +261,35 @@
             </Setter>
         </Style>
 
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{StaticResource Dark.Accent}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="2" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="GridSplitter">
             <Setter Property="Background" Value="{StaticResource Dark.Border}"/>
             <Setter Property="Template">
@@ -530,6 +559,7 @@
                 <Grid x:Name="ChatInputPanel" Grid.Row="4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -539,10 +569,12 @@
                                      Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
                                    Margin="6,0,8,0" TextWrapping="Wrap" Visibility="Collapsed"/>
-                        <Button x:Name="CancelButton" Content="Stop" Click="OnCancelSend"
-                                Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed"/>
                     </StackPanel>
-                    <Grid Grid.Row="1">
+                    <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Margin="0,0,0,8" Click="OnCancelSend" Visibility="Collapsed"/>
+                    <Grid Grid.Row="2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -574,7 +606,7 @@
                             </Path>
                         </Button>
                     </Grid>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,5">
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
                         <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
                                      IsChecked="True" Checked="OnModeChanged"
@@ -684,8 +716,6 @@
                     <RowDefinition Height="1*" MinHeight="48"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="1*" MinHeight="64"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="0.5*" MinHeight="48"/>
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
@@ -740,13 +770,6 @@
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                 </Grid>
 
-                <GridSplitter Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
-                              VerticalAlignment="Center" ResizeDirection="Rows"
-                              ResizeBehavior="PreviousAndNext"/>
-
-                <ListBox Grid.Row="5" x:Name="KbListBox" Background="{StaticResource Dark.Control}"
-                         BorderBrush="{StaticResource Dark.Border}" Foreground="{StaticResource Dark.Text}"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
             </Grid>
         </TabItem>
 
@@ -757,6 +780,10 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -827,28 +854,43 @@
                 <CheckBox Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox"
                           Content="Use 'tool' role for tool results" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
+                <TextBlock Grid.Row="15" Grid.Column="0" Text="Tool calling" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="15" Grid.Column="1" x:Name="ToolCallingModeCombo" SelectedIndex="0"
+                          VerticalAlignment="Center" Margin="0,0,0,4">
+                    <ComboBoxItem Content="JSON over chat (compatible)"/>
+                    <ComboBoxItem Content="Native function calling"/>
+                </ComboBox>
 
-                <TextBlock Grid.Row="15" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <DockPanel Grid.Row="15" Grid.Column="1" Margin="0,0,0,4">
+                <TextBlock Grid.Row="16" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="16" Grid.Column="1" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Click="OnOpenLog" Margin="8,0,0,0"/>
                     <TextBox x:Name="LogFilePathBox"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="16" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="16" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="17" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="17" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="17" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="17" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="18" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="18" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="18" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="18" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="19" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="19" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="19" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="19" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="20" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="20" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <Button Grid.Row="20" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+                <TextBlock Grid.Row="21" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="21" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
 
-                <Border Grid.Row="21" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
+                <TextBlock Grid.Row="22" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="22" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="23" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="23" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
+
+                <Button Grid.Row="24" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
+
+                <Border Grid.Row="25" Grid.Column="0" Grid.ColumnSpan="2" x:Name="RestorePackagesPanel"
                         Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                         BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,12,0,0" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">
@@ -858,7 +900,7 @@
                     </StackPanel>
                 </Border>
 
-                <Button Grid.Row="22" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
+                <Button Grid.Row="23" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
             </Grid>
         </TabItem>
 

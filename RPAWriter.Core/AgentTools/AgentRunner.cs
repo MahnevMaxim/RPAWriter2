@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
@@ -52,6 +53,7 @@ namespace RPAWriter.Core.AgentTools
         private readonly IAiProvider _ai;
         private readonly AgentToolRegistry _registry;
         private readonly Func<AgentMode, string> _systemPromptFactory;
+        private readonly ToolCallingMode _toolCallingMode;
         private readonly ContextBudget _budget;
         private readonly ITokenEstimator _estimator;
         private readonly IContextCondenser _condenser;
@@ -71,8 +73,9 @@ namespace RPAWriter.Core.AgentTools
             IAiProvider ai,
             AgentToolRegistry registry,
             Func<AgentMode, string> systemPromptFactory,
-            int maxIterations = 8)
-            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations })
+            int maxIterations = 8,
+            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat)
+            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations }, null, toolCallingMode)
         {
         }
 
@@ -81,11 +84,13 @@ namespace RPAWriter.Core.AgentTools
             AgentToolRegistry registry,
             Func<AgentMode, string> systemPromptFactory,
             ContextBudget budget,
-            string compactSystemPrompt = null)
+            string compactSystemPrompt = null,
+            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _systemPromptFactory = systemPromptFactory ?? throw new ArgumentNullException(nameof(systemPromptFactory));
+            _toolCallingMode = toolCallingMode;
             _budget = budget ?? new ContextBudget();
 
             _estimator = new TokenEstimator();
@@ -125,13 +130,32 @@ namespace RPAWriter.Core.AgentTools
             messages.Add(new ChatMessageData { Role = "user", Content = userText ?? "" });
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
+            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode);
 
             for (var i = 0; i < maxIterations; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var prepared = await PrepareContextAsync(messages, systemPrompt, effectiveBudget, cancellationToken).ConfigureAwait(false);
-                var response = await CallWithRecoveryAsync(prepared, effectiveBudget, cancellationToken, progress).ConfigureAwait(false);
+                var response = await CallWithRecoveryAsync(prepared, toolDefinitions, effectiveBudget, cancellationToken, progress).ConfigureAwait(false);
+
+                if (_toolCallingMode == ToolCallingMode.Native)
+                {
+                    var nativeCalls = response.ToolCalls;
+                    if (nativeCalls == null || nativeCalls.Count == 0)
+                        return new AgentRunResult { FinalText = response.Answer ?? "", Reasoning = response.Reasoning };
+
+                    // Record the assistant message that requested the tool calls.
+                    messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer ?? "", ToolCalls = nativeCalls });
+
+                    foreach (var call in nativeCalls)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                    }
+                    continue;
+                }
+
                 var action = AgentResponseParser.Parse(response.Answer);
 
                 if (action.IsFinal)
@@ -226,6 +250,7 @@ namespace RPAWriter.Core.AgentTools
 
         private async Task<ChatResponse> CallWithRecoveryAsync(
             PreparedContext prepared,
+            IReadOnlyList<ToolDefinition> tools,
             ContextBudget budget,
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress)
@@ -239,7 +264,7 @@ namespace RPAWriter.Core.AgentTools
                 ChatResponse response;
                 try
                 {
-                    response = await CallModelAsync(current, cancellationToken, progress).ConfigureAwait(false);
+                    response = await CallModelAsync(current, tools, cancellationToken, progress).ConfigureAwait(false);
                 }
                 catch (ProviderErrorException ex) when (ex.Kind == ProviderErrorKind.ContextWindowExceeded && !overflowRecovered)
                 {
@@ -290,16 +315,92 @@ namespace RPAWriter.Core.AgentTools
 
         private async Task<ChatResponse> CallModelAsync(
             PreparedContext prepared,
+            IReadOnlyList<ToolDefinition> tools,
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress)
         {
             if (_ai is IStreamingAiProvider streaming)
-                return await streaming.ChatStreamingAsync(prepared.Messages, prepared.SystemPrompt, progress, cancellationToken).ConfigureAwait(false);
+                return await streaming.ChatStreamingAsync(prepared.Messages, prepared.SystemPrompt, tools, progress, cancellationToken).ConfigureAwait(false);
 
-            var response = await _ai.ChatAsync(prepared.Messages, prepared.SystemPrompt, cancellationToken).ConfigureAwait(false);
+            var response = await _ai.ChatAsync(prepared.Messages, prepared.SystemPrompt, tools, cancellationToken).ConfigureAwait(false);
             if (progress != null && !string.IsNullOrEmpty(response?.Reasoning))
                 progress.Report(new ChatStreamDelta { ReasoningDelta = response.Reasoning });
             return response;
+        }
+
+        /// <summary>Executes one native tool call and appends the tool result to the transcript.</summary>
+        private async Task ExecuteNativeToolCallAsync(
+            List<ChatMessageData> messages,
+            NativeToolCall call,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken)
+        {
+            var tool = _registry.Find(call.Name);
+            if (tool == null)
+            {
+                messages.Add(new ChatMessageData
+                {
+                    Role = "tool",
+                    Content = "Unknown tool: \"" + call.Name + "\". Use one of the tools listed in the system prompt.",
+                    ToolCallId = call.Id ?? ""
+                });
+                return;
+            }
+
+            if (tool.Mutates && mode != AgentMode.Act)
+            {
+                var blocked = new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Blocked = true,
+                    Result = "Blocked: this mutating tool is not allowed in Plan mode."
+                };
+                ToolExecuted?.Invoke(this, blocked);
+                messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
+                return;
+            }
+
+            var args = call.Arguments ?? new JObject();
+            string resultText;
+            try
+            {
+                resultText = await tool.ExecuteAsync(args, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                resultText = "Tool \"" + tool.Name + "\" failed: " + ex.Message;
+            }
+
+            string displayText = null;
+            try
+            {
+                displayText = await tool.GetDisplayResultAsync(args, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Display text is best-effort; fall back to the full result below.
+            }
+
+            var truncated = Truncate(resultText, budget.ToolResultMaxChars);
+            ToolExecuted?.Invoke(this, new AgentToolCall
+            {
+                ToolName = tool.Name,
+                Result = truncated,
+                DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
+                Blocked = false
+            });
+
+            messages.Add(new ChatMessageData
+            {
+                Role = "tool",
+                Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated,
+                ToolCallId = call.Id ?? ""
+            });
         }
 
         /// <summary>Manually condenses a transcript (e.g. "Compact now" in the UI).</summary>

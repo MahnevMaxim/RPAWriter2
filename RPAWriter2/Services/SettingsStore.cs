@@ -29,6 +29,15 @@ namespace RPAWriter2.Services
         /// <summary>Maximum delay between retries, in seconds.</summary>
         public int RetryMaxDelaySeconds { get; set; } = 30;
 
+        /// <summary>Price per 1M uncached input (cache-miss) tokens, in USD.</summary>
+        public double InputPricePerMillion { get; set; } = 0.27;
+
+        /// <summary>Price per 1M cache-hit input tokens, in USD.</summary>
+        public double CacheHitPricePerMillion { get; set; } = 0.07;
+
+        /// <summary>Price per 1M output tokens, in USD.</summary>
+        public double OutputPricePerMillion { get; set; } = 1.10;
+
         /// <summary>Automatically summarize the conversation when approaching the context limit.</summary>
         public bool AutoCompact { get; set; } = true;
 
@@ -46,6 +55,9 @@ namespace RPAWriter2.Services
 
         /// <summary>Use the "tool" role for tool results; false falls back to "user".</summary>
         public bool UseToolRole { get; set; } = true;
+
+        /// <summary>How the agent calls tools: "Native" (function calling) or "JsonChat" (JSON over chat).</summary>
+        public string ToolCallingMode { get; set; } = "JsonChat";
 
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
@@ -98,6 +110,12 @@ namespace RPAWriter2.Services
                 settings.RetryBaseDelaySeconds = 1;
             if (settings.RetryMaxDelaySeconds <= 0)
                 settings.RetryMaxDelaySeconds = 30;
+            if (settings.InputPricePerMillion < 0)
+                settings.InputPricePerMillion = 0.27;
+            if (settings.CacheHitPricePerMillion < 0)
+                settings.CacheHitPricePerMillion = 0.07;
+            if (settings.OutputPricePerMillion < 0)
+                settings.OutputPricePerMillion = 1.10;
             if (settings.CompactThreshold <= 0 || settings.CompactThreshold > 1)
                 settings.CompactThreshold = 0.85;
             if (settings.ReserveFraction < 0 || settings.ReserveFraction > 0.5)
@@ -108,6 +126,10 @@ namespace RPAWriter2.Services
                 settings.ToolResultMaxChars = 12000;
             if (settings.MaxIterations <= 0)
                 settings.MaxIterations = 8;
+            if (string.IsNullOrWhiteSpace(settings.ToolCallingMode) ||
+                (!string.Equals(settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.ToolCallingMode, "JsonChat", StringComparison.OrdinalIgnoreCase)))
+                settings.ToolCallingMode = "JsonChat";
         }
 
         public static void Save(SettingsData settings)

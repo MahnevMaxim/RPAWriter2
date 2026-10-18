@@ -7,6 +7,7 @@
 - Чат-агент с режимами Plan/Act, gating инструментов, историей (SQLite).
 - Управление контекстным окном: transcript, оценка токенов, auto-compact, overflow/max-tokens recovery, «Compact now», прогресс-бар.
 - Memory Bank: сервис + инструменты + кнопка.
+- Tool calling: 2 режима — Native function calling и JSON over chat (настройка «Tool calling»).
 
 ## What's left
 - Валидация на реальном VS с реальным провайдером.
