@@ -235,6 +235,54 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="RowBackground" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Dark.Accent}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="IconButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
@@ -438,6 +486,69 @@
                             <TextBox x:Name="RobotNumberBox" Width="140" VerticalAlignment="Center" Margin="0,0,8,0"
                                      PreviewTextInput="OnRobotNumberPreviewTextInput"/>
                             <Button Content="Create robot" Click="OnCreateRobot" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="AnalyzeLogsPanel" Margin="0,0,0,6"
+                            Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+                            BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Log source:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                        VerticalAlignment="Top" ToolTip="Close" Click="OnCloseAnalyzeLogs">
+                                    <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                                </Button>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="From Visual Studio Output window" Click="OnAnalyzeLogsFromOutputWindow" Margin="0,0,8,0"/>
+                                <Button Content="From production servers" Click="OnAnalyzeLogsFromProdServers"/>
+                            </StackPanel>
+
+                            <Grid x:Name="ProdLogsPanel" Margin="0,6,0,0" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="Robot name:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox x:Name="RobotNameBox" Width="160" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <Button Content="Load tasks" Click="OnLoadProdTasks" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="ProviderCombo" Width="200" Margin="12,0,0,0" VerticalAlignment="Center"
+                                              SelectionChanged="OnProviderChanged" Visibility="Collapsed"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="1" x:Name="ProdLogsStatusText" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                                <TextBlock Grid.Row="2" Text="Tasks:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
+                                <DataGrid Grid.Row="3" x:Name="TasksGrid" AutoGenerateColumns="True" IsReadOnly="True"
+                                          SelectionMode="Single" SelectionChanged="OnTaskSelected"
+                                          CanUserAddRows="False" MinHeight="80" MaxHeight="160" Margin="0,0,0,6"/>
+
+                                <TextBlock Grid.Row="4" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
+                                <DataGrid Grid.Row="5" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                          SelectionMode="Single" CanUserAddRows="False"
+                                          MinHeight="80" MaxHeight="180" Margin="0,0,0,6">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="Auto"/>
+                                        <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="90"/>
+                                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="120"/>
+                                        <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <Button Grid.Row="6" Content="Analyze logs" Click="OnAnalyzeProdLogs" HorizontalAlignment="Left" Padding="10,2"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -867,6 +978,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -954,6 +1066,9 @@
                 <Button Grid.Row="25" Grid.Column="1" Content="Save settings" HorizontalAlignment="Left" Margin="0,4,0,0" Click="OnSaveSettings"/>
 
                 <Button Grid.Row="26" Grid.Column="1" Content="Refresh prompts from disk" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRefreshPromptsFromDisk"/>
+
+                <TextBlock Grid.Row="27" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="27" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,0,0,4"/>
             </Grid>
         </TabItem>
 

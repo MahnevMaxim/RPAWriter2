@@ -143,6 +143,34 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Third-party production-log provider. Supplied by an external library that
+    /// implements this interface; the extension discovers it at runtime.
+    /// </summary>
+    public interface IProdLogProvider
+    {
+        /// <summary>Human-readable provider name shown in the UI (e.g. "Orchestrator logs").</summary>
+        string Name { get; }
+
+        /// <summary>Returns the completed tasks executed by the given robot (e.g. "RPA-1212").</summary>
+        Task<IReadOnlyList<ProdTask>> GetTasksAsync(string robotName, CancellationToken cancellationToken = default);
+
+        /// <summary>Returns the log entries (objects) of the selected task.</summary>
+        Task<IReadOnlyList<IProdLog>> GetLogsAsync(ProdTask task, CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>One structured log entry supplied by a production-log provider.</summary>
+    public interface IProdLog
+    {
+        DateTime? Timestamp { get; }
+        LogLevel Level { get; }
+        string Source { get; }
+        string Message { get; }
+
+        /// <summary>Optional original raw text; null/empty when the provider keeps no raw line.</summary>
+        string RawLine { get; }
+    }
+
+    /// <summary>
     /// One-click Release build, plus reading compiler diagnostics and the VS output pane.
     /// </summary>
     public interface IBuildFeedbackService

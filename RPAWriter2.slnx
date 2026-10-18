@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="Examples.LogProvider/Examples.LogProvider.csproj" Id="eaa5f44c-52ab-4da2-8826-7e30daa46a35" />
   <Project Path="RPAWriter.Core/RPAWriter.Core.csproj">
     <BuildType Project="Release" />
   </Project>

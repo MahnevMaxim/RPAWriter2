@@ -65,6 +65,9 @@ namespace RPAWriter2.Services
 
         /// <summary>Full path to the log file; empty uses the default location next to the extension.</summary>
         public string LogFilePath { get; set; } = "";
+
+        /// <summary>Directory scanned for third-party IProdLogProvider DLLs; empty uses %AppData%\RPAWriter2\Providers.</summary>
+        public string LogProvidersPath { get; set; } = "";
     }
 
     /// <summary>Loads/saves settings at %AppData%\RPAWriter2\settings.json.</summary>

@@ -104,6 +104,28 @@ namespace RPAWriter.Core.Models
         GetTable
     }
 
+    /// <summary>Severity of a log entry supplied by a production-log provider.</summary>
+    public enum LogLevel
+    {
+        /// <summary>Most verbose diagnostics.</summary>
+        Trace,
+
+        /// <summary>Debug-level diagnostics.</summary>
+        Debug,
+
+        /// <summary>Informational message.</summary>
+        Info,
+
+        /// <summary>Non-fatal warning.</summary>
+        Warning,
+
+        /// <summary>Error that likely needs attention.</summary>
+        Error,
+
+        /// <summary>Fatal failure.</summary>
+        Fatal
+    }
+
     /// <summary>Atomic task extracted from a spec: action, target, inputs/outputs, keywords, activity type.</summary>
     public class TaskDescriptor
     {
@@ -242,6 +264,18 @@ namespace RPAWriter.Core.Models
         public SolutionRecord Solution { get; set; }
         public double Score { get; set; }
         public List<string> Reasons { get; set; } = new List<string>();
+    }
+
+    /// <summary>One executed task of a production robot (a row in the tasks table).</summary>
+    public class ProdTask
+    {
+        public string TaskId { get; set; }
+        public string Name { get; set; }
+        public string RobotName { get; set; }
+        public string Status { get; set; }
+        public DateTime? StartedAtUtc { get; set; }
+        public DateTime? FinishedAtUtc { get; set; }
+        public string Notes { get; set; }
     }
 
     /// <summary>Robot server access configuration.</summary>

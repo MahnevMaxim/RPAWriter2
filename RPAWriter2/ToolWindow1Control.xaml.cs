@@ -69,6 +69,8 @@ namespace RPAWriter2
         private IRetryNotifier? _retryNotifier;
         private IPromptNotifier? _promptNotifier;
         private DTE2? _dte;
+        private IReadOnlyList<IProdLogProvider>? _logProviders;
+        private IProdLogProvider? _selectedLogProvider;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
@@ -94,6 +96,13 @@ namespace RPAWriter2
             "Respond with only the summary text — no markdown, no quotes, no extra explanation.";
 
         private const int CommitDiffMaxChars = 8000;
+        private const string AnalyzeOutputWindowPrompt =
+            "Analyze the Visual Studio Output window content below. " +
+            "Identify errors, warnings and their likely root causes, and suggest concrete fixes:\n\n";
+        private const string AnalyzeProdLogsPrompt =
+            "Analyze the production robot logs below. " +
+            "Summarize the robot run, list errors and warnings with their likely root causes, and suggest fixes:\n\n";
+        private const int ProdLogMaxChars = 40000;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
         private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
@@ -149,6 +158,7 @@ namespace RPAWriter2
             UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
             ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             LogFilePathBox.Text = _settings.LogFilePath ?? "";
+            LogProvidersPathBox.Text = _settings.LogProvidersPath ?? "";
             TimeoutSecondsBox.Text = _settings.TimeoutSeconds.ToString();
             RetryTimeoutMinutesBox.Text = _settings.RetryTimeoutMinutes.ToString();
             RetryBaseDelaySecondsBox.Text = _settings.RetryBaseDelaySeconds.ToString();
@@ -990,23 +1000,218 @@ namespace RPAWriter2
 
         private void OnAnalyzeLogs(object sender, RoutedEventArgs e)
         {
-            var dlg = new OpenFileDialog
-            {
-                Title = "Log files",
-                Filter = "Logs (*.log;*.txt;*.json)|*.log;*.txt;*.json|All files (*.*)|*.*",
-                Multiselect = true
-            };
-            if (dlg.ShowDialog() != true) return;
+            AnalyzeLogsPanel.Visibility = AnalyzeLogsPanel.Visibility == Visibility.Visible
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
 
+        private void OnCloseAnalyzeLogs(object sender, RoutedEventArgs e)
+        {
+            AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+            ProdLogsPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private async void OnAnalyzeLogsFromOutputWindow(object sender, RoutedEventArgs e)
+        {
             try
             {
-                var lines = new List<string>();
-                foreach (var f in dlg.FileNames) lines.AddRange(File.ReadAllLines(f));
-                var analysis = new LogAnalyzer().Analyze(lines);
-                SetOutput(analysis.Summary);
-                foreach (var err in analysis.Errors.Take(20)) AppendSpecText("ERR: " + err.Message);
+                var text = await _buildFeedback.GetOutputWindowTextAsync();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    AppendChat("The Visual Studio Output window is empty.");
+                    return;
+                }
+
+                AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                await SendChatTextAsync(AnalyzeOutputWindowPrompt + text);
             }
             catch (Exception ex) { ShowError(ex); }
+        }
+
+        private void OnAnalyzeLogsFromProdServers(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ProdLogsPanel.Visibility = Visibility.Visible;
+                EnsureLogProviders();
+                RefreshProviderCombo();
+                if (_selectedLogProvider == null)
+                    ProdLogsStatusText.Text = "No log provider found. Place a provider DLL into the \"Log providers directory\" (Settings) and retry.";
+            }
+            catch (Exception ex) { ShowError(ex); }
+        }
+
+        private void EnsureLogProviders()
+        {
+            if (_logProviders != null) return;
+
+            var discovered = LogProviderLoader.Discover(ResolveLogProvidersDirectory());
+            var providers = new List<IProdLogProvider> { new StubProdLogProvider() };
+            foreach (var provider in discovered)
+            {
+                if (provider != null && !(provider is StubProdLogProvider))
+                    providers.Add(provider);
+            }
+
+            _logProviders = providers;
+            _selectedLogProvider = providers.Count > 0 ? providers[0] : null;
+        }
+
+        private string ResolveLogProvidersDirectory()
+        {
+            var configured = (_settings?.LogProvidersPath ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(configured))
+                return configured;
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RPAWriter2", "Providers");
+        }
+
+        private void RefreshProviderCombo()
+        {
+            var providers = _logProviders;
+            ProviderCombo.ItemsSource = providers;
+            ProviderCombo.SelectedItem = _selectedLogProvider;
+            ProviderCombo.Visibility = providers != null && providers.Count > 1
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void OnProviderChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var provider = ProviderCombo.SelectedItem as IProdLogProvider;
+            if (provider != null)
+                _selectedLogProvider = provider;
+        }
+
+        private async void OnLoadProdTasks(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var robotName = (RobotNameBox?.Text ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(robotName))
+                {
+                    ProdLogsStatusText.Text = "Enter a robot name (e.g. RPA-1212).";
+                    return;
+                }
+                if (_selectedLogProvider == null)
+                {
+                    ProdLogsStatusText.Text = "No log provider available.";
+                    return;
+                }
+
+                ProdLogsStatusText.Text = "Loading tasks…";
+                LogsGrid.ItemsSource = null;
+                var tasks = await _selectedLogProvider.GetTasksAsync(robotName);
+                TasksGrid.ItemsSource = tasks;
+                ProdLogsStatusText.Text = tasks.Count + " task(s) loaded. Select a task to see its logs.";
+            }
+            catch (Exception ex)
+            {
+                ProdLogsStatusText.Text = "Failed to load tasks: " + ex.Message;
+                ShowError(ex);
+            }
+        }
+
+        private async void OnTaskSelected(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                var task = TasksGrid.SelectedItem as ProdTask;
+                if (task == null || _selectedLogProvider == null)
+                {
+                    LogsGrid.ItemsSource = null;
+                    return;
+                }
+
+                ProdLogsStatusText.Text = "Loading logs…";
+                var logs = await _selectedLogProvider.GetLogsAsync(task);
+                LogsGrid.ItemsSource = logs;
+                ProdLogsStatusText.Text = logs.Count + " log entry/entries loaded.";
+            }
+            catch (Exception ex)
+            {
+                ProdLogsStatusText.Text = "Failed to load logs: " + ex.Message;
+                ShowError(ex);
+            }
+        }
+
+        private async void OnAnalyzeProdLogs(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var logs = LogsGrid.ItemsSource as IEnumerable<IProdLog>;
+                if (logs == null)
+                {
+                    ProdLogsStatusText.Text = "Load logs first.";
+                    return;
+                }
+
+                var list = logs.ToList();
+                if (list.Count == 0)
+                {
+                    ProdLogsStatusText.Text = "No log entries to analyze.";
+                    return;
+                }
+
+                var entries = list.Select(MapToLogEntry).ToList();
+                var analysis = new LogAnalyzer().Analyze(entries);
+                var prompt = BuildProdLogsPrompt(analysis, list);
+                AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                await SendChatTextAsync(prompt);
+            }
+            catch (Exception ex) { ShowError(ex); }
+        }
+
+        private static LogEntry MapToLogEntry(IProdLog log)
+        {
+            return new LogEntry
+            {
+                Timestamp = log.Timestamp,
+                Level = log.Level.ToString(),
+                Source = log.Source,
+                Message = log.Message,
+                RawLine = string.IsNullOrWhiteSpace(log.RawLine) ? log.Message : log.RawLine
+            };
+        }
+
+        private string BuildProdLogsPrompt(LogAnalysis analysis, IReadOnlyList<IProdLog> logs)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(AnalyzeProdLogsPrompt.TrimEnd());
+            sb.AppendLine();
+            sb.AppendLine(analysis.Summary);
+            sb.AppendLine();
+
+            if (analysis.Errors.Count > 0)
+            {
+                sb.AppendLine("Errors:");
+                foreach (var entry in analysis.Errors.Take(50))
+                    sb.AppendLine("  [" + FormatTimestamp(entry.Timestamp) + "] " + (entry.Source ?? "") + ": " + (entry.Message ?? ""));
+                sb.AppendLine();
+            }
+
+            if (analysis.Warnings.Count > 0)
+            {
+                sb.AppendLine("Warnings:");
+                foreach (var entry in analysis.Warnings.Take(50))
+                    sb.AppendLine("  [" + FormatTimestamp(entry.Timestamp) + "] " + (entry.Source ?? "") + ": " + (entry.Message ?? ""));
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("Full log:");
+            foreach (var log in logs.Take(200))
+                sb.AppendLine("  [" + FormatTimestamp(log.Timestamp) + "] [" + log.Level + "] " + (log.Source ?? "") + ": " + (log.Message ?? ""));
+
+            var text = sb.ToString();
+            if (text.Length > ProdLogMaxChars)
+                text = text.Substring(0, ProdLogMaxChars) + "\n... (truncated)";
+            return text;
+        }
+
+        private static string FormatTimestamp(DateTime? timestamp)
+        {
+            return timestamp?.ToString("yyyy-MM-dd HH:mm:ss") ?? "?";
         }
 
         private void OnConvertUiPath(object sender, RoutedEventArgs e)
@@ -2463,6 +2668,9 @@ namespace RPAWriter2
             _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
             _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
+            _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
+            _logProviders = null;
+            _selectedLogProvider = null;
             _settings.TimeoutSeconds = ParsePositiveInt(TimeoutSecondsBox?.Text, 300);
             _settings.RetryTimeoutMinutes = ParsePositiveInt(RetryTimeoutMinutesBox?.Text, 30);
             _settings.RetryBaseDelaySeconds = ParsePositiveInt(RetryBaseDelaySecondsBox?.Text, 1);

@@ -19,12 +19,29 @@ namespace RPAWriter.Core.Services
 
         public LogAnalysis Analyze(IEnumerable<string> lines)
         {
-            var analysis = new LogAnalysis();
-            if (lines == null) return analysis;
+            if (lines == null) return new LogAnalysis();
 
+            var entries = new List<LogEntry>();
             foreach (var line in lines)
             {
                 var entry = ParseLine(line);
+                if (entry != null) entries.Add(entry);
+            }
+
+            return AnalyzeEntries(entries);
+        }
+
+        /// <summary>Analyzes already-parsed log entries (e.g. structured entries from a log provider).</summary>
+        public LogAnalysis Analyze(IEnumerable<LogEntry> entries)
+        {
+            return AnalyzeEntries(entries ?? new List<LogEntry>());
+        }
+
+        private static LogAnalysis AnalyzeEntries(IEnumerable<LogEntry> entries)
+        {
+            var analysis = new LogAnalysis();
+            foreach (var entry in entries)
+            {
                 if (entry == null) continue;
                 analysis.Entries.Add(entry);
                 var level = (entry.Level ?? "").ToUpperInvariant();
