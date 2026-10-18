@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 using RPAWriter.Core.Services;
@@ -79,11 +80,20 @@ namespace RPAWriter2.Services
         /// <summary>Allow MCP-provided tools.</summary>
         public bool AllowMcp { get; set; } = false;
 
+        /// <summary>How to address the user (e.g. a first name). Used only when <see cref="AddressByName"/> is true.</summary>
+        public string UserName { get; set; } = "";
+
+        /// <summary>Whether the agent should address the user by <see cref="UserName"/> in its replies.</summary>
+        public bool AddressByName { get; set; } = false;
+
         /// <summary>Full path to the log file; empty uses the default location next to the extension.</summary>
         public string LogFilePath { get; set; } = "";
 
         /// <summary>Directory scanned for third-party IProdLogProvider DLLs; empty uses %AppData%\RPAWriter2\Providers.</summary>
         public string LogProvidersPath { get; set; } = "";
+
+        /// <summary>Recently used production robot names (most recent first).</summary>
+        public List<string> RobotNameHistory { get; set; } = new List<string>();
     }
 
     /// <summary>Loads/saves settings at %AppData%\RPAWriter2\settings.json.</summary>
@@ -150,6 +160,8 @@ namespace RPAWriter2.Services
                 (!string.Equals(settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) &&
                  !string.Equals(settings.ToolCallingMode, "JsonChat", StringComparison.OrdinalIgnoreCase)))
                 settings.ToolCallingMode = "JsonChat";
+            if (settings.RobotNameHistory == null)
+                settings.RobotNameHistory = new List<string>();
         }
 
         public static void Save(SettingsData settings)

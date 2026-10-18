@@ -167,83 +167,11 @@ namespace RPAWriter.Core.AgentTools
 
                 messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer });
 
-                var toolName = action.ToolName;
-                var tool = _registry.Find(toolName);
-                if (tool == null)
+                foreach (var call in action.ToolCalls)
                 {
-                    messages.Add(new ChatMessageData
-                    {
-                        Role = "user",
-                        Content = "Unknown tool: \"" + toolName + "\". Use one of the tools listed in the system prompt."
-                    });
-                    continue;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                 }
-
-                if (tool.Mutates && mode != AgentMode.Act)
-                {
-                    var blocked = new AgentToolCall
-                    {
-                        ToolName = tool.Name,
-                        Blocked = true,
-                        Result = "Blocked: this mutating tool is not allowed in Plan mode."
-                    };
-                    ToolExecuted?.Invoke(this, blocked);
-                    messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
-                    continue;
-                }
-
-                if ((_allowedPermissions & tool.Permission) == 0)
-                {
-                    var blocked = new AgentToolCall
-                    {
-                        ToolName = tool.Name,
-                        Blocked = true,
-                        Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
-                    };
-                    ToolExecuted?.Invoke(this, blocked);
-                    messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
-                    continue;
-                }
-
-                string resultText;
-                try
-                {
-                    resultText = await tool.ExecuteAsync(action.Arguments, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    resultText = "Tool \"" + tool.Name + "\" failed: " + ex.Message;
-                }
-
-                string displayText = null;
-                try
-                {
-                    displayText = await tool.GetDisplayResultAsync(action.Arguments, cancellationToken).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Display text is best-effort; fall back to the full result below.
-                }
-
-                var truncated = Truncate(resultText, effectiveBudget.ToolResultMaxChars);
-                ToolExecuted?.Invoke(this, new AgentToolCall
-                {
-                    ToolName = tool.Name,
-                    Result = truncated,
-                    DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
-                    Blocked = false
-                });
-
-                var toolRole = effectiveBudget.UseToolRole ? "tool" : "user";
-                messages.Add(new ChatMessageData
-                {
-                    Role = toolRole,
-                    Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated
-                });
             }
 
             return new AgentRunResult
@@ -430,6 +358,92 @@ namespace RPAWriter.Core.AgentTools
                 Role = "tool",
                 Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated,
                 ToolCallId = call.Id ?? ""
+            });
+        }
+
+        /// <summary>Executes one JSON-protocol tool call and appends the tool result to the transcript.</summary>
+        private async Task ExecuteJsonToolCallAsync(
+            List<ChatMessageData> messages,
+            AgentToolCallSpec call,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken)
+        {
+            var tool = _registry.Find(call.ToolName);
+            if (tool == null)
+            {
+                messages.Add(new ChatMessageData
+                {
+                    Role = "user",
+                    Content = "Unknown tool: \"" + call.ToolName + "\". Use one of the tools listed in the system prompt."
+                });
+                return;
+            }
+
+            if (tool.Mutates && mode != AgentMode.Act)
+            {
+                var blocked = new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Blocked = true,
+                    Result = "Blocked: this mutating tool is not allowed in Plan mode."
+                };
+                ToolExecuted?.Invoke(this, blocked);
+                messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
+                return;
+            }
+
+            if ((_allowedPermissions & tool.Permission) == 0)
+            {
+                var blocked = new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Blocked = true,
+                    Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
+                };
+                ToolExecuted?.Invoke(this, blocked);
+                messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
+                return;
+            }
+
+            string resultText;
+            try
+            {
+                resultText = await tool.ExecuteAsync(call.Arguments, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                resultText = "Tool \"" + tool.Name + "\" failed: " + ex.Message;
+            }
+
+            string displayText = null;
+            try
+            {
+                displayText = await tool.GetDisplayResultAsync(call.Arguments, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Display text is best-effort; fall back to the full result below.
+            }
+
+            var truncated = Truncate(resultText, budget.ToolResultMaxChars);
+            ToolExecuted?.Invoke(this, new AgentToolCall
+            {
+                ToolName = tool.Name,
+                Result = truncated,
+                DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
+                Blocked = false
+            });
+
+            var toolRole = budget.UseToolRole ? "tool" : "user";
+            messages.Add(new ChatMessageData
+            {
+                Role = toolRole,
+                Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated
             });
         }
 

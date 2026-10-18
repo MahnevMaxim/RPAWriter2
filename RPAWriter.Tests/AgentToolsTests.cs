@@ -27,8 +27,9 @@ namespace RPAWriter.Tests
         {
             var result = AgentResponseParser.Parse("{\"action\":\"tool_call\",\"tool\":\"read_spec\",\"arguments\":{\"x\":1}}");
             Assert.That(result.IsFinal, Is.False);
-            Assert.That(result.ToolName, Is.EqualTo("read_spec"));
-            Assert.That(result.Arguments.Value<int>("x"), Is.EqualTo(1));
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_spec"));
+            Assert.That(result.ToolCalls[0].Arguments.Value<int>("x"), Is.EqualTo(1));
         }
 
         [Test]
@@ -36,7 +37,8 @@ namespace RPAWriter.Tests
         {
             var result = AgentResponseParser.Parse("```json\n{\"action\":\"tool_call\",\"tool\":\"read_file\",\"arguments\":{\"path\":\"a.txt\"}}\n```");
             Assert.That(result.IsFinal, Is.False);
-            Assert.That(result.ToolName, Is.EqualTo("read_file"));
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_file"));
         }
 
         [Test]
@@ -76,6 +78,28 @@ namespace RPAWriter.Tests
 
             Assert.That(result.IsFinal, Is.True);
             Assert.That(result.Text, Is.EqualTo(""));
+        }
+
+        [Test]
+        public void Parse_ArrayOfToolCalls_ReturnsMultipleCalls()
+        {
+            var result = AgentResponseParser.Parse("[{\"action\":\"tool_call\",\"tool\":\"read_spec\",\"arguments\":{}},{\"action\":\"tool_call\",\"tool\":\"read_file\",\"arguments\":{\"path\":\"a.txt\"}}]");
+
+            Assert.That(result.IsFinal, Is.False);
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(2));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_spec"));
+            Assert.That(result.ToolCalls[1].ToolName, Is.EqualTo("read_file"));
+            Assert.That(result.ToolCalls[1].Arguments.Value<string>("path"), Is.EqualTo("a.txt"));
+        }
+
+        [Test]
+        public void Parse_FencedArrayOfToolCalls_ReturnsMultipleCalls()
+        {
+            var result = AgentResponseParser.Parse("```json\n[{\"action\":\"tool_call\",\"tool\":\"read_spec\",\"arguments\":{}}]\n```");
+
+            Assert.That(result.IsFinal, Is.False);
+            Assert.That(result.ToolCalls.Count, Is.EqualTo(1));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("read_spec"));
         }
     }
 
@@ -245,6 +269,28 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task RunAsync_MultipleToolCallsInOneTurn_ExecutesAll()
+        {
+            var calls = new List<string>();
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("tool_a", "a", "{}", mutates: false, (a, c) => { calls.Add("a"); return Task.FromResult("ra"); }));
+            registry.Register(new AgentTool("tool_b", "b", "{}", mutates: false, (a, c) => { calls.Add("b"); return Task.FromResult("rb"); }));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("[{\"action\":\"tool_call\",\"tool\":\"tool_a\",\"arguments\":{}},{\"action\":\"tool_call\",\"tool\":\"tool_b\",\"arguments\":{}}]"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"done\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(calls, Is.EquivalentTo(new[] { "a", "b" }));
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
         public async Task RunAsync_MutatingToolInPlan_BlocksIt()
         {
             var executed = false;
@@ -292,6 +338,44 @@ namespace RPAWriter.Tests
 
             Assert.That(executed, Is.False);
             Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+    }
+
+    [TestFixture]
+    public class AgentPromptBuilderTests
+    {
+        private static AgentToolRegistry EmptyRegistry() => new AgentToolRegistry();
+
+        [Test]
+        public void Build_WithNameAndAddressByName_AppendsAddressing()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "Иван", true);
+
+            Assert.That(prompt, Does.Contain("Address the user by their name when replying: \"Иван\"."));
+        }
+
+        [Test]
+        public void Build_AddressByNameFalse_DoesNotAppendAddressing()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "Иван", false);
+
+            Assert.That(prompt, Does.Not.Contain("Address the user by their name"));
+        }
+
+        [Test]
+        public void Build_BlankName_DoesNotAppendAddressing()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "   ", true);
+
+            Assert.That(prompt, Does.Not.Contain("Address the user by their name"));
+        }
+
+        [Test]
+        public void Build_ExistingOverload_StillWorks()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry());
+
+            Assert.That(prompt, Does.Contain("Available tools"));
         }
     }
 }

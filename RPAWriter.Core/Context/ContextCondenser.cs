@@ -47,7 +47,7 @@ namespace RPAWriter.Core.Context
             {
                 var result = new List<ChatMessageData>
                 {
-                    new ChatMessageData { Role = "assistant", Content = summary }
+                    new ChatMessageData { Role = "user", Content = "Summary of the earlier conversation:\n" + summary }
                 };
                 result.AddRange(keep);
                 return result;
@@ -83,9 +83,24 @@ namespace RPAWriter.Core.Context
             var sb = new StringBuilder();
             foreach (var message in messages)
             {
-                if (message == null || string.IsNullOrWhiteSpace(message.Content))
+                if (message == null)
                     continue;
-                sb.Append(message.Role).Append(": ").AppendLine(message.Content);
+
+                if (message.ToolCalls != null && message.ToolCalls.Count > 0)
+                {
+                    foreach (var call in message.ToolCalls)
+                    {
+                        sb.Append("assistant: [tool_call: ").Append(call.Name).Append("(");
+                        if (call.Arguments != null)
+                            sb.Append(call.Arguments.ToString(Newtonsoft.Json.Formatting.None));
+                        sb.AppendLine(")]");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(message.Content))
+                    sb.Append(message.Role).Append(": ").AppendLine(message.Content);
+                else if (string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(message.ToolCallId))
+                    sb.Append("tool").Append(" (id=").Append(message.ToolCallId).AppendLine("): <no content>");
             }
             return sb.ToString().Trim();
         }

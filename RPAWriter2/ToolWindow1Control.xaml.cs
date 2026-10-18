@@ -71,6 +71,7 @@ namespace RPAWriter2
         private DTE2? _dte;
         private IReadOnlyList<IProdLogProvider>? _logProviders;
         private IProdLogProvider? _selectedLogProvider;
+        private List<string> _robotNameHistory = new List<string>();
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
@@ -103,6 +104,8 @@ namespace RPAWriter2
             "Analyze the production robot logs below. " +
             "Summarize the robot run, list errors and warnings with their likely root causes, and suggest fixes:\n\n";
         private const int ProdLogMaxChars = 40000;
+        private const string RobotNameDefault = "RPA-";
+        private const int RobotNameHistoryMax = 20;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
         private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
@@ -166,6 +169,9 @@ namespace RPAWriter2
             InputPriceBox.Text = _settings.InputPricePerMillion.ToString(CultureInfo.InvariantCulture);
             CacheHitPriceBox.Text = _settings.CacheHitPricePerMillion.ToString(CultureInfo.InvariantCulture);
             OutputPriceBox.Text = _settings.OutputPricePerMillion.ToString(CultureInfo.InvariantCulture);
+            UserNameBox.Text = _settings.UserName ?? "";
+            AddressByNameCheckBox.IsChecked = _settings.AddressByName;
+            LoadRobotNameHistory();
         }
 
         private void RecreateAiProvider()
@@ -272,6 +278,7 @@ namespace RPAWriter2
                 return;
             }
             _specMessages.Add(message);
+            CopySpecAllButton.Visibility = Visibility.Visible;
             SpecScroll.ScrollToEnd();
         }
 
@@ -1089,6 +1096,18 @@ namespace RPAWriter2
 
         private async void OnLoadProdTasks(object sender, RoutedEventArgs e)
         {
+            await LoadProdTasksAsync();
+        }
+
+        private void OnRobotNameKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            _ = LoadProdTasksAsync();
+        }
+
+        private async Task LoadProdTasksAsync()
+        {
             try
             {
                 var robotName = (RobotNameBox?.Text ?? "").Trim();
@@ -1097,6 +1116,9 @@ namespace RPAWriter2
                     ProdLogsStatusText.Text = "Enter a robot name (e.g. RPA-1212).";
                     return;
                 }
+
+                AddRobotNameToHistory(robotName);
+
                 if (_selectedLogProvider == null)
                 {
                     ProdLogsStatusText.Text = "No log provider available.";
@@ -1114,6 +1136,38 @@ namespace RPAWriter2
                 ProdLogsStatusText.Text = "Failed to load tasks: " + ex.Message;
                 ShowError(ex);
             }
+        }
+
+        private void AddRobotNameToHistory(string name)
+        {
+            name = (name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            if (string.Equals(name, RobotNameDefault, StringComparison.OrdinalIgnoreCase)) return;
+
+            _robotNameHistory.RemoveAll(s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase));
+            _robotNameHistory.Insert(0, name);
+            if (_robotNameHistory.Count > RobotNameHistoryMax)
+                _robotNameHistory.RemoveRange(RobotNameHistoryMax, _robotNameHistory.Count - RobotNameHistoryMax);
+
+            _settings.RobotNameHistory = new List<string>(_robotNameHistory);
+            SettingsStore.Save(_settings);
+            UpdateRobotNameBox();
+        }
+
+        private void LoadRobotNameHistory()
+        {
+            _robotNameHistory = (_settings.RobotNameHistory ?? new List<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            UpdateRobotNameBox();
+        }
+
+        private void UpdateRobotNameBox()
+        {
+            var last = _robotNameHistory.Count > 0 ? _robotNameHistory[0] : RobotNameDefault;
+            RobotNameBox.ItemsSource = _robotNameHistory.Skip(1).ToList();
+            RobotNameBox.Text = last;
         }
 
         private async void OnTaskSelected(object sender, SelectionChangedEventArgs e)
@@ -2203,7 +2257,7 @@ namespace RPAWriter2
                 ? ToolCallingMode.Native
                 : ToolCallingMode.JsonChat;
             var allowedPermissions = BuildAllowedPermissions();
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
@@ -2719,6 +2773,8 @@ namespace RPAWriter2
             _settings.InputPricePerMillion = ParsePrice(InputPriceBox?.Text, 0.27);
             _settings.CacheHitPricePerMillion = ParsePrice(CacheHitPriceBox?.Text, 0.07);
             _settings.OutputPricePerMillion = ParsePrice(OutputPriceBox?.Text, 1.10);
+            _settings.UserName = UserNameBox.Text.Trim();
+            _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath);
             RecreateAiProvider();

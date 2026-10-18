@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Context;
@@ -106,10 +107,43 @@ namespace RPAWriter.Tests
             var result = await condenser.CondenseAsync(Transcript(10), budget, CancellationToken.None);
 
             Assert.That(result.Count, Is.EqualTo(3)); // summary + 2 kept
-            Assert.That(result[0].Role, Is.EqualTo("assistant"));
-            Assert.That(result[0].Content, Is.EqualTo("SUMMARIZED"));
+            Assert.That(result[0].Role, Is.EqualTo("user"));
+            Assert.That(result[0].Content, Does.Contain("SUMMARIZED"));
+            Assert.That(result[1].Role, Is.EqualTo("user"));
             Assert.That(result[1].Content, Is.EqualTo("message 8"));
             Assert.That(result[2].Content, Is.EqualTo("message 9"));
+        }
+
+        [Test]
+        public async Task Condense_IncludesNativeToolCallsInSummaryInput()
+        {
+            var ai = new FakeAiProvider(new ChatResponse { Answer = "SUMMARIZED", FinishReason = "stop" });
+            var condenser = new ContextCondenser(ai, new TokenEstimator(), "COMPACT");
+            var budget = new ContextBudget { KeepRecentMessages = 1 };
+
+            var transcript = new List<ChatMessageData>
+            {
+                new ChatMessageData
+                {
+                    Role = "assistant",
+                    Content = "",
+                    ToolCalls = new List<NativeToolCall>
+                    {
+                        new NativeToolCall { Id = "call_1", Name = "read_file", Arguments = new JObject { ["path"] = "a.txt" } }
+                    }
+                },
+                new ChatMessageData { Role = "tool", Content = "", ToolCallId = "call_1" },
+                new ChatMessageData { Role = "user", Content = "recent" }
+            };
+
+            var result = await condenser.CondenseAsync(transcript, budget, CancellationToken.None);
+
+            Assert.That(result.Count, Is.EqualTo(2)); // summary + 1 kept
+            Assert.That(result[0].Role, Is.EqualTo("user"));
+            Assert.That(result[0].Content, Does.Contain("SUMMARIZED"));
+            Assert.That(ai.Calls.Count, Is.EqualTo(1));
+            Assert.That(ai.Calls[0][0].Content, Does.Contain("read_file"));
+            Assert.That(ai.Calls[0][0].Content, Does.Contain("call_1"));
         }
 
         [Test]

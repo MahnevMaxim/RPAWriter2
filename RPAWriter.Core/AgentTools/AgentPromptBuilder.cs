@@ -33,9 +33,10 @@ namespace RPAWriter.Core.AgentTools
                     : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-system-native.txt", PromptDefaults.AgentPlanSystemPromptNative);
             }
 
-            var basePrompt = mode == AgentMode.Act
-                ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-system.txt", PromptDefaults.AgentActSystemPrompt)
-                : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-system.txt", PromptDefaults.AgentPlanSystemPrompt);
+            var basePrompt = PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-json-base.txt", PromptDefaults.AgentJsonBaseSystemPrompt);
+            var modeInstructions = mode == AgentMode.Act
+                ? PromptDefaults.AgentActModeInstructions
+                : PromptDefaults.AgentPlanModeInstructions;
 
             var sb = new StringBuilder();
             foreach (var t in registry.ForMode(mode, allowed))
@@ -48,7 +49,22 @@ namespace RPAWriter.Core.AgentTools
             if (string.IsNullOrWhiteSpace(toolList))
                 toolList = "(none)";
 
-            return basePrompt.Replace("{tools}", toolList);
+            return basePrompt.Replace("{tools}", toolList).Replace("{mode_instructions}", modeInstructions);
+        }
+
+        /// <summary>
+        /// Builds the prompt for a mode, protocol, permission set and optional user addressing.
+        /// When <paramref name="addressByName"/> is true and <paramref name="userName"/> is not
+        /// blank, a short instruction to address the user by name is appended to the prompt.
+        /// </summary>
+        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, string userName, bool addressByName)
+        {
+            var prompt = Build(mode, registry, toolCallingMode, allowed);
+            var name = (userName ?? string.Empty).Trim();
+            if (!addressByName || name.Length == 0)
+                return prompt;
+
+            return prompt + "\n\nAddress the user by their name when replying: \"" + name + "\".";
         }
     }
 }
