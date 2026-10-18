@@ -113,6 +113,9 @@ namespace RPAWriter2
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         private bool _loadingHistory;
         private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
+        // Starts true so XAML load events (e.g. PlanModeButton Checked) don't
+        // overwrite persisted state before RestoreUiState() runs.
+        private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage;
         private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
@@ -121,6 +124,7 @@ namespace RPAWriter2
         public ToolWindow1Control()
         {
             this.InitializeComponent();
+            MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
             ChatList.ItemsSource = _chatListView;
@@ -2427,16 +2431,107 @@ namespace RPAWriter2
                 AppendExtensionError("Chat history unavailable: " + ex.Message);
             }
 
-            var latest = _conversations.FirstOrDefault();
-            if (latest != null)
-                OpenConversation(latest.Id, markDirty: false);
-            else
-                StartNewChat(markDirty: false);
+            RestoreUiState();
+        }
+
+        /// <summary>Restores the chat view, active conversation, agent mode and active tab from the last session.</summary>
+        private void RestoreUiState()
+        {
+            _restoringUiState = true;
+            try
+            {
+                var state = UiStateStore.Load();
+
+                _mode = string.Equals(state.AgentMode, "Act", StringComparison.OrdinalIgnoreCase)
+                    ? AgentMode.Act
+                    : AgentMode.Plan;
+                if (_mode == AgentMode.Act)
+                    ActModeButton.IsChecked = true;
+                else
+                    PlanModeButton.IsChecked = true;
+
+                SelectTabByHeader(state.ActiveTab);
+
+                if (string.Equals(state.ChatViewMode, "History", StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowHistoryView();
+                }
+                else
+                {
+                    var toOpen = ResolveConversationToOpen(state.LastConversationId);
+                    if (toOpen != null)
+                        OpenConversation(toOpen.Id, markDirty: false);
+                    else
+                        StartNewChat(markDirty: false);
+                    ShowConversationView();
+                }
+            }
+            finally
+            {
+                _restoringUiState = false;
+            }
+        }
+
+        private ChatConversation? ResolveConversationToOpen(string id)
+        {
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                try
+                {
+                    var stored = ChatHistoryStore.LoadConversation(id);
+                    if (stored != null)
+                        return stored;
+                }
+                catch
+                {
+                    // fall back to the most recent conversation below
+                }
+            }
+
+            return _conversations.FirstOrDefault();
+        }
+
+        private void SelectTabByHeader(string header)
+        {
+            if (string.IsNullOrWhiteSpace(header))
+                return;
+
+            foreach (var item in MainTabs.Items)
+            {
+                if (item is TabItem tab && string.Equals(tab.Header as string, header, StringComparison.OrdinalIgnoreCase))
+                {
+                    MainTabs.SelectedItem = tab;
+                    return;
+                }
+            }
+        }
+
+        private void OnMainTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_restoringUiState)
+                return;
+            PersistUiState();
+        }
+
+        /// <summary>Writes the current chat/tab state so the next session can restore it.</summary>
+        private void PersistUiState()
+        {
+            if (_restoringUiState)
+                return;
+
+            UiStateStore.Save(new UiStateData
+            {
+                ChatViewMode = _chatViewMode == ChatViewMode.History ? "History" : "Conversation",
+                LastConversationId = _currentConversation?.Id ?? "",
+                AgentMode = _mode == AgentMode.Act ? "Act" : "Plan",
+                ActiveTab = (MainTabs.SelectedItem as TabItem)?.Header as string ?? "Chat"
+            });
         }
 
         private void OnWindowUnloaded(object sender, RoutedEventArgs e)
         {
             SaveHistoryNow();
+            PersistUiState();
         }
 
         private void ScheduleHistorySave()
@@ -2544,6 +2639,7 @@ namespace RPAWriter2
 
             if (markDirty)
                 ScheduleHistorySave();
+            PersistUiState();
         }
 
         private void RefreshHistoryList()
@@ -2564,6 +2660,7 @@ namespace RPAWriter2
         {
             _chatViewMode = ChatViewMode.Conversation;
             ApplyChatViewMode();
+            PersistUiState();
         }
 
         private void ShowHistoryView()
@@ -2571,6 +2668,7 @@ namespace RPAWriter2
             _chatViewMode = ChatViewMode.History;
             RefreshHistoryList();
             ApplyChatViewMode();
+            PersistUiState();
         }
 
         private void ApplyChatViewMode()
@@ -2678,6 +2776,7 @@ namespace RPAWriter2
             }
 
             RefreshPinnedMessage();
+            PersistUiState();
         }
 
         private const double PinnedCollapsedHeight = 48.0;
@@ -2752,7 +2851,10 @@ namespace RPAWriter2
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
             _mode = ActModeButton?.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
+            if (_restoringUiState)
+                return;
             AppendModeSwitch("Mode: " + _mode);
+            PersistUiState();
         }
 
         private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
