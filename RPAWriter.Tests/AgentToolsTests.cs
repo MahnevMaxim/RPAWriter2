@@ -113,6 +113,25 @@ namespace RPAWriter.Tests
 
             Assert.That(registry.Find("readfile"), Is.Not.Null);
         }
+
+        [Test]
+        public void ForMode_WithPermissionFilter_ExcludesDisabledCategories()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read", "read", "{}", mutates: false, (a, c) => Task.FromResult("r")));
+            registry.Register(new AgentTool("run", "run", "{}", mutates: true, (a, c) => Task.FromResult("r"), permission: AgentPermissions.ExecuteCommand));
+
+            var readOnly = registry.ForMode(AgentMode.Act, AgentPermissions.ReadFiles);
+            Assert.That(readOnly.Count, Is.EqualTo(1));
+            Assert.That(readOnly[0].Name, Is.EqualTo("read"));
+
+            var exec = registry.ForMode(AgentMode.Act, AgentPermissions.ExecuteCommand);
+            Assert.That(exec.Count, Is.EqualTo(1));
+            Assert.That(exec[0].Name, Is.EqualTo("run"));
+
+            var all = registry.ForMode(AgentMode.Act, AgentPermissions.All);
+            Assert.That(all.Count, Is.EqualTo(2));
+        }
     }
 
     [TestFixture]
@@ -245,6 +264,31 @@ namespace RPAWriter.Tests
 
             var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
             var result = await runner.RunAsync("go", AgentMode.Plan, CancellationToken.None);
+
+            Assert.That(executed, Is.False);
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_ToolWithDisabledPermission_BlocksIt()
+        {
+            var executed = false;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("run_command", "run", "{}", mutates: true, (a, c) =>
+            {
+                executed = true;
+                return Task.FromResult("should-not-run");
+            }, permission: AgentPermissions.ExecuteCommand));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("{\"action\":\"tool_call\",\"tool\":\"run_command\",\"arguments\":{}}"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"done\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, allowedPermissions: AgentPermissions.ReadFiles | AgentPermissions.EditFiles);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
 
             Assert.That(executed, Is.False);
             Assert.That(result.FinalText, Is.EqualTo("done"));

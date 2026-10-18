@@ -10,7 +10,7 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Builds the JSON-over-chat system prompt (backward-compatible default).</summary>
         public static string Build(AgentMode mode, AgentToolRegistry registry)
         {
-            return Build(mode, registry, ToolCallingMode.JsonChat);
+            return Build(mode, registry, ToolCallingMode.JsonChat, AgentPermissions.All);
         }
 
         /// <summary>
@@ -19,6 +19,12 @@ namespace RPAWriter.Core.AgentTools
         /// as native function definitions); JSON mode injects the tool list into {tools}.
         /// </summary>
         public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode)
+        {
+            return Build(mode, registry, toolCallingMode, AgentPermissions.All);
+        }
+
+        /// <summary>Builds the prompt for a mode, protocol and allowed permission set.</summary>
+        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed)
         {
             if (toolCallingMode == ToolCallingMode.Native)
             {
@@ -32,7 +38,7 @@ namespace RPAWriter.Core.AgentTools
                 : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-system.txt", PromptDefaults.AgentPlanSystemPrompt);
 
             var sb = new StringBuilder();
-            foreach (var t in registry.ForMode(mode))
+            foreach (var t in registry.ForMode(mode, allowed))
             {
                 sb.Append("- ").Append(t.Name).Append(": ").Append(t.Description);
                 sb.Append(" Parameters: ").AppendLine(t.ParametersSchema);

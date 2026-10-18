@@ -54,6 +54,7 @@ namespace RPAWriter.Core.AgentTools
         private readonly AgentToolRegistry _registry;
         private readonly Func<AgentMode, string> _systemPromptFactory;
         private readonly ToolCallingMode _toolCallingMode;
+        private readonly AgentPermissions _allowedPermissions;
         private readonly ContextBudget _budget;
         private readonly ITokenEstimator _estimator;
         private readonly IContextCondenser _condenser;
@@ -74,8 +75,9 @@ namespace RPAWriter.Core.AgentTools
             AgentToolRegistry registry,
             Func<AgentMode, string> systemPromptFactory,
             int maxIterations = 8,
-            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat)
-            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations }, null, toolCallingMode)
+            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat,
+            AgentPermissions allowedPermissions = AgentPermissions.All)
+            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations }, null, toolCallingMode, allowedPermissions)
         {
         }
 
@@ -85,12 +87,14 @@ namespace RPAWriter.Core.AgentTools
             Func<AgentMode, string> systemPromptFactory,
             ContextBudget budget,
             string compactSystemPrompt = null,
-            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat)
+            ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat,
+            AgentPermissions allowedPermissions = AgentPermissions.All)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _systemPromptFactory = systemPromptFactory ?? throw new ArgumentNullException(nameof(systemPromptFactory));
             _toolCallingMode = toolCallingMode;
+            _allowedPermissions = allowedPermissions;
             _budget = budget ?? new ContextBudget();
 
             _estimator = new TokenEstimator();
@@ -130,7 +134,7 @@ namespace RPAWriter.Core.AgentTools
             messages.Add(new ChatMessageData { Role = "user", Content = userText ?? "" });
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
-            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode);
+            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
 
             for (var i = 0; i < maxIterations; i++)
             {
@@ -182,6 +186,19 @@ namespace RPAWriter.Core.AgentTools
                         ToolName = tool.Name,
                         Blocked = true,
                         Result = "Blocked: this mutating tool is not allowed in Plan mode."
+                    };
+                    ToolExecuted?.Invoke(this, blocked);
+                    messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
+                    continue;
+                }
+
+                if ((_allowedPermissions & tool.Permission) == 0)
+                {
+                    var blocked = new AgentToolCall
+                    {
+                        ToolName = tool.Name,
+                        Blocked = true,
+                        Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
                     };
                     ToolExecuted?.Invoke(this, blocked);
                     messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
@@ -361,6 +378,19 @@ namespace RPAWriter.Core.AgentTools
                 return;
             }
 
+            if ((_allowedPermissions & tool.Permission) == 0)
+            {
+                var blocked = new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Blocked = true,
+                    Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
+                };
+                ToolExecuted?.Invoke(this, blocked);
+                messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
+                return;
+            }
+
             var args = call.Arguments ?? new JObject();
             string resultText;
             try
@@ -425,6 +455,19 @@ namespace RPAWriter.Core.AgentTools
             list.Add(new ChatMessageData { Role = "assistant", Content = response?.Answer ?? "" });
             list.Add(new ChatMessageData { Role = "user", Content = MaxTokensRecoveryNudge });
             return list;
+        }
+
+        private static string PermissionName(AgentPermissions permission)
+        {
+            switch (permission)
+            {
+                case AgentPermissions.ReadFiles: return "read files";
+                case AgentPermissions.EditFiles: return "edit files";
+                case AgentPermissions.ExecuteCommand: return "execute command";
+                case AgentPermissions.WebFetch: return "web fetch";
+                case AgentPermissions.Mcp: return "MCP";
+                default: return "unknown";
+            }
         }
 
         private static string Truncate(string text, int max)

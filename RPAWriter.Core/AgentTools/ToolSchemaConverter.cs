@@ -47,7 +47,13 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Builds the tool list for a mode from the registry.</summary>
         public static IReadOnlyList<ToolDefinition> BuildToolDefinitions(AgentToolRegistry registry, AgentMode mode)
         {
-            return registry.ForMode(mode).Select(ToToolDefinition).ToList();
+            return BuildToolDefinitions(registry, mode, AgentPermissions.All);
+        }
+
+        /// <summary>Builds the tool list for a mode and allowed permission set.</summary>
+        public static IReadOnlyList<ToolDefinition> BuildToolDefinitions(AgentToolRegistry registry, AgentMode mode, AgentPermissions allowed)
+        {
+            return registry.ForMode(mode, allowed).Select(ToToolDefinition).ToList();
         }
 
         private static JObject EmptyObjectSchema()

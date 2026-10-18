@@ -27,6 +27,27 @@ namespace RPAWriter.Core.Models
         Act
     }
 
+    /// <summary>
+    /// Category-level permissions for agent tools. Each tool declares one category;
+    /// a tool is allowed only while its category is enabled in the settings.
+    /// </summary>
+    [Flags]
+    public enum AgentPermissions
+    {
+        /// <summary>Read files, specs, KB records, logs and compiler output.</summary>
+        ReadFiles = 1,
+        /// <summary>Write/edit files, generate robots, import the knowledge base.</summary>
+        EditFiles = 2,
+        /// <summary>Run arbitrary shell/PowerShell commands.</summary>
+        ExecuteCommand = 4,
+        /// <summary>Fetch or download web resources.</summary>
+        WebFetch = 8,
+        /// <summary>Call MCP-provided tools.</summary>
+        Mcp = 16,
+        /// <summary>All permissions enabled.</summary>
+        All = ReadFiles | EditFiles | ExecuteCommand | WebFetch | Mcp
+    }
+
     /// <summary>How the agent talks to the model about tools.</summary>
     public enum ToolCallingMode
     {

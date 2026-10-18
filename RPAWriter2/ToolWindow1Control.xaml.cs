@@ -2202,7 +2202,8 @@ namespace RPAWriter2
             var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
                 ? ToolCallingMode.Native
                 : ToolCallingMode.JsonChat;
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode), toolCallingMode: toolCallingMode);
+            var allowedPermissions = BuildAllowedPermissions();
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
@@ -2262,6 +2263,43 @@ namespace RPAWriter2
         {
             InputBox.Text = "update memory bank: read the current memory bank with read_memory, then update the relevant files with update_memory.";
             InputBox.Focus();
+        }
+
+        private void OnPermissionsClick(object sender, RoutedEventArgs e)
+        {
+            AllowReadFilesCheckBox.IsChecked = _settings.AllowReadFiles;
+            AllowEditFilesCheckBox.IsChecked = _settings.AllowEditFiles;
+            AllowExecuteCommandCheckBox.IsChecked = _settings.AllowExecuteCommand;
+            AllowWebFetchCheckBox.IsChecked = _settings.AllowWebFetch;
+            AllowMcpCheckBox.IsChecked = _settings.AllowMcp;
+            PermissionsOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void OnPermissionsClose(object sender, RoutedEventArgs e)
+        {
+            PermissionsOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnPermissionChanged(object sender, RoutedEventArgs e)
+        {
+            _settings.AllowReadFiles = AllowReadFilesCheckBox?.IsChecked ?? true;
+            _settings.AllowEditFiles = AllowEditFilesCheckBox?.IsChecked ?? true;
+            _settings.AllowExecuteCommand = AllowExecuteCommandCheckBox?.IsChecked ?? false;
+            _settings.AllowWebFetch = AllowWebFetchCheckBox?.IsChecked ?? false;
+            _settings.AllowMcp = AllowMcpCheckBox?.IsChecked ?? false;
+            SettingsStore.Save(_settings);
+            RebuildAgentTools();
+        }
+
+        private AgentPermissions BuildAllowedPermissions()
+        {
+            var allowed = (AgentPermissions)0;
+            if (_settings.AllowReadFiles) allowed |= AgentPermissions.ReadFiles;
+            if (_settings.AllowEditFiles) allowed |= AgentPermissions.EditFiles;
+            if (_settings.AllowExecuteCommand) allowed |= AgentPermissions.ExecuteCommand;
+            if (_settings.AllowWebFetch) allowed |= AgentPermissions.WebFetch;
+            if (_settings.AllowMcp) allowed |= AgentPermissions.Mcp;
+            return allowed;
         }
 
         private AgentToolRegistry BuildToolRegistry()

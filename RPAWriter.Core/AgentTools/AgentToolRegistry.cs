@@ -27,8 +27,14 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Tools allowed in the given mode: Act gets everything, Plan gets read-only only.</summary>
         public IReadOnlyList<IAgentTool> ForMode(AgentMode mode)
         {
+            return ForMode(mode, AgentPermissions.All);
+        }
+
+        /// <summary>Tools allowed for a mode AND whose permission category is enabled.</summary>
+        public IReadOnlyList<IAgentTool> ForMode(AgentMode mode, AgentPermissions allowed)
+        {
             return _tools.Values
-                .Where(t => mode == AgentMode.Act || !t.Mutates)
+                .Where(t => (mode == AgentMode.Act || !t.Mutates) && (allowed & t.Permission) != 0)
                 .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

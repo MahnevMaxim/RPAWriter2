@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using RPAWriter.Core.Models;
 
 namespace RPAWriter.Core.AgentTools
 {
@@ -18,6 +19,9 @@ namespace RPAWriter.Core.AgentTools
 
         /// <summary>True when the tool changes state (files, solutions, builds, KB).</summary>
         bool Mutates { get; }
+
+        /// <summary>Permission category the tool belongs to (gated by the settings).</summary>
+        AgentPermissions Permission { get; }
 
         /// <summary>Executes the tool and returns a text result fed back to the model.</summary>
         Task<string> ExecuteAsync(JObject arguments, CancellationToken cancellationToken);

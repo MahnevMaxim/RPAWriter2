@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -32,6 +34,7 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<DTE2?> _getDte;
         private readonly IBuildFeedbackService _buildFeedback;
         private readonly RobotTemplateService _robotTemplate;
+        private readonly ShellCommandService _shell = new ShellCommandService();
 
         public AgentToolFactory(
             IAiProvider ai,
@@ -86,6 +89,17 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("kb_import", "Import the knowledge base from the robots directory.", "{\"mode\":\"override|continue\"}", true, KbImportAsync));
             registry.Register(new AgentTool("kb_add", "Add a record to the knowledge base.", "{\"name\":\"string\",\"task\":\"string\",\"xamlFragment\":\"string\",\"csharpCode\":\"string\"}", true, KbAddAsync));
             registry.Register(new AgentTool("update_memory", "Write a project memory bank file (activeContext.md, progress.md, etc.).", "{\"file\":\"string\",\"content\":\"string\"}", true, UpdateMemoryAsync));
+
+            // ---- Read-only navigation / inspection tools (permission-gated) ----
+            registry.Register(new AgentTool("list_directory", "List files and subdirectories in a directory (absolute or solution-relative path).", "{\"path\":\"string\",\"recursive\":\"boolean\"}", false, ListDirectoryAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("search_files", "Search text files under a directory for a literal or regex pattern; returns matching file paths with line snippets.", "{\"directory\":\"string\",\"pattern\":\"string\",\"useRegex\":\"boolean\"}", false, SearchFilesAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("git_status", "Show the git working-tree status of the open solution's repository.", "{}", false, GitStatusAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("git_diff", "Show the uncommitted git diff of the open solution's repository (optionally for one path).", "{\"path\":\"string\"}", false, GitDiffAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("web_fetch", "Fetch the content of a web URL (HTTP GET) and return the response text.", "{\"url\":\"string\"}", false, WebFetchAsync, permission: AgentPermissions.WebFetch));
+
+            // ---- Mutating tools (Act only, permission-gated) ----
+            registry.Register(new AgentTool("run_command", "Run an arbitrary PowerShell command in the solution directory and return its output. Use for dotnet build/test, git and environment inspection.", "{\"command\":\"string\"}", true, RunCommandAsync, permission: AgentPermissions.ExecuteCommand));
+            registry.Register(new AgentTool("download_file", "Download a file from a URL and save it to disk.", "{\"url\":\"string\",\"path\":\"string\"}", true, DownloadFileAsync, permission: AgentPermissions.WebFetch));
 
             return registry;
         }
@@ -451,6 +465,156 @@ namespace RPAWriter2.Services.AgentTools
             catch (Exception ex)
             {
                 return Task.FromResult("Failed to update memory bank: " + ex.Message);
+            }
+        }
+
+        private Task<string> ListDirectoryAsync(JObject args, CancellationToken ct)
+        {
+            var p = ResolvePath(args["path"]?.Value<string>() ?? "");
+            if (string.IsNullOrWhiteSpace(p) || !Directory.Exists(p))
+                return Task.FromResult("Directory not found: " + p);
+
+            var recursive = args["recursive"]?.Value<bool>() ?? false;
+            var sb = new StringBuilder();
+            try
+            {
+                foreach (var dir in Directory.EnumerateDirectories(p))
+                    sb.AppendLine("[dir] " + MakeRelative(p, dir));
+                foreach (var file in Directory.EnumerateFiles(p, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly))
+                    sb.AppendLine("[file] " + MakeRelative(p, file));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult("Failed to list directory: " + ex.Message);
+            }
+            return Task.FromResult(sb.Length == 0 ? "(empty directory)" : Truncate(sb.ToString()));
+        }
+
+        private Task<string> SearchFilesAsync(JObject args, CancellationToken ct)
+        {
+            var dir = ResolvePath(args["directory"]?.Value<string>() ?? "");
+            var pattern = args["pattern"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                return Task.FromResult("Directory not found: " + dir);
+            if (string.IsNullOrWhiteSpace(pattern))
+                return Task.FromResult("Missing \"pattern\" argument.");
+
+            var useRegex = args["useRegex"]?.Value<bool>() ?? false;
+            Regex? regex = null;
+            if (useRegex)
+            {
+                try { regex = new Regex(pattern, RegexOptions.IgnoreCase); }
+                catch (Exception ex) { return Task.FromResult("Invalid regex: " + ex.Message); }
+            }
+
+            var sb = new StringBuilder();
+            try
+            {
+                foreach (var f in EnumerateTextFiles(dir))
+                {
+                    var lines = File.ReadAllLines(f);
+                    for (var i = 0; i < lines.Length; i++)
+                    {
+                        var line = lines[i];
+                        var match = regex != null ? regex.IsMatch(line) : line.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (match)
+                            sb.AppendLine(MakeRelative(dir, f) + ":" + (i + 1) + ": " + Truncate(line, 200));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult("Search failed: " + ex.Message);
+            }
+            return Task.FromResult(sb.Length == 0 ? "No matches." : Truncate(sb.ToString()));
+        }
+
+        private async Task<string> RunCommandAsync(JObject args, CancellationToken ct)
+        {
+            var command = args["command"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(command)) return "Missing \"command\" argument.";
+            var result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct).ConfigureAwait(false);
+            return result.Success ? result.Output : "Command failed (exit " + result.ExitCode + "):\n" + result.Output;
+        }
+
+        private async Task<string> GitStatusAsync(JObject args, CancellationToken ct)
+        {
+            var dir = _getSolutionDir();
+            if (string.IsNullOrWhiteSpace(dir)) return "No open solution directory.";
+            var result = await _shell.RunAsync("git status --porcelain --untracked-files=all", dir, ct).ConfigureAwait(false);
+            if (!result.Success) return "git status failed: " + result.Output;
+            return string.IsNullOrWhiteSpace(result.Output) || result.Output == "(no output)" ? "(clean)" : result.Output;
+        }
+
+        private async Task<string> GitDiffAsync(JObject args, CancellationToken ct)
+        {
+            var dir = _getSolutionDir();
+            if (string.IsNullOrWhiteSpace(dir)) return "No open solution directory.";
+            var path = args["path"]?.Value<string>() ?? "";
+            var command = string.IsNullOrWhiteSpace(path) ? "git diff" : "git diff -- " + path;
+            var result = await _shell.RunAsync(command, dir, ct).ConfigureAwait(false);
+            if (!result.Success) return "git diff failed: " + result.Output;
+            return string.IsNullOrWhiteSpace(result.Output) || result.Output == "(no output)" ? "(no diff)" : result.Output;
+        }
+
+        private async Task<string> WebFetchAsync(JObject args, CancellationToken ct)
+        {
+            var url = args["url"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(url)) return "Missing \"url\" argument.";
+            using (var wc = new WebClient())
+            using (ct.Register(wc.CancelAsync))
+            {
+                try
+                {
+                    var text = await wc.DownloadStringTaskAsync(url).ConfigureAwait(false);
+                    return Truncate(text);
+                }
+                catch (Exception ex)
+                {
+                    return "Web fetch failed: " + ex.Message;
+                }
+            }
+        }
+
+        private async Task<string> DownloadFileAsync(JObject args, CancellationToken ct)
+        {
+            var url = args["url"]?.Value<string>() ?? "";
+            var path = ResolvePath(args["path"]?.Value<string>() ?? "");
+            if (string.IsNullOrWhiteSpace(url)) return "Missing \"url\" argument.";
+            if (string.IsNullOrWhiteSpace(path)) return "Missing \"path\" argument.";
+            using (var wc = new WebClient())
+            using (ct.Register(wc.CancelAsync))
+            {
+                try
+                {
+                    var dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+                    await wc.DownloadFileTaskAsync(url, path).ConfigureAwait(false);
+                    return "Downloaded to " + path;
+                }
+                catch (Exception ex)
+                {
+                    return "Download failed: " + ex.Message;
+                }
+            }
+        }
+
+        private static IEnumerable<string> EnumerateTextFiles(string dir)
+        {
+            try
+            {
+                var textExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ".xaml", ".cs", ".txt", ".md", ".json", ".xml", ".config", ".csproj", ".sln", ".slnx", ".props", ".targets", ".vsct", ".yaml", ".yml"
+                };
+                return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                    .Where(f => textExtensions.Contains(Path.GetExtension(f)))
+                    .Take(500)
+                    .ToList();
+            }
+            catch
+            {
+                return new List<string>();
             }
         }
 

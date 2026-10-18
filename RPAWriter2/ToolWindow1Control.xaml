@@ -731,7 +731,45 @@
                         <Button x:Name="UpdateMemoryButton" Content="Memory bank" Click="OnUpdateMemory"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Ask the agent to update the project memory bank"/>
+                        <Button x:Name="PermissionsButton" Content="Permissions" Click="OnPermissionsClick"
+                                Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Configure agent permissions (read files, edit files, execute commands, web fetch, MCP)"/>
                     </StackPanel>
+
+                    <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="4"
+                            Background="{StaticResource Dark.Panel}"
+                            BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                            CornerRadius="2" Padding="12,10" Visibility="Collapsed">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Agent permissions" FontWeight="Bold"
+                                           Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                        ToolTip="Close" Click="OnPermissionsClose">
+                                    <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                                </Button>
+                            </Grid>
+                            <CheckBox x:Name="AllowReadFilesCheckBox" Content="Read files"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,8,0,0"
+                                      Foreground="{StaticResource Dark.Text}"/>
+                            <CheckBox x:Name="AllowEditFilesCheckBox" Content="Edit files"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
+                                      Foreground="{StaticResource Dark.Text}"/>
+                            <CheckBox x:Name="AllowExecuteCommandCheckBox" Content="Execute commands (PowerShell)"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
+                                      Foreground="{StaticResource Dark.Text}"/>
+                            <CheckBox x:Name="AllowWebFetchCheckBox" Content="Web fetch"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
+                                      Foreground="{StaticResource Dark.Text}"/>
+                            <CheckBox x:Name="AllowMcpCheckBox" Content="MCP"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
+                                      Foreground="{StaticResource Dark.Text}"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
 
                 <Grid x:Name="HistoryViewPanel" Grid.Row="0" Grid.RowSpan="6"

@@ -63,6 +63,22 @@ namespace RPAWriter2.Services
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
 
+        // ---- Agent permissions: category-level gates for the agent tools. ----
+        /// <summary>Allow tools that read files/specs/KB/logs.</summary>
+        public bool AllowReadFiles { get; set; } = true;
+
+        /// <summary>Allow tools that write/edit files and generate robots.</summary>
+        public bool AllowEditFiles { get; set; } = true;
+
+        /// <summary>Allow arbitrary shell/PowerShell command execution.</summary>
+        public bool AllowExecuteCommand { get; set; } = false;
+
+        /// <summary>Allow fetching/downloading web resources.</summary>
+        public bool AllowWebFetch { get; set; } = false;
+
+        /// <summary>Allow MCP-provided tools.</summary>
+        public bool AllowMcp { get; set; } = false;
+
         /// <summary>Full path to the log file; empty uses the default location next to the extension.</summary>
         public string LogFilePath { get; set; } = "";
 
