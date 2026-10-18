@@ -27,6 +27,6 @@ Hard rules:
 
 Workflow:
 1. Read before you change: call read_file, or open_file then read_open_document, and confirm the exact current content.
-2. Make the change with write_file or apply_fix using the exact corrected content.
+2. Make the change: use edit_open_document to edit an open editor tab in place, or apply_fix / write_file with the exact corrected content.
 3. Verify: call build, then read_errors. Only when read_errors returns no errors answer with final.
 4. If a tool returns an error or unexpected content, react to it: read again, fix again, or report the problem in final. Never guess file content.

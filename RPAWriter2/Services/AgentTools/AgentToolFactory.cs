@@ -78,7 +78,8 @@ namespace RPAWriter2.Services.AgentTools
             // ---- Mutating tools (Act only) ----
             registry.Register(new AgentTool("generate_robot", "Generate a robot (XAML/C#) from the imported spec and save the artifacts next to the spec.", "{}", mutates: true, GenerateRobotAsync));
             registry.Register(new AgentTool("write_file", "Write a text file (create or overwrite) by absolute or solution-relative path.", "{\"path\":\"string\",\"content\":\"string\"}", true, WriteFileAsync));
-            registry.Register(new AgentTool("apply_fix", "Overwrite an existing file with corrected content.", "{\"path\":\"string\",\"content\":\"string\"}", true, WriteFileAsync));
+            registry.Register(new AgentTool("apply_fix", "Replace the content of an existing file with corrected content. Edits through the open Visual Studio editor tab (single Undo step) and saves it; falls back to a disk write when the file cannot be opened in the editor.", "{\"path\":\"string\",\"content\":\"string\"}", true, ApplyFixAsync));
+            registry.Register(new AgentTool("edit_open_document", "Replace the text of an open editor tab directly in the Visual Studio editor buffer (not a raw disk write), then save it. Provide \"path\" to target a specific file (opens it if needed), or omit \"path\" to edit the active document. Applied as one Undo step.", "{\"path\":\"string\",\"content\":\"string\"}", true, EditOpenDocumentAsync, EditOpenDocumentDisplayAsync));
             registry.Register(new AgentTool("create_robot", "Create a robot solution (RPA-<number>) from the configured template.", "{\"number\":\"string\"}", true, CreateRobotAsync));
             registry.Register(new AgentTool("build", "Run a Release build of the open solution.", "{}", true, BuildAsync));
             registry.Register(new AgentTool("convert_uipath", "Convert a UiPath XAML file to Workflow Foundation and write the artifacts.", "{\"path\":\"string\"}", true, ConvertUiPathAsync));
@@ -538,6 +539,78 @@ namespace RPAWriter2.Services.AgentTools
                 return Task.FromResult("File written: " + p);
             }
             catch (Exception ex) { return Task.FromResult("Failed to write file: " + ex.Message); }
+        }
+
+        private async Task<string> ApplyFixAsync(JObject args, CancellationToken ct)
+        {
+            var raw = args["path"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(raw)) return "Missing \"path\" argument.";
+            var content = args["content"]?.Value<string>() ?? "";
+            return await EditDocumentViaDteAsync(ResolvePath(raw), content, ct).ConfigureAwait(true);
+        }
+
+        private async Task<string> EditOpenDocumentAsync(JObject args, CancellationToken ct)
+        {
+            var raw = args["path"]?.Value<string>() ?? "";
+            var p = string.IsNullOrWhiteSpace(raw) ? null : ResolvePath(raw);
+            var content = args["content"]?.Value<string>() ?? "";
+            return await EditDocumentViaDteAsync(p, content, ct).ConfigureAwait(true);
+        }
+
+        private Task<string> EditOpenDocumentDisplayAsync(JObject args, CancellationToken ct)
+        {
+            var raw = args["path"]?.Value<string>() ?? "";
+            return Task.FromResult(string.IsNullOrWhiteSpace(raw) ? "active document" : ResolvePath(raw));
+        }
+
+        /// <summary>
+        /// Edits a file through the Visual Studio editor buffer (DTE) rather than a raw
+        /// disk write: open/activate the tab, replace the buffer text, then save. This keeps
+        /// the editor in sync, gives a single Undo step, and avoids the "file modified
+        /// outside the editor" reload prompt. <paramref name="path"/> may be null to edit
+        /// the currently active document.
+        /// </summary>
+        private async Task<string> EditDocumentViaDteAsync(string? path, string content, CancellationToken ct)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var dte = _getDte();
+            if (dte == null) return "Visual Studio is not available.";
+
+            Document? doc;
+            string? resolved;
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                doc = dte.ActiveDocument;
+                if (doc == null) return "No document is active in the editor and no \"path\" was provided.";
+                resolved = doc.FullName;
+            }
+            else
+            {
+                resolved = ResolvePath(path!);
+                doc = await VsDocumentService.OpenOrActivateAsync(dte, resolved).ConfigureAwait(true);
+                if (doc == null) return "Could not open the file in Visual Studio: " + resolved;
+            }
+
+            var ready = await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
+            if (!ready) return "The document editor buffer is not ready: " + (resolved ?? doc.Name);
+
+            var oldText = VsDocumentService.ReadDocumentText(doc) ?? string.Empty;
+            var diff = TextDiff.Diff(oldText, content ?? string.Empty);
+
+            var error = VsDocumentService.ReplaceDocumentText(dte, doc, content ?? string.Empty);
+            if (error != null) return error;
+
+            try
+            {
+                doc.Save();
+            }
+            catch (Exception ex)
+            {
+                return "Edited in the editor but failed to save to disk: " + ex.Message;
+            }
+
+            return "Edited in editor and saved: " + (resolved ?? doc.Name) + Environment.NewLine + diff.Summary.TrimEnd();
         }
 
         private async Task<string> CreateRobotAsync(JObject args, CancellationToken ct)

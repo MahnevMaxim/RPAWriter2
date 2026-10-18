@@ -14,6 +14,7 @@ namespace RPAWriter2.Services
         public string KnowledgeBasePath { get; set; } = "";
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
+        public string PackagesPath { get; set; } = "";
         public string RulesPath { get; set; } = PromptPaths.ResolveRulesDirectory();
         public int ContextWindowSize { get; set; } = 409600;
 

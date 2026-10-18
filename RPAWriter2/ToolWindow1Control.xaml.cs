@@ -58,23 +58,42 @@ namespace RPAWriter2
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
         private OutputWindowService _outputWindow;
+        private readonly GitService _git = new GitService();
         private AgentMode _mode = AgentMode.Plan;
         private AgentPhase _phase = AgentPhase.Idle;
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
         private ITokenUsageProvider? _tokenUsage;
+        private int _lastEstimatedInputTokens;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
         private IPromptNotifier? _promptNotifier;
         private DTE2? _dte;
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
+        private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
+        private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private CancellationTokenSource? _chatCts;
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
+        private const string CommitBranchName = "dev";
+        private const string CommitMessageSystemPrompt =
+            "You are an expert at writing concise git commit messages. " +
+            "Summarize the provided changes into a single-line commit message in the format \"type(scope): summary\". " +
+            "Respond with only the commit message text — no markdown, no quotes, no extra explanation.";
+        private const string CommitRobotSummarySystemPrompt =
+            "You are an expert at writing concise git commit messages. " +
+            "Summarize the robot changes below into a single concise line in the imperative mood. " +
+            "Respond with only the summary text — no RPA-...: prefix, no markdown, no quotes, no extra explanation.";
+        private const string CommitOtherSummarySystemPrompt =
+            "You are an expert at writing concise git commit messages. " +
+            "Summarize the changes below into a single concise line in the imperative mood. " +
+            "Respond with only the summary text — no markdown, no quotes, no extra explanation.";
+
+        private const int CommitDiffMaxChars = 8000;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
         private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
@@ -84,6 +103,7 @@ namespace RPAWriter2
         private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
         private ChatMessage? _pinnedMessage;
         private ICollectionView? _chatListView;
+        private ICollectionView? _packagesView;
         private bool _pinnedExpanded;
 
         public ToolWindow1Control()
@@ -94,6 +114,9 @@ namespace RPAWriter2
             ChatList.ItemsSource = _chatListView;
             SpecList.ItemsSource = _specMessages;
             HistoryList.ItemsSource = _conversations;
+            _packagesView = CollectionViewSource.GetDefaultView(_packages);
+            _packagesView.Filter = FilterPackages;
+            PackagesList.ItemsSource = _packagesView;
             LoadSettings();
             RecreateAiProvider();
             _buildFeedback = new BuildFeedbackService();
@@ -114,6 +137,7 @@ namespace RPAWriter2
             KbPathBox.Text = _settings.KnowledgeBasePath ?? "";
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
+            PackagesPathBox.Text = _settings.PackagesPath ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
             ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600).ToString();
             CompactThresholdBox.Text = _settings.CompactThreshold.ToString(CultureInfo.InvariantCulture);
@@ -407,17 +431,19 @@ namespace RPAWriter2
 
         private void OnAiMessageSent(object? sender, AiMessageEventArgs e)
         {
+            // AI message tracing is logged only (not written to the knowledge-base panel),
+            // so commit auto-generation and chat traffic no longer pollute the KB "Messages" box.
             LogService.Debug("AI message sent: role=" + (e.Role ?? "") + ", chars=" + (e.Content == null ? 0 : e.Content.Length));
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnAiMessageSent(sender, e)));
-                return;
-            }
-            AppendKbMessage("→ [" + (e.Role ?? "") + "] " + (e.Content ?? ""));
         }
 
         private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
         {
+            _lastEstimatedInputTokens = e.EstimatedInputTokens;
+            if (!Dispatcher.CheckAccess())
+                Dispatcher.BeginInvoke(new Action(UpdateTokenUsageDisplay));
+            else
+                UpdateTokenUsageDisplay();
+
             var dump = FormatPromptDump(e);
             LogService.Info(dump);
             try
@@ -460,6 +486,7 @@ namespace RPAWriter2
 
         private void OnRetryAttempt(object? sender, RetryAttemptEventArgs e)
         {
+            // Retry attempts are logged only (not written to the knowledge-base panel).
             LogService.Warn(
                 "Provider retry #" + e.Attempt +
                 " status=" + (e.StatusCode.HasValue ? e.StatusCode.Value.ToString() : "no-response") +
@@ -469,43 +496,6 @@ namespace RPAWriter2
                 " elapsed=" + e.Elapsed +
                 " remaining=" + e.Remaining +
                 " body=" + (e.Body ?? "").Replace("\r", " ").Replace("\n", " "));
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnRetryAttempt(sender, e)));
-                return;
-            }
-
-            var status = e.StatusCode.HasValue
-                ? "HTTP " + e.StatusCode.Value + (string.IsNullOrEmpty(e.ReasonPhrase) ? "" : " (" + e.ReasonPhrase + ")")
-                : "no response";
-
-            string message;
-            if (e.WillRetry)
-            {
-                message = "Retry #" + e.Attempt + " → " + status;
-                if (!string.IsNullOrWhiteSpace(e.Body))
-                    message += ": " + e.Body;
-                var total = e.Elapsed + e.Remaining;
-                message += " (elapsed " + FormatKbDuration(e.Elapsed) + " / " + FormatKbDuration(total) +
-                           ", next attempt in " + FormatKbDuration(e.WaitBeforeRetry) + ")";
-            }
-            else
-            {
-                message = "Retry budget exhausted after " + e.Attempt + " attempt(s): " + status;
-                if (!string.IsNullOrWhiteSpace(e.Body))
-                    message += ": " + e.Body;
-            }
-
-            AppendKbMessage(message);
-            SetKbStatus(message);
-        }
-
-        private static string FormatKbDuration(TimeSpan t)
-        {
-            if (t < TimeSpan.Zero) t = TimeSpan.Zero;
-            if (t.TotalMinutes >= 1) return (int)t.TotalMinutes + "m " + t.Seconds + "s";
-            if (t.TotalSeconds >= 1) return (int)t.TotalSeconds + "s";
-            return (int)t.TotalMilliseconds + "ms";
         }
 
         private void AppendKbMessage(string text)
@@ -547,8 +537,10 @@ namespace RPAWriter2
                 return;
             }
             var usage = provider.TotalTokenUsage;
-            var text = "Context window: " + usage.TotalTokens.ToString("N0") +
-                       " / " + provider.ContextWindowSize.ToString("N0") + " tokens";
+            var occupied = _lastEstimatedInputTokens;
+            var text = "Context window: " + occupied.ToString("N0") +
+                       " / " + provider.ContextWindowSize.ToString("N0") + " tokens" +
+                       "    total " + usage.TotalTokens.ToString("N0");
             if (usage.CacheHitTokens > 0)
                 text += " · cache hit " + usage.CacheHitTokens.ToString("N0");
             if (usage.EstimatedCostUsd > 0)
@@ -557,7 +549,7 @@ namespace RPAWriter2
             ChatTokenUsageText.Text = text;
 
             var ratio = provider.ContextWindowSize > 0
-                ? Math.Min(100.0, 100.0 * usage.TotalTokens / provider.ContextWindowSize)
+                ? Math.Min(100.0, 100.0 * occupied / provider.ContextWindowSize)
                 : 0.0;
             ContextFillBar.Value = ratio;
             ChatContextFillBar.Value = ratio;
@@ -914,8 +906,9 @@ namespace RPAWriter2
                 foreach (var warning in result.Warnings)
                     sb.AppendLine("Warning: " + warning);
                 AppendKbMessage(sb.ToString().TrimEnd());
-                AppendChat("Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
-                SetKbStatus("Import finished: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).");
+                var importSummary = "Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).";
+                AppendChat(importSummary);
+                SetKbStatus(importSummary);
             }
             catch (OperationCanceledException)
             {
@@ -990,7 +983,7 @@ namespace RPAWriter2
                     return;
                 }
                 await _buildFeedback.BuildReleaseAsync();
-                AppendSpecText("Release build started.");
+                LogService.Info("Release build started.");
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -1049,9 +1042,199 @@ namespace RPAWriter2
             }
             catch (Exception ex)
             {
-                ShowError(ex);
+                LogService.Error(ex, "Failed to restore packages.");
             }
         }
+
+        private async void OnRefreshPackages(object sender, RoutedEventArgs e)
+        {
+            var folder = RequirePackagesPath();
+            if (folder == null) return;
+            await RefreshPackagesAsync(folder);
+        }
+
+        private async Task RefreshPackagesAsync(string folder)
+        {
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            var state = dte == null ? new RobotProjectState() : _packageCatalog.GetRobotProjectState(dte);
+
+            var packages = await _packageCatalog.ScanAsync(folder);
+
+            _packages.Clear();
+            foreach (var package in packages)
+            {
+                package.IsInstalled = state.Installed.TryGetValue(package.Id, out var installedVersion);
+                if (package.IsInstalled)
+                    package.InstalledVersion = installedVersion;
+                _packages.Add(new PackageListItem(package));
+            }
+
+            var installedCount = _packages.Count(p => p.IsInstalled);
+            var projectText = state.Names.Count == 0
+                ? "no RPA- robot project found"
+                : "robot project(s): " + string.Join(", ", state.Names);
+            SetPackagesStatus(_packages.Count + " package(s) in \"" + folder + "\" - " +
+                installedCount + " installed - " + projectText + ".");
+        }
+
+        private async void OnInstallSelectedPackages(object sender, RoutedEventArgs e)
+        {
+            var folder = RequirePackagesPath();
+            if (folder == null) return;
+            var projects = GetRobotProjects();
+            if (projects.Count == 0) return;
+
+            var selected = _packages.Where(p => p.IsSelected && !p.IsInstalled).ToList();
+            if (selected.Count == 0)
+            {
+                SetPackagesStatus("Select one or more packages that are not installed yet.");
+                return;
+            }
+
+            try
+            {
+                _outputWindow.Activate();
+                foreach (var project in projects)
+                {
+                    foreach (var package in selected)
+                    {
+                        await _robotTemplate.RunPackageManagerCommandAsync(
+                            "Install-Package " + package.Id + " -Version " + package.Version +
+                            " -Source \"" + folder + "\" -ProjectName \"" + project + "\"",
+                            _outputWindow.CreateProgress());
+                    }
+                }
+                await RefreshPackagesAsync(folder);
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Failed to install packages.");
+            }
+        }
+
+        private async void OnUpdateSelectedPackages(object sender, RoutedEventArgs e)
+        {
+            var folder = RequirePackagesPath();
+            if (folder == null) return;
+            var projects = GetRobotProjects();
+            if (projects.Count == 0) return;
+
+            var selected = _packages.Where(p => p.IsSelected && p.IsInstalled).ToList();
+            if (selected.Count == 0)
+            {
+                SetPackagesStatus("Select one or more installed packages to update.");
+                return;
+            }
+
+            try
+            {
+                _outputWindow.Activate();
+                foreach (var project in projects)
+                {
+                    foreach (var package in selected)
+                    {
+                        await _robotTemplate.RunPackageManagerCommandAsync(
+                            "Update-Package " + package.Id + " -Source \"" + folder + "\" -ProjectName \"" + project + "\"",
+                            _outputWindow.CreateProgress());
+                    }
+                }
+                await RefreshPackagesAsync(folder);
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Failed to update packages.");
+            }
+        }
+
+        private async void OnUninstallSelectedPackages(object sender, RoutedEventArgs e)
+        {
+            var folder = RequirePackagesPath();
+            if (folder == null) return;
+            var projects = GetRobotProjects();
+            if (projects.Count == 0) return;
+
+            var selected = _packages.Where(p => p.IsSelected && p.IsInstalled).ToList();
+            if (selected.Count == 0)
+            {
+                SetPackagesStatus("Select one or more installed packages to uninstall.");
+                return;
+            }
+
+            try
+            {
+                _outputWindow.Activate();
+                foreach (var project in projects)
+                {
+                    foreach (var package in selected)
+                    {
+                        await _robotTemplate.RunPackageManagerCommandAsync(
+                            "Uninstall-Package " + package.Id + " -ProjectName \"" + project + "\"",
+                            _outputWindow.CreateProgress());
+                    }
+                }
+                await RefreshPackagesAsync(folder);
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Failed to uninstall packages.");
+            }
+        }
+
+        private string? RequirePackagesPath()
+        {
+            var path = (PackagesPathBox?.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                SetPackagesStatus("Packages directory is not configured. Set the path in the \"Settings\" tab.");
+                MainTabs.SelectedItem = SettingsTab;
+                return null;
+            }
+            if (!Directory.Exists(path))
+            {
+                SetPackagesStatus("Packages directory does not exist: " + path);
+                return null;
+            }
+            return path;
+        }
+
+        private IReadOnlyList<string> GetRobotProjects()
+        {
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            if (dte?.Solution == null)
+            {
+                SetPackagesStatus("No open solution. Open the RPA- robot solution first.");
+                return new List<string>();
+            }
+            bool isOpen;
+            try { isOpen = dte.Solution.IsOpen; }
+            catch { isOpen = false; }
+            if (!isOpen)
+            {
+                SetPackagesStatus("No open solution. Open the RPA- robot solution first.");
+                return new List<string>();
+            }
+            var projects = _packageCatalog.GetRobotProjectState(dte).Names;
+            if (projects.Count == 0)
+                SetPackagesStatus("No \"RPA-\" robot project found in the open solution.");
+            return projects;
+        }
+
+        private void SetPackagesStatus(string text)
+        {
+            PackagesStatusText.Text = text ?? "";
+        }
+
+        private bool FilterPackages(object item)
+        {
+            var filter = (PackageFilterBox?.Text ?? "").Trim();
+            if (filter.Length == 0)
+                return true;
+            return item is PackageListItem package &&
+                   package.Id.StartsWith(filter, StringComparison.Ordinal);
+        }
+
+        private void OnPackageFilterChanged(object sender, TextChangedEventArgs e)
+            => _packagesView?.Refresh();
 
         private async void OnCreateRobot(object sender, RoutedEventArgs e)
         {
@@ -1169,9 +1352,400 @@ namespace RPAWriter2
             _chatCts?.Cancel();
         }
 
-        private void OnCommit(object sender, RoutedEventArgs e)
+        #pragma warning disable VSTHRD100 // WPF event handlers are async void
+
+        private async void OnCommit(object sender, RoutedEventArgs e)
         {
-            // TODO: not implemented yet.
+            try
+            {
+                CommitStatusText.Text = "";
+                HideCommitResult();
+                LogService.Info("Commit control requested.");
+                var solutionDir = GetOpenSolutionDirectory();
+                if (solutionDir == null)
+                {
+                    LogService.Warn("Commit control: no open solution.");
+                    ShowCommitWarning("No open solution. Open a solution and retry.");
+                    return;
+                }
+
+                LogService.Info("Commit control: solutionDir=" + solutionDir);
+                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
+                var branch = await _git.GetCurrentBranchAsync(repoRoot);
+                LogService.Info("Commit control: repoRoot=" + repoRoot + ", branch=" + branch);
+                if (!string.Equals(branch, CommitBranchName, StringComparison.Ordinal))
+                {
+                    LogService.Warn("Commit control blocked: current branch is not '" + CommitBranchName + "'.");
+                    ShowCommitWarning("Commit is only available on the '" + CommitBranchName + "' branch. Current branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch));
+                    return;
+                }
+
+                ShowCommitEditor();
+                CommitMessageBox.Focus();
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Commit control: failed to open.");
+                ShowCommitWarning("Could not open the commit control: " + ex.Message);
+            }
+        }
+
+        private async void OnCommitSend(object sender, RoutedEventArgs e)
+        {
+            var message = CommitMessageBox.Text.Trim();
+            if (message.Length == 0)
+            {
+                CommitStatusText.Text = "Commit message is required.";
+                CommitMessageBox.Focus();
+                return;
+            }
+
+            SetCommitBusy(true);
+            CommitStatusText.Text = "Committing…";
+            LogService.Info("Commit send requested; message=" + message.Length + " chars");
+            try
+            {
+                CommitStatusText.Text = "Saving documents…";
+                if (!await TrySaveAllDocumentsAsync())
+                {
+                    CommitStatusText.Text = "Some documents could not be saved. Save them manually and retry.";
+                    return;
+                }
+
+                var solutionDir = GetOpenSolutionDirectory();
+                if (solutionDir == null)
+                {
+                    ShowCommitWarning("No open solution. Open a solution and retry.");
+                    return;
+                }
+
+                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
+                var branch = await _git.GetCurrentBranchAsync(repoRoot);
+                LogService.Info("Commit send: repoRoot=" + repoRoot + ", branch=" + branch);
+                if (!string.Equals(branch, CommitBranchName, StringComparison.Ordinal))
+                {
+                    ShowCommitWarning("Commit is only available on the '" + CommitBranchName + "' branch. Current branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch));
+                    return;
+                }
+
+                await _git.StageAllAsync(repoRoot);
+                await _git.CommitAsync(repoRoot, message);
+
+                CommitMessageBox.Clear();
+                CloseCommitControl();
+                LogService.Info("Commit send: success (" + CommitBranchName + ").");
+                ShowCommitResult("Committed to " + CommitBranchName + ": " + message, true);
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Commit send failed.");
+                ShowCommitResult(ex.Message, false);
+            }
+            finally
+            {
+                SetCommitBusy(false);
+            }
+        }
+
+        private async void OnCommitAutoGenerate(object sender, RoutedEventArgs e)
+        {
+            if (_ai == null)
+            {
+                CommitStatusText.Text = "AI provider is not available.";
+                return;
+            }
+
+            SetCommitBusy(true);
+            CommitStatusText.Text = "Generating commit message…";
+            LogService.Info("Commit auto-generate requested.");
+            try
+            {
+                CommitStatusText.Text = "Saving documents…";
+                if (!await TrySaveAllDocumentsAsync())
+                {
+                    CommitStatusText.Text = "Some documents could not be saved. Save them manually and retry.";
+                    return;
+                }
+
+                var solutionDir = GetOpenSolutionDirectory();
+                if (solutionDir == null)
+                {
+                    ShowCommitWarning("No open solution. Open a solution and retry.");
+                    return;
+                }
+
+                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
+                LogService.Info("Commit auto-generate: repoRoot=" + repoRoot);
+
+                var message = await GenerateCommitMessageAsync(repoRoot);
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    CommitStatusText.Text = "No changes detected. If you have unsaved edits in Visual Studio, save them (Ctrl+Shift+S) and retry.";
+                    return;
+                }
+
+                LogService.Info("Commit auto-generate: AI response=" + message.Length + " chars");
+                CommitMessageBox.Text = message;
+                CommitStatusText.Text = "";
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Commit auto-generate failed.");
+                CommitStatusText.Text = ex.Message;
+            }
+            finally
+            {
+                SetCommitBusy(false);
+            }
+        }
+
+        #pragma warning restore VSTHRD100
+
+        /// <summary>
+        /// Saves every open document in Visual Studio so the on-disk files reflect the
+        /// current editor contents before a commit message is generated or committed.
+        /// Returns false when any document remains unsaved (e.g. an untitled buffer).
+        /// </summary>
+        private async Task<bool> TrySaveAllDocumentsAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
+            if (dte?.Documents == null)
+                return true;
+
+            try
+            {
+                dte.ExecuteCommand("File.SaveAll");
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("TrySaveAllDocumentsAsync: File.SaveAll failed: " + ex.Message);
+            }
+
+            var unsaved = new List<string>();
+            foreach (Document doc in dte.Documents)
+            {
+                try
+                {
+                    if (!doc.Saved)
+                    {
+                        var name = string.IsNullOrWhiteSpace(doc.Name) ? doc.FullName : doc.Name;
+                        if (string.IsNullOrWhiteSpace(name))
+                            name = "(untitled)";
+                        unsaved.Add(name);
+                    }
+                }
+                catch
+                {
+                    // Ignore documents whose state cannot be read.
+                }
+            }
+
+            if (unsaved.Count > 0)
+            {
+                LogService.Warn("TrySaveAllDocumentsAsync: unsaved documents remain: " + string.Join(", ", unsaved));
+                return false;
+            }
+
+            return true;
+        }
+
+        private static List<string> ExtractRobotNames(IEnumerable<string> changedPaths)
+        {
+            var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var raw in changedPaths)
+            {
+                var path = (raw ?? "").Trim();
+                if (path.Length == 0)
+                    continue;
+                var arrow = path.IndexOf(" -> ", StringComparison.Ordinal);
+                if (arrow >= 0)
+                    path = path.Substring(arrow + 4).Trim();
+                if (path.Length == 0)
+                    continue;
+                var slash = path.IndexOf("/", StringComparison.Ordinal);
+                var first = slash < 0 ? path : path.Substring(0, slash);
+                if (first.StartsWith("RPA-", StringComparison.OrdinalIgnoreCase) && first.Length > 4)
+                    names.Add(first);
+            }
+            return names.ToList();
+        }
+
+        private static bool IsUnderRobot(string path, string robotName)
+        {
+            var cleaned = (path ?? "").Trim();
+            var arrow = cleaned.IndexOf(" -> ", StringComparison.Ordinal);
+            if (arrow >= 0)
+                cleaned = cleaned.Substring(arrow + 4).Trim();
+            return cleaned.StartsWith(robotName + "/", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(cleaned, robotName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildRobotChangeMaterial(string robotName, string diff, IReadOnlyList<string> files)
+        {
+            var sb = new StringBuilder();
+            sb.Append("Robot: ").AppendLine(robotName);
+            if (!string.IsNullOrWhiteSpace(diff))
+            {
+                sb.AppendLine("Diff:");
+                sb.AppendLine(diff.TrimEnd());
+            }
+            sb.AppendLine("Changed files:");
+            foreach (var f in files)
+                sb.AppendLine(f);
+            return sb.ToString();
+        }
+
+        private static string BuildOtherChangeMaterial(IReadOnlyList<string> files)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Changed files (outside robot folders):");
+            foreach (var f in files)
+                sb.AppendLine(f);
+            return sb.ToString();
+        }
+
+        private async Task<string> SummarizeChangesAsync(string content, string systemPrompt)
+        {
+            if (content.Length > CommitDiffMaxChars)
+                content = content.Substring(0, CommitDiffMaxChars) + "\n… (diff truncated)";
+            var messages = new List<ChatMessageData>
+            {
+                new ChatMessageData { Role = "user", Content = content }
+            };
+            var response = await _ai.ChatAsync(messages, systemPrompt);
+            var text = response?.Answer?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                throw new InvalidOperationException("The AI provider returned an empty message.");
+            return text;
+        }
+
+        private async Task<string?> GenerateCommitMessageAsync(string repoRoot)
+        {
+            var changedFiles = await _git.GetChangedFilesAsync(repoRoot);
+            if (changedFiles.Count == 0)
+                return null;
+            var robotNames = ExtractRobotNames(changedFiles);
+            if (robotNames.Count == 0)
+            {
+                var diff = await _git.GetDiffForMessageAsync(repoRoot);
+                if (string.IsNullOrWhiteSpace(diff))
+                    return null;
+                return await SummarizeChangesAsync(diff, CommitMessageSystemPrompt);
+            }
+            var parts = new List<string>();
+            foreach (var robot in robotNames)
+            {
+                var files = changedFiles.Where(f => IsUnderRobot(f, robot)).ToList();
+                var diff = await _git.GetDiffForPathAsync(repoRoot, robot);
+                var material = BuildRobotChangeMaterial(robot, diff, files);
+                var summary = await SummarizeChangesAsync(material, CommitRobotSummarySystemPrompt);
+                parts.Add(robot + ": " + summary);
+            }
+            var otherFiles = changedFiles.Where(f => robotNames.All(r => !IsUnderRobot(f, r))).ToList();
+            if (otherFiles.Count > 0)
+            {
+                var summary = await SummarizeChangesAsync(BuildOtherChangeMaterial(otherFiles), CommitOtherSummarySystemPrompt);
+                parts.Add("chore: " + summary);
+            }
+            return string.Join(Environment.NewLine, parts);
+        }
+
+        private void OnCommitClose(object sender, RoutedEventArgs e)
+        {
+            CloseCommitControl();
+        }
+
+        private void ShowCommitWarning(string message)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowCommitWarning(message)));
+                return;
+            }
+            CommitControlHost.Visibility = Visibility.Visible;
+            CommitWarningBar.Visibility = Visibility.Visible;
+            CommitEditorPanel.Visibility = Visibility.Collapsed;
+            CommitWarningText.Text = message;
+        }
+
+        private void ShowCommitEditor()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(ShowCommitEditor));
+                return;
+            }
+            CommitControlHost.Visibility = Visibility.Visible;
+            CommitWarningBar.Visibility = Visibility.Collapsed;
+            CommitEditorPanel.Visibility = Visibility.Visible;
+            CommitMessageBox.Clear();
+            CommitStatusText.Text = "";
+        }
+
+        private void CloseCommitControl()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(CloseCommitControl));
+                return;
+            }
+            CommitControlHost.Visibility = Visibility.Collapsed;
+            CommitWarningBar.Visibility = Visibility.Collapsed;
+            CommitEditorPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetCommitBusy(bool busy)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetCommitBusy(busy)));
+                return;
+            }
+            CommitSendButton.IsEnabled = !busy;
+            CommitAutoGenButton.IsEnabled = !busy;
+        }
+
+        /// <summary>
+        /// Shows the commit result as a colored bar under the toolbar buttons instead of
+        /// writing it into the chat: green on success, orange on failure.
+        /// </summary>
+        private void ShowCommitResult(string message, bool success)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowCommitResult(message, success)));
+                return;
+            }
+            CommitResultText.Text = message;
+            CommitResultBar.Background = (Brush)FindResource(success ? "Commit.SuccessBackground" : "Commit.ErrorBackground");
+            CommitResultBar.Visibility = Visibility.Visible;
+        }
+
+        private void HideCommitResult()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(HideCommitResult));
+                return;
+            }
+            CommitResultBar.Visibility = Visibility.Collapsed;
+            CommitResultText.Text = "";
+        }
+
+        private void OnCloseCommitResult(object sender, RoutedEventArgs e)
+        {
+            HideCommitResult();
+        }
+
+        private void OnCopyCommitResult(object sender, RoutedEventArgs e)
+        {
+            var text = CommitResultText.Text;
+            if (string.IsNullOrEmpty(text))
+                return;
+            try { Clipboard.SetText(text); }
+            catch { /* clipboard busy — ignore */ }
         }
 
         private async Task SendMessageAsync()
@@ -1877,6 +2451,7 @@ namespace RPAWriter2
             _settings.KnowledgeBasePath = KbPathBox.Text.Trim();
             _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
+            _settings.PackagesPath = PackagesPathBox.Text.Trim();
             _settings.RulesPath = RulesPathBox.Text.Trim();
             _settings.ContextWindowSize = ParseContextWindowSize();
             _settings.CompactThreshold = ParseFraction(CompactThresholdBox?.Text, 0.85, 0.0, 1.0);

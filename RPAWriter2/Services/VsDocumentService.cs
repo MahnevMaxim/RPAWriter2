@@ -109,6 +109,55 @@ namespace RPAWriter2.Services
         }
 
         /// <summary>
+        /// Replaces the full text of an open text document in the editor buffer via DTE,
+        /// wrapped in a single Undo context (one Ctrl+Z step). Returns null on success or
+        /// an error message on failure. Does not save the document — the caller should call
+        /// doc.Save() afterwards. Must be called on the UI thread.
+        /// </summary>
+        public static string? ReplaceDocumentText(DTE2 dte, Document doc, string newText)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (doc == null) return "Document is null.";
+            if (newText == null) newText = string.Empty;
+
+            try
+            {
+                var textDoc = doc.Object("TextDocument") as TextDocument;
+                if (textDoc == null) return "The document is not a text document.";
+
+                var undoOpened = false;
+                try
+                {
+                    dte?.UndoContext.Open("RPA Writer edit", false);
+                    undoOpened = true;
+                }
+                catch
+                {
+                    // Undo context unavailable — apply without grouping.
+                }
+
+                try
+                {
+                    var editPoint = textDoc.StartPoint.CreateEditPoint();
+                    editPoint.ReplaceText(textDoc.EndPoint, newText, (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
+                }
+                finally
+                {
+                    if (undoOpened)
+                    {
+                        try { dte?.UndoContext.Close(); } catch { /* ignore */ }
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return "Failed to edit the document in the editor: " + ex.Message;
+            }
+        }
+
+        /// <summary>
         /// Reads a limited window of the open document around <paramref name="errorLine"/>.
         /// Lines are numbered and the error line is marked with "&gt;&gt;&gt;".
         /// Returns null for non-text documents or when no lines can be read.

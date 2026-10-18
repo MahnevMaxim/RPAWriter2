@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="NLog" Version="4.6.8" />
+    <PackageReference Include="Oracle.ManagedDataAccess" Version="19.8.0" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
   </ItemGroup>
   <ItemGroup>
@@ -56,12 +57,8 @@
     </Content>
   </ItemGroup>
   <Target Name="CopySqliteInteropToOutput" BeforeTargets="GetVsixSourceItems">
-    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll"
-          DestinationFolder="$(OutputPath)x86"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll"
-          DestinationFolder="$(OutputPath)x64"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x86" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x64" SkipUnchangedFiles="true" />
   </Target>
   <ItemGroup>
     <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->

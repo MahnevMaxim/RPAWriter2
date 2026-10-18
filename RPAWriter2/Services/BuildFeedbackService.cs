@@ -28,8 +28,18 @@ namespace RPAWriter2.Services
             var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
             if (dte?.Solution == null || !dte.Solution.IsOpen)
                 throw new InvalidOperationException("No open solution.");
-            dte.Solution.SolutionBuild?.SolutionConfigurations?.Item("Release")?.Activate();
-            dte.Solution.SolutionBuild?.Build(true);
+
+            var build = dte.Solution.SolutionBuild;
+            build?.SolutionConfigurations?.Item("Release")?.Activate();
+            try
+            {
+                build?.Build(true);
+            }
+            finally
+            {
+                // Always switch the solution back to Debug after a Release build.
+                build?.SolutionConfigurations?.Item("Debug")?.Activate();
+            }
         }
 
         public async Task<IReadOnlyList<BuildError>> GetCompilationErrorsAsync(CancellationToken cancellationToken = default)
