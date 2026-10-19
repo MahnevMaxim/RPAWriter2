@@ -1326,8 +1326,8 @@ namespace RPAWriter2.Services.AgentTools
             var baseName = Path.GetFileNameWithoutExtension(spec.SourcePath);
             var xamlPath = Path.Combine(dir, baseName + ".xaml");
             var csPath = Path.Combine(dir, baseName + ".Actions.cs");
-            File.WriteAllText(xamlPath, result.Xaml);
-            File.WriteAllText(csPath, result.CSharpCode);
+            LineEndings.WriteAllText(xamlPath, result.Xaml);
+            LineEndings.WriteAllText(csPath, result.CSharpCode);
             return "Robot generated and saved: " + xamlPath + ", " + csPath;
         }
 
@@ -1380,6 +1380,10 @@ namespace RPAWriter2.Services.AgentTools
                 newContent = newText;
             }
 
+            // Normalize line endings so the edit never introduces mixed CRLF/LF endings
+            // (which trigger Visual Studio's "Inconsistent Line Endings" dialog on load).
+            newContent = LineEndings.Normalize(newContent, LineEndings.Detect(current));
+
             // Prefer editing the open VS editor buffer; otherwise write straight to disk.
             if (openDoc != null && dte != null)
             {
@@ -1394,7 +1398,7 @@ namespace RPAWriter2.Services.AgentTools
             {
                 var dir = Path.GetDirectoryName(p);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(p, newContent);
+                LineEndings.WriteAllText(p, newContent);
                 return "File written: " + p;
             }
             catch (Exception ex) { return "Failed to write file: " + ex.Message; }
@@ -1505,8 +1509,8 @@ namespace RPAWriter2.Services.AgentTools
                 var baseName = Path.GetFileNameWithoutExtension(p);
                 var xamlPath = Path.Combine(dir, baseName + ".wf.xaml");
                 var csPath = Path.Combine(dir, baseName + ".wf.cs");
-                File.WriteAllText(xamlPath, result.Xaml);
-                File.WriteAllText(csPath, result.CSharpCode);
+                LineEndings.WriteAllText(xamlPath, result.Xaml);
+                LineEndings.WriteAllText(csPath, result.CSharpCode);
                 return Task.FromResult("Converted: " + xamlPath + ", " + csPath + " (warnings: " + result.Warnings.Count + ")");
             }
             catch (Exception ex) { return Task.FromResult("Conversion failed: " + ex.Message); }

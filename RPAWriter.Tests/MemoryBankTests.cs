@@ -54,7 +54,7 @@ namespace RPAWriter.Tests
             MemoryBankService.WriteFile(_root, "progress.md", "## Progress\nDone.");
 
             var path = Path.Combine(MemoryBankService.DirectoryPath(_root), "progress.md");
-            Assert.That(File.ReadAllText(path), Is.EqualTo("## Progress\nDone."));
+            Assert.That(File.ReadAllText(path), Is.EqualTo("## Progress" + Environment.NewLine + "Done."));
         }
 
         [Test]

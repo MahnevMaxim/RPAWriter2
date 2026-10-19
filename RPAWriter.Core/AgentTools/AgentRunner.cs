@@ -133,13 +133,33 @@ namespace RPAWriter.Core.AgentTools
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress = null)
         {
+            return await RunAsync(history, userText, null, mode, budget, cancellationToken, progress).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Runs the agentic tool loop with optional images attached to the new user message.
+        /// Images are forwarded to the provider as multimodal content parts.
+        /// </summary>
+        public async Task<AgentRunResult> RunAsync(
+            IReadOnlyList<ChatMessageData> history,
+            string userText,
+            IReadOnlyList<ChatImagePart> images,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress = null)
+        {
             var effectiveBudget = budget ?? _budget;
             var systemPrompt = _systemPromptFactory(mode);
 
             var messages = new List<ChatMessageData>();
             if (history != null)
                 messages.AddRange(history);
-            messages.Add(new ChatMessageData { Role = "user", Content = userText ?? "" });
+
+            var userMessage = new ChatMessageData { Role = "user", Content = userText ?? "" };
+            if (images != null && images.Count > 0)
+                userMessage.Images = images;
+            messages.Add(userMessage);
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
             var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);

@@ -77,6 +77,8 @@ namespace RPAWriter2
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
+        private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
+
         private CancellationTokenSource? _chatCts;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
@@ -125,7 +127,6 @@ namespace RPAWriter2
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage;
-        private ChatMessage? _lastMessage;
         private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
         private bool _pinnedExpanded;
@@ -139,12 +140,15 @@ namespace RPAWriter2
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
             ChatList.ItemsSource = _chatListView;
+            AttachmentsList.ItemsSource = _attachments;
             SpecList.ItemsSource = _specMessages;
             HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
             _packagesView.Filter = FilterPackages;
             PackagesList.ItemsSource = _packagesView;
             LoadSettings();
+            PopulateControlsGallery();
+            ShowPendingOptionsWarnings();
             RecreateAiProvider();
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
@@ -193,6 +197,8 @@ namespace RPAWriter2
             SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
             SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
             LoadRobotNameHistory();
+            ShowControlsCheckBox.IsChecked = _settings.ShowControls;
+            ApplyControlsVisibility();
         }
 
         private void RecreateAiProvider()
@@ -338,35 +344,12 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => AppendChatMessage(message)));
                 return;
             }
-            ClearLastMessage();
             _messages.Add(message);
             if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
                 RefreshPinnedMessage();
             ChatScroll.ScrollToEnd();
             if (!_loadingHistory)
                 ScheduleHistorySave();
-        }
-
-        /// <summary>Removes the finish highlight from the previously marked message, if any.</summary>
-        private void ClearLastMessage()
-        {
-            if (_lastMessage == null)
-                return;
-            _lastMessage.IsLastMessage = false;
-            _lastMessage = null;
-        }
-
-        /// <summary>Marks a message as the finished answer of the current agent turn.</summary>
-        private void MarkLastMessage(ChatMessage message)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => MarkLastMessage(message)));
-                return;
-            }
-            ClearLastMessage();
-            message.IsLastMessage = true;
-            _lastMessage = message;
         }
 
         private void AppendSpecMessage(ChatMessage message)
@@ -774,6 +757,12 @@ namespace RPAWriter2
             await SendMessageAsync();
         }
 
+        private async void OnDoItClick(object sender, RoutedEventArgs e)
+        {
+            InputBox.Text = "Do it!!!";
+            await SendMessageAsync();
+        }
+
         private async void OnInputKeyDown(object sender, KeyEventArgs e)
         {
             // Enter — send; Ctrl+Enter — newline (handled by the TextBox itself)
@@ -783,6 +772,140 @@ namespace RPAWriter2
                 await SendMessageAsync();
             }
         }
+
+        private void OnAttach(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Attach image or text file",
+                Multiselect = true,
+                CheckFileExists = true
+            };
+            if (dlg.ShowDialog() != true)
+                return;
+
+            foreach (var fileName in dlg.FileNames)
+                TryAddAttachment(fileName);
+        }
+
+        private void TryAddAttachment(string fileName)
+        {
+            try
+            {
+                var extension = Path.GetExtension(fileName).ToLowerInvariant();
+                var bytes = File.ReadAllBytes(fileName);
+
+                if (IsImageExtension(extension))
+                {
+                    if (bytes.Length > 10 * 1024 * 1024)
+                    {
+                        AppendChat("Skipped " + Path.GetFileName(fileName) + ": image is larger than 10 MB.");
+                        return;
+                    }
+
+                    _attachments.Add(new ChatAttachment
+                    {
+                        FileName = Path.GetFileName(fileName),
+                        IsImage = true,
+                        MediaType = GetImageMediaType(extension),
+                        DataBase64 = Convert.ToBase64String(bytes)
+                    });
+                    return;
+                }
+
+                if (IsProbablyBinary(bytes))
+                {
+                    AppendChat("Skipped " + Path.GetFileName(fileName) + ": binary files cannot be attached as text.");
+                    return;
+                }
+
+                _attachments.Add(new ChatAttachment
+                {
+                    FileName = Path.GetFileName(fileName),
+                    IsImage = false,
+                    TextContent = DecodeText(bytes)
+                });
+            }
+            catch (Exception ex)
+            {
+                AppendChat("Could not attach " + fileName + ": " + ex.Message);
+            }
+            finally
+            {
+                UpdateAttachmentsVisibility();
+            }
+        }
+
+        private void OnRemoveAttachment(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button { Tag: ChatAttachment attachment }))
+                return;
+            _attachments.Remove(attachment);
+            UpdateAttachmentsVisibility();
+        }
+
+        private void UpdateAttachmentsVisibility()
+        {
+            AttachmentsList.Visibility = _attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static bool IsImageExtension(string extension)
+        {
+            switch (extension)
+            {
+                case ".png":
+                case ".jpg":
+                case ".jpeg":
+                case ".gif":
+                case ".bmp":
+                case ".webp":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string GetImageMediaType(string extension)
+        {
+            switch (extension)
+            {
+                case ".jpg":
+                case ".jpeg":
+                    return "image/jpeg";
+                case ".gif":
+                    return "image/gif";
+                case ".bmp":
+                    return "image/bmp";
+                case ".webp":
+                    return "image/webp";
+                default:
+                    return "image/png";
+            }
+        }
+
+        private static bool IsProbablyBinary(byte[] bytes)
+        {
+            var length = Math.Min(bytes.Length, 8000);
+            for (var i = 0; i < length; i++)
+            {
+                if (bytes[i] == 0)
+                    return true;
+            }
+            return false;
+        }
+
+        private static string DecodeText(byte[] bytes)
+        {
+            try
+            {
+                return new UTF8Encoding(false, true).GetString(bytes);
+            }
+            catch (DecoderFallbackException)
+            {
+                return Encoding.Default.GetString(bytes);
+            }
+        }
+
 
         private async void OnImportSpec(object sender, RoutedEventArgs e)
         {
@@ -1727,6 +1850,7 @@ namespace RPAWriter2
                 return;
             _phase = phase;
             SendButton.IsEnabled = phase != AgentPhase.Streaming;
+            DoItButton.IsEnabled = phase != AgentPhase.Streaming;
             CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
             AgentProgress.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -2144,9 +2268,12 @@ namespace RPAWriter2
         private async Task SendMessageAsync()
         {
             var text = InputBox.Text.Trim();
-            if (text.Length == 0) return;
+            var attachments = _attachments.ToList();
+            if (text.Length == 0 && attachments.Count == 0) return;
             InputBox.Clear();
-            await SendChatTextAsync(text);
+            _attachments.Clear();
+            UpdateAttachmentsVisibility();
+            await SendChatTextAsync(text, attachments);
         }
 
         private async void OnSendErrors(object sender, RoutedEventArgs e)
@@ -2222,15 +2349,69 @@ namespace RPAWriter2
 
         private async Task SendChatTextAsync(string text)
         {
+            await SendChatTextAsync(text, null);
+        }
+
+        private async Task SendChatTextAsync(string text, IReadOnlyList<ChatAttachment> attachments)
+        {
             if (_chatCts != null) return; // already awaiting the agent's reply
-            if (string.IsNullOrWhiteSpace(text)) return;
             if (_agentRunner == null) return;
+
+            var images = new List<ChatImagePart>();
+            var attachmentNotes = new List<string>();
+            var fileBlocks = new StringBuilder();
+
+            if (attachments != null)
+            {
+                foreach (var attachment in attachments)
+                {
+                    if (attachment == null)
+                        continue;
+
+                    if (attachment.IsImage)
+                    {
+                        images.Add(attachment.ToImagePart());
+                        attachmentNotes.Add("Image: " + attachment.FileName);
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(attachment.TextContent))
+                        {
+                            fileBlocks.AppendLine();
+                            fileBlocks.AppendLine("Attached file: " + attachment.FileName);
+                            fileBlocks.AppendLine("```");
+                            fileBlocks.AppendLine(attachment.TextContent);
+                            fileBlocks.AppendLine("```");
+                        }
+                        attachmentNotes.Add("File: " + attachment.FileName);
+                    }
+                }
+            }
+
+            var promptText = (text ?? "").Trim();
+            if (fileBlocks.Length > 0)
+            {
+                promptText = string.IsNullOrWhiteSpace(promptText)
+                    ? fileBlocks.ToString().TrimEnd()
+                    : promptText.TrimEnd() + Environment.NewLine + fileBlocks.ToString().TrimEnd();
+            }
+
+            var uiText = (text ?? "").Trim();
+            if (attachmentNotes.Count > 0)
+            {
+                uiText = string.IsNullOrWhiteSpace(uiText)
+                    ? string.Join("  ", attachmentNotes)
+                    : uiText + Environment.NewLine + string.Join("  ", attachmentNotes);
+            }
+
+            if (string.IsNullOrWhiteSpace(promptText) && images.Count == 0)
+                return;
 
             var modeName = _mode.ToString();
             var history = BuildTranscript();
-            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = text });
+            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
             if (string.IsNullOrEmpty(_currentConversation.Title))
-                _currentConversation.Title = BuildChatTitle(text);
+                _currentConversation.Title = BuildChatTitle(uiText);
 
             var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
@@ -2238,7 +2419,7 @@ namespace RPAWriter2
             var cts = new CancellationTokenSource();
             _chatCts = cts;
             StartChatStatus();
-            LogService.ChatInfo("Agent chat request started (mode=" + modeName + ", input chars=" + text.Length + ").");
+            LogService.ChatInfo("Agent chat request started (mode=" + modeName + ", input chars=" + promptText.Length + ", images=" + images.Count + ").");
             try
             {
                 var progress = new Progress<ChatStreamDelta>(delta =>
@@ -2246,7 +2427,7 @@ namespace RPAWriter2
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                         thinking.Reasoning += delta.ReasoningDelta;
                 });
-                var result = await _agentRunner.RunAsync(history, text, _mode, BuildContextBudget(), cts.Token, progress);
+                var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
 
                 // Finalize the "Thinking…" placeholder in place: it keeps its streamed
                 // reasoning (so the thoughts stay visible) and the final answer is appended
@@ -2274,12 +2455,11 @@ namespace RPAWriter2
                 {
                     var finalMessage = new ChatMessage
                     {
-                        Kind = ChatMessageKind.AgentText,
+                        Kind = _mode == AgentMode.Plan ? ChatMessageKind.ResultAnswerPlan : ChatMessageKind.ResultAnswerAct,
                         Mode = modeName,
                         Text = result.FinalText
                     };
                     AppendChatMessage(finalMessage);
-                    MarkLastMessage(finalMessage);
                 }
                 StopChatStatus();
                 LogService.ChatInfo("Agent chat completed (mode=" + modeName + ", answer chars=" + (result.FinalText == null ? 0 : result.FinalText.Length) + ").");
@@ -2377,6 +2557,8 @@ namespace RPAWriter2
                         transcript.Add(new ChatMessageData { Role = "user", Content = message.Text });
                         break;
                     case ChatMessageKind.AgentText:
+                    case ChatMessageKind.ResultAnswerPlan:
+                    case ChatMessageKind.ResultAnswerAct:
                         transcript.Add(new ChatMessageData { Role = "assistant", Content = message.Text });
                         break;
                     // Other kinds (tool calls, notices, errors) are UI-only and not part of the model conversation.
@@ -2529,7 +2711,6 @@ namespace RPAWriter2
                 var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
 
                 _messages.Clear();
-                _lastMessage = null;
                 foreach (var m in condensed)
                 {
                     var kind = m.Role == "assistant" ? ChatMessageKind.AgentText
@@ -2830,7 +3011,6 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
-                _lastMessage = null;
                 _currentConversation = new ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -2875,7 +3055,6 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
-                _lastMessage = null;
                 foreach (var m in stored.Messages)
                 {
                     _messages.Add(FromHistoryMessage(m));
@@ -3015,7 +3194,6 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
-                _lastMessage = null;
                 _currentConversation = new ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -3282,14 +3460,105 @@ namespace RPAWriter2
             _settings.UserName = UserNameBox.Text.Trim();
             _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
             _settings.AllowSubagents = AllowSubagentsCheckBox?.IsChecked ?? false;
+            _settings.ShowControls = ShowControlsCheckBox?.IsChecked ?? false;
             _settings.SubagentMaxIterations = ParsePositiveInt(SubagentMaxIterationsBox?.Text, 4);
             _settings.SubagentMaxDepth = ParsePositiveInt(SubagentMaxDepthBox?.Text, 2);
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
             RebuildAgentTools();
+            ApplyControlsVisibility();
             ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
         }
+
+        private void ApplyControlsVisibility()
+        {
+            if (ControlsTab == null)
+                return;
+            ControlsTab.Visibility = (_settings != null && _settings.ShowControls)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        /// <summary>Fills the hidden "Controls" gallery tab with sample data for every chat message type.</summary>
+        private void PopulateControlsGallery()
+        {
+            ControlsChatList.ItemsSource = CreateSampleChatMessages();
+        }
+
+        private static List<ChatMessage> CreateSampleChatMessages()
+        {
+            return new List<ChatMessage>
+            {
+                new ChatMessage { Kind = ChatMessageKind.User, Text = "Import the spec and generate a robot for SAP transaction MM01." },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.AgentText,
+                    Text = "Plan:\n\n- Read the specification\n- Design the workflow\n- Generate the XAML and C# helpers\n\n```csharp\nvar robot = new Robot();\n```",
+                    Reasoning = "The user wants a robot generated from an imported spec. I will decompose it into workflow steps first."
+                },
+                new ChatMessage { Kind = ChatMessageKind.ToolCall, Payload = new ToolCallPayload { ToolName = "read_file", Result = "FILE: spec.docx (ok, 2340 chars)" } },
+                new ChatMessage { Kind = ChatMessageKind.ToolBlocked, Payload = new ToolCallPayload { ToolName = "generate_robot" } },
+                new ChatMessage { Kind = ChatMessageKind.Error, Text = "Failed to reach the AI provider: request timed out after 300 s." },
+                new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = "Knowledge base directory is not configured." },
+                new ChatMessage { Kind = ChatMessageKind.Compaction, Text = "Conversation compacted: 12 earlier messages summarized." },
+                new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = "Switched from Plan to Act mode." },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.Question,
+                    Payload = new QuestionPayload
+                    {
+                        Question = "Which robot template should I use?",
+                        Options = new List<string> { "SAP", "Web", "Excel" }
+                    }
+                },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.Subagent,
+                    Payload = new SubagentPayload
+                    {
+                        Item = new SubagentStatusItem
+                        {
+                            Prompt = "Parse the UiPath XAML and reconstruct the specification.",
+                            Status = "completed",
+                            ToolCalls = 3,
+                            LatestToolCall = "read_file",
+                            Result = "Reconstructed 5 tasks."
+                        }
+                    }
+                }
+            };
+        }
+
+        private void ShowPendingOptionsWarnings()
+        {
+            var warnings = VsOptionsService.LastWarnings;
+            if (warnings == null || warnings.Count == 0)
+                return;
+
+            ShowOptionsWarning(string.Join(Environment.NewLine, warnings));
+        }
+
+        private void ShowOptionsWarning(string message)
+        {
+            if (OptionsWarningText == null || OptionsWarningToast == null)
+                return;
+
+            OptionsWarningText.Text = message ?? string.Empty;
+            OptionsWarningToast.Visibility = Visibility.Visible;
+        }
+
+        private void HideOptionsWarning()
+        {
+            if (OptionsWarningToast != null)
+                OptionsWarningToast.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnOptionsWarningClose(object sender, RoutedEventArgs e)
+        {
+            HideOptionsWarning();
+        }
+
 
         private void OnOpenLog(object sender, RoutedEventArgs e)
         {

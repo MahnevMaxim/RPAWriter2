@@ -41,7 +41,7 @@
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ERRORLIST" />
       </Group>
       <!-- Places the "Send to RPA Writer" command into the code editor context menu. -->
-      <Group guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" priority="0x0600">
+      <Group guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" priority="0x0001">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
       </Group>
     </Groups>

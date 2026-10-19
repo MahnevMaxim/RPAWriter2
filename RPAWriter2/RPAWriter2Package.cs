@@ -1,4 +1,7 @@
 ﻿using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
+using EnvDTE80;
+using RPAWriter2.Services;
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -48,6 +51,13 @@ namespace RPAWriter2
             // When initialized asynchronously, the current thread may be a background thread at this point.
             // Do any initialization that requires the UI thread after switching to the UI thread.
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+            // Apply required Visual Studio options automatically (reload external changes,
+            // disable the "Inconsistent Line Endings" dialog). Failures are logged and surfaced
+            // in the tool window as a warning banner.
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            VsOptionsService.ApplyRequiredDocumentOptions(dte);
+
             await ToolWindow1Command.InitializeAsync(this);
             await SendErrorToChatCommand.InitializeAsync(this);
             await SendSelectionToMessageboxCommand.InitializeAsync(this);

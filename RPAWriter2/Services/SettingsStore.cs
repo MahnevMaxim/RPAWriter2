@@ -62,6 +62,9 @@ namespace RPAWriter2.Services
         /// <summary>Use the "tool" role for tool results; false falls back to "user".</summary>
         public bool UseToolRole { get; set; } = true;
 
+        /// <summary>Show the hidden "Controls" gallery tab.</summary>
+        public bool ShowControls { get; set; } = false;
+
         /// <summary>How the agent calls tools: "Native" (function calling) or "JsonChat" (JSON over chat).</summary>
         public string ToolCallingMode { get; set; } = "JsonChat";
 

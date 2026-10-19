@@ -958,7 +958,32 @@ namespace RPAWriter.Core.Services
                     // message, so a bare "tool" role is invalid and must be downgraded to "user".
                     if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
                         role = "user";
-                    list.Add(new { role = role, content = content });
+
+                    var hasImages = m?.Images != null && m.Images.Count > 0;
+                    if (!hasImages)
+                    {
+                        list.Add(new { role = role, content = content });
+                    }
+                    else
+                    {
+                        // Multimodal message: content becomes a list of parts (text + image_url),
+                        // matching the OpenAI-compatible format used by Cline/Roo-Code and opencode.
+                        var parts = new JArray();
+                        if (!string.IsNullOrEmpty(content))
+                            parts.Add(new JObject { ["type"] = "text", ["text"] = content });
+
+                        foreach (var image in m.Images)
+                        {
+                            var mediaType = string.IsNullOrEmpty(image?.MediaType) ? "image/png" : image.MediaType;
+                            parts.Add(new JObject
+                            {
+                                ["type"] = "image_url",
+                                ["image_url"] = new JObject { ["url"] = "data:" + mediaType + ";base64," + (image?.DataBase64 ?? "") }
+                            });
+                        }
+
+                        list.Add(new JObject { ["role"] = role, ["content"] = parts });
+                    }
                 }
             }
 

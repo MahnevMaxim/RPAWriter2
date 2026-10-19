@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -20,7 +20,6 @@ namespace RPAWriter2
         private string _mode = "";
         private bool _isThinking;
         private bool _isPartial;
-        private bool _isLastMessage;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -125,13 +124,6 @@ namespace RPAWriter2
             set { if (_isPartial != value) { _isPartial = value; OnPropertyChanged(); } }
         }
 
-        /// <summary>True when this is the final message of a completed agent turn; drives the finish highlight.</summary>
-        public bool IsLastMessage
-        {
-            get => _isLastMessage;
-            set { if (_isLastMessage != value) { _isLastMessage = value; OnPropertyChanged(); } }
-        }
-
         /// <summary>When this entry was created (UTC).</summary>
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
@@ -150,7 +142,10 @@ namespace RPAWriter2
                 switch (Kind)
                 {
                     case ChatMessageKind.User: return "You: ";
-                    case ChatMessageKind.AgentText: return string.IsNullOrWhiteSpace(Mode) ? "Agent: " : "Agent [" + Mode + "]: ";
+                    case ChatMessageKind.AgentText:
+                    case ChatMessageKind.ResultAnswerPlan:
+                    case ChatMessageKind.ResultAnswerAct:
+                        return string.IsNullOrWhiteSpace(Mode) ? "Agent: " : "Agent [" + Mode + "]: ";
                     case ChatMessageKind.Error: return "⚠ Extension error: ";
                     default: return "";
                 }

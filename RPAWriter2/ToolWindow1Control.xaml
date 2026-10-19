@@ -546,6 +546,138 @@
                 </Grid>
             </Border>
         </DataTemplate>
+        <DataTemplate x:Key="ChatMessageTemplate">
+            <Border CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding KindName}" Value="User">
+                                <Setter Property="BorderBrush" Value="{StaticResource Chat.UserBorder}"/>
+                                <Setter Property="Background" Value="{StaticResource Chat.UserBackground}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="ToolCall">
+                                <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+                                <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="ToolBlocked">
+                                <Setter Property="BorderBrush" Value="#B0563C"/>
+                                <Setter Property="Background" Value="#33221E"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="Error">
+                                <Setter Property="BorderBrush" Value="#B0563C"/>
+                                <Setter Property="Background" Value="#331F1F"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="Compaction">
+                                <Setter Property="BorderBrush" Value="#6B6B2E"/>
+                                <Setter Property="Background" Value="#262618"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                                <Setter Property="BorderBrush" Value="#4A6B9A"/>
+                                <Setter Property="Background" Value="#1E2733"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="Question">
+                                <Setter Property="BorderBrush" Value="#4A6B9A"/>
+                                <Setter Property="Background" Value="#1E2733"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="Subagent">
+                                <Setter Property="BorderBrush" Value="#4A6B9A"/>
+                                <Setter Property="Background" Value="#1E2733"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerPlan">
+                                <Setter Property="BorderBrush" Value="{StaticResource Chat.LastPlanBorder}"/>
+                                <Setter Property="Background" Value="{StaticResource Chat.LastPlanBackground}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerAct">
+                                <Setter Property="BorderBrush" Value="{StaticResource Chat.LastActBorder}"/>
+                                <Setter Property="Background" Value="{StaticResource Chat.LastActBackground}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
+                                  Foreground="{StaticResource Dark.Text}"
+                                  Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
+                            <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
+                                     Foreground="#C8C8C8" FontStyle="Italic"
+                                     IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
+                        </Expander>
+                        <StackPanel x:Name="QuestionPanel" Visibility="Collapsed">
+                            <TextBlock Text="{Binding Payload.Question}" TextWrapping="Wrap" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Dark.Text}"/>
+                            <StackPanel Margin="0,8,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Payload.IsAnswered}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <ItemsControl ItemsSource="{Binding Payload.Options}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding}" Tag="{Binding}" Click="OnQuestionOptionClick"
+                                                    Margin="0,0,6,4" Padding="8,2"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="Skip" Click="OnQuestionSkip" HorizontalAlignment="Left"
+                                        Margin="0,4,0,0" Padding="8,2"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Payload.Answer, StringFormat=Answer: {0}}"
+                                       Foreground="{StaticResource Dark.Accent}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding Payload.IsAnswered, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                        <StackPanel x:Name="SubagentPanel" Visibility="Collapsed">
+                            <TextBlock Text="{Binding Payload.Item.Prompt}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
+                            <TextBlock Text="{Binding Payload.Item.StatusText}" Foreground="#C8C8C8" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding Payload.Item.LatestToolCall}" Foreground="#9A9A9A" FontFamily="Consolas" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Payload.Item.LatestToolCall}"/>
+                            <Expander Header="Show output" Margin="0,8,0,0" Foreground="{StaticResource Dark.Text}" IsExpanded="False"
+                                      Visibility="{Binding Payload.Item.HasOutput, Converter={StaticResource BoolToVis}}">
+                                <TextBox Text="{Binding Payload.Item.Result, Mode=OneWay}" TextWrapping="Wrap"
+                                         IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"
+                                         Foreground="{StaticResource Dark.Text}" MaxHeight="400" VerticalScrollBarVisibility="Auto"/>
+                            </Expander>
+                            <TextBlock Text="{Binding Payload.Item.Error}" Foreground="{StaticResource Dark.ErrorText}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding Payload.Item.HasError, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                        <ItemsControl x:Name="BlocksPanel" ItemsSource="{Binding Blocks, Mode=OneWay}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ContentControl Content="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
+                            Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
+                            ToolTip="Copy message" Click="OnCopyMessage">
+                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
+                    </Button>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding KindName}" Value="Question">
+                    <Setter TargetName="QuestionPanel" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding KindName}" Value="Subagent">
+                    <Setter TargetName="SubagentPanel" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
     </UserControl.Resources>
     <TabControl x:Name="MainTabs" Margin="8">
         <TabItem Header="Chat">
@@ -577,7 +709,7 @@
                             </Button>
                         </Grid>
                     </Border>
-                    <WrapPanel Margin="0,5,0,6">
+                    <WrapPanel Margin="0,5,0,6" TextElement.FontSize="14">
                         <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
                         <Button Content="commit" Click="OnCommit" Margin="0,0,8,4"/>
@@ -587,6 +719,22 @@
                         <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
                         <Button Content="copy" Click="OnCopyConversation" Margin="0,0,8,4"/>
                     </WrapPanel>
+                    <Border x:Name="OptionsWarningToast" Background="{StaticResource Deploy.WarningBackground}"
+                            CornerRadius="2" Padding="10,8" Margin="0,0,0,6" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="OptionsWarningText" Grid.Column="0" Text=""
+                                       Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                    Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
+                                    ToolTip="Close" Click="OnOptionsWarningClose">
+                                <TextBlock Text="✕" FontSize="11" Foreground="White"/>
+                            </Button>
+                        </Grid>
+                    </Border>
                     <Border x:Name="CommitResultBar" Margin="0,0,0,6" CornerRadius="2" Padding="10,6"
                             Visibility="Collapsed">
                         <Grid>
@@ -727,150 +875,7 @@
                     </Grid.RowDefinitions>
                     <ScrollViewer Grid.Row="1" x:Name="ChatScroll"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="ChatList">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                                <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
-                                                <Setter Property="BorderThickness" Value="1"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="User">
-                                                        <Setter Property="BorderBrush" Value="{StaticResource Chat.UserBorder}"/>
-                                                        <Setter Property="Background" Value="{StaticResource Chat.UserBackground}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="ToolCall">
-                                                        <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
-                                                        <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="ToolBlocked">
-                                                        <Setter Property="BorderBrush" Value="#B0563C"/>
-                                                        <Setter Property="Background" Value="#33221E"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="Error">
-                                                        <Setter Property="BorderBrush" Value="#B0563C"/>
-                                                        <Setter Property="Background" Value="#331F1F"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="Compaction">
-                                                        <Setter Property="BorderBrush" Value="#6B6B2E"/>
-                                                        <Setter Property="Background" Value="#262618"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
-                                                        <Setter Property="BorderBrush" Value="#4A6B9A"/>
-                                                        <Setter Property="Background" Value="#1E2733"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="Question">
-                                                        <Setter Property="BorderBrush" Value="#4A6B9A"/>
-                                                        <Setter Property="Background" Value="#1E2733"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding KindName}" Value="Subagent">
-                                                        <Setter Property="BorderBrush" Value="#4A6B9A"/>
-                                                        <Setter Property="Background" Value="#1E2733"/>
-                                                    </DataTrigger>
-                                                    <MultiDataTrigger>
-                                                        <MultiDataTrigger.Conditions>
-                                                            <Condition Binding="{Binding IsLastMessage}" Value="True"/>
-                                                            <Condition Binding="{Binding Mode}" Value="Act"/>
-                                                        </MultiDataTrigger.Conditions>
-                                                        <Setter Property="BorderBrush" Value="{StaticResource Chat.LastActBorder}"/>
-                                                        <Setter Property="Background" Value="{StaticResource Chat.LastActBackground}"/>
-                                                    </MultiDataTrigger>
-                                                    <MultiDataTrigger>
-                                                        <MultiDataTrigger.Conditions>
-                                                            <Condition Binding="{Binding IsLastMessage}" Value="True"/>
-                                                            <Condition Binding="{Binding Mode}" Value="Plan"/>
-                                                        </MultiDataTrigger.Conditions>
-                                                        <Setter Property="BorderBrush" Value="{StaticResource Chat.LastPlanBorder}"/>
-                                                        <Setter Property="Background" Value="{StaticResource Chat.LastPlanBackground}"/>
-                                                    </MultiDataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
-                                                          Foreground="{StaticResource Dark.Text}"
-                                                          Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
-                                                    <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
-                                                             Foreground="#C8C8C8" FontStyle="Italic"
-                                                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                                                </Expander>
-                                                <StackPanel x:Name="QuestionPanel" Visibility="Collapsed">
-                                                    <TextBlock Text="{Binding Payload.Question}" TextWrapping="Wrap" FontWeight="SemiBold"
-                                                               Foreground="{StaticResource Dark.Text}"/>
-                                                    <StackPanel Margin="0,8,0,0">
-                                                        <StackPanel.Style>
-                                                            <Style TargetType="StackPanel">
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Payload.IsAnswered}" Value="True">
-                                                                        <Setter Property="IsEnabled" Value="False"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </StackPanel.Style>
-                                                        <ItemsControl ItemsSource="{Binding Payload.Options}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <Button Content="{Binding}" Tag="{Binding}" Click="OnQuestionOptionClick"
-                                                                            Margin="0,0,6,4" Padding="8,2"/>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                        <Button Content="Skip" Click="OnQuestionSkip" HorizontalAlignment="Left"
-                                                                Margin="0,4,0,0" Padding="8,2"/>
-                                                    </StackPanel>
-                                                    <TextBlock Text="{Binding Payload.Answer, StringFormat=Answer: {0}}"
-                                                               Foreground="{StaticResource Dark.Accent}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                                               Visibility="{Binding Payload.IsAnswered, Converter={StaticResource BoolToVis}}"/>
-                                                </StackPanel>
-                                                <StackPanel x:Name="SubagentPanel" Visibility="Collapsed">
-                                                    <TextBlock Text="{Binding Payload.Item.Prompt}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
-                                                    <TextBlock Text="{Binding Payload.Item.StatusText}" Foreground="#C8C8C8" Margin="0,4,0,0"/>
-                                                    <TextBlock Text="{Binding Payload.Item.LatestToolCall}" Foreground="#9A9A9A" FontFamily="Consolas" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Payload.Item.LatestToolCall}"/>
-                                                    <Expander Header="Show output" Margin="0,8,0,0" Foreground="{StaticResource Dark.Text}" IsExpanded="False"
-                                                              Visibility="{Binding Payload.Item.HasOutput, Converter={StaticResource BoolToVis}}">
-                                                        <TextBox Text="{Binding Payload.Item.Result, Mode=OneWay}" TextWrapping="Wrap"
-                                                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"
-                                                                 Foreground="{StaticResource Dark.Text}" MaxHeight="400" VerticalScrollBarVisibility="Auto"/>
-                                                    </Expander>
-                                                    <TextBlock Text="{Binding Payload.Item.Error}" Foreground="{StaticResource Dark.ErrorText}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                                               Visibility="{Binding Payload.Item.HasError, Converter={StaticResource BoolToVis}}"/>
-                                                </StackPanel>
-                                                <ItemsControl x:Name="BlocksPanel" ItemsSource="{Binding Blocks, Mode=OneWay}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <ContentControl Content="{Binding}"/>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
-                                                    Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
-                                                    ToolTip="Copy message" Click="OnCopyMessage">
-                                                <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
-                                            </Button>
-                                        </Grid>
-                                    </Border>
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding KindName}" Value="Question">
-                                            <Setter TargetName="QuestionPanel" Property="Visibility" Value="Visible"/>
-                                            <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding KindName}" Value="Subagent">
-                                            <Setter TargetName="SubagentPanel" Property="Visibility" Value="Visible"/>
-                                            <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <ItemsControl x:Name="ChatList" ItemTemplate="{StaticResource ChatMessageTemplate}"/>
                     </ScrollViewer>
                 </Grid>
 
@@ -892,43 +897,79 @@
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
                                    Margin="6,0,8,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                     </StackPanel>
-                    <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel"
+                    <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,8" Click="OnCancelSend" Visibility="Collapsed"/>
                     <Grid Grid.Row="2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0" x:Name="InputBox"
-                                 AcceptsReturn="True" TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 PreviewKeyDown="OnInputKeyDown"/>
-                        <Button Grid.Column="1" x:Name="SendButton" Width="28" Height="28"
-                                Margin="8,0,0,5" VerticalAlignment="Bottom" Click="OnSend"
-                                Style="{StaticResource IconButtonStyle}"
-                                ToolTip="Send (Enter)">
-                            <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
-                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform"
-                                  Width="18" Height="18"/>
-                        </Button>
-                        <Button Grid.Column="2" x:Name="MicButton" Width="28" Height="28"
-                                Margin="8,0,0,5" VerticalAlignment="Bottom"
-                                Style="{StaticResource IconButtonStyle}"
-                                ToolTip="Microphone">
-                            <Path Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18">
-                                <Path.Data>
-                                    <GeometryGroup FillRule="Nonzero">
-                                        <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
-                                        <PathGeometry Figures="M19,11 C19,14.53 16.39,17.44 13,17.93 L13,21 L11,21 L11,17.93 C7.61,17.44 5,14.53 5,11 L7,11 C7,13.76 9.24,16 12,16 C14.76,16 17,13.76 17,11 L19,11 Z"/>
-                                    </GeometryGroup>
-                                </Path.Data>
-                            </Path>
-                        </Button>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <ItemsControl Grid.Row="0" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource Dark.Control}" BorderBrush="{StaticResource Dark.Border}"
+                                            BorderThickness="1" CornerRadius="2" Padding="6,2" Margin="0,0,6,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource Dark.Text}" FontSize="13"/>
+                                            <Button Content="✕" Width="16" Height="16" Margin="6,0,0,0"
+                                                    Style="{StaticResource IconButtonStyle}" FontSize="10"
+                                                    Tag="{Binding}" Click="OnRemoveAttachment" ToolTip="Remove attachment"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="InputBox"
+                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
+                                     VerticalScrollBarVisibility="Auto"
+                                     PreviewKeyDown="OnInputKeyDown"/>
+                            <Button Grid.Column="1" x:Name="AttachButton" Width="28" Height="28"
+                                    Margin="8,0,0,5" VerticalAlignment="Bottom" Click="OnAttach"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Attach image or file">
+                                <Path Data="M16.5,6v11.5a4,4 0 0 1 -8,0V5a2.5,2.5 0 0 1 5,0v10.5a1,1 0 0 1 -2,0V6H10v9.5a2.5,2.5 0 0 0 5,0V5a4,4 0 0 0 -8,0v12.5a5.5,5.5 0 0 0 11,0V6h-1.5z"
+                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform"
+                                      Width="14" Height="14"/>
+                            </Button>
+                            <Button Grid.Column="2" x:Name="SendButton" Width="28" Height="28"
+                                    Margin="8,0,0,5" VerticalAlignment="Bottom" Click="OnSend"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Send (Enter)">
+                                <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
+                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform"
+                                      Width="14" Height="14"/>
+                            </Button>
+                            <Button Grid.Column="3" x:Name="MicButton" Width="28" Height="28"
+                                    Margin="8,0,0,5" VerticalAlignment="Bottom"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Microphone">
+                                <Path Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14">
+                                    <Path.Data>
+                                        <GeometryGroup FillRule="Nonzero">
+                                            <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
+                                            <PathGeometry Figures="M19,11 C19,14.53 16.39,17.44 13,17.93 L13,21 L11,21 L11,17.93 C7.61,17.44 5,14.53 5,11 L7,11 C7,13.76 9.24,16 12,16 C14.76,16 17,13.76 17,11 L19,11 Z"/>
+                                        </GeometryGroup>
+                                    </Path.Data>
+                                </Path>
+                            </Button>
+                        </Grid>
                     </Grid>
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5" TextElement.FontSize="14">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
                         <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
                                      IsChecked="True" Checked="OnModeChanged"
@@ -945,13 +986,16 @@
                         <Button x:Name="PermissionsButton" Content="Permissions" Click="OnPermissionsClick"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Configure agent permissions (read files, edit files, execute commands, web fetch, MCP)"/>
+                        <Button x:Name="DoItButton" Content="Do it!!!" Click="OnDoItClick"
+                                Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Send 'Do it!!!' to the agent"/>
                     </StackPanel>
 
                     <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="4"
                             Background="{StaticResource Dark.Panel}"
                             BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
                             CornerRadius="2" Padding="12,10" Visibility="Collapsed">
-                        <StackPanel>
+                        <StackPanel TextElement.FontSize="14">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -1267,6 +1311,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1386,7 +1431,10 @@
                 <TextBlock Grid.Row="33" Grid.Column="0" Text="Sub-agent max depth" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <TextBox Grid.Row="33" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
 
-                <StackPanel Grid.Row="34" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <CheckBox Grid.Row="34" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox"
+                          Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                <StackPanel Grid.Row="35" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>
@@ -1450,5 +1498,60 @@
                 </Border>
             </Grid>
         </TabItem>
+        <TabItem x:Name="ControlsTab" Header="Controls" Visibility="Collapsed">
+            <TabControl Margin="4">
+                <TabItem Header="Messages">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="Green notice with close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
+                            <Border Background="{StaticResource Commit.SuccessBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Settings saved. Provider: OpenAI-compatible." Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White" ToolTip="Close">
+                                        <TextBlock Text="✕" FontSize="11" Foreground="White"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <TextBlock Text="Green notice without close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
+                            <Border Background="{StaticResource Commit.SuccessBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
+                                <TextBlock Text="Robot created successfully." Foreground="White" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <TextBlock Text="Orange warning with close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
+                            <Border Background="{StaticResource Deploy.WarningBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Could not apply a required Visual Studio option." Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White" ToolTip="Close">
+                                        <TextBlock Text="✕" FontSize="11" Foreground="White"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <TextBlock Text="Orange warning without close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
+                            <Border Background="#4DFF8C00" CornerRadius="2" Padding="10,6" Margin="0,0,0,8">
+                                <TextBlock Text="No open solution. Open a solution and retry." Foreground="#FFE3B3" TextWrapping="Wrap"/>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Chat">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="8">
+                            <ItemsControl x:Name="ControlsChatList" ItemTemplate="{StaticResource ChatMessageTemplate}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </TabItem>
+
     </TabControl>
 </UserControl>

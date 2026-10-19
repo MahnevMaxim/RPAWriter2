@@ -101,7 +101,7 @@ namespace RPAWriter.Core.Services
         private void Save(IEnumerable<SolutionRecord> records)
         {
             var json = JsonConvert.SerializeObject(records, Formatting.Indented);
-            File.WriteAllText(_indexFile, json);
+            LineEndings.WriteAllText(_indexFile, json);
         }
     }
 }

@@ -42,7 +42,7 @@ namespace RPAWriter.Core.Services
             {
                 var path = Path.Combine(dir, fileName);
                 if (!File.Exists(path))
-                    File.WriteAllText(path, Template(fileName), Encoding.UTF8);
+                    LineEndings.WriteAllText(path, Template(fileName), Encoding.UTF8);
             }
         }
 
@@ -74,7 +74,7 @@ namespace RPAWriter.Core.Services
 
             var dir = DirectoryPath(rootPath);
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, fileName), content ?? "", Encoding.UTF8);
+            LineEndings.WriteAllText(Path.Combine(dir, fileName), content ?? "", Encoding.UTF8);
         }
 
         public static bool IsAllowed(string fileName)

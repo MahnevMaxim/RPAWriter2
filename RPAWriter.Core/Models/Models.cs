@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -80,6 +80,10 @@ namespace RPAWriter.Core.Models
         User,
         /// <summary>The agent's final answer (markdown).</summary>
         AgentText,
+        /// <summary>The final answer of the agent in Plan mode (read-only); rendered as the highlighted result window.</summary>
+        ResultAnswerPlan,
+        /// <summary>The final answer of the agent in Act mode (action); rendered as the highlighted result window.</summary>
+        ResultAnswerAct,
         /// <summary>A tool invocation that was executed.</summary>
         ToolCall,
         /// <summary>A tool invocation that was blocked (e.g. mutating tool in Plan mode).</summary>
@@ -423,12 +427,26 @@ namespace RPAWriter.Core.Models
         public Newtonsoft.Json.Linq.JObject Arguments { get; set; }
     }
 
+    /// <summary>An image attached to a chat message, encoded as a base64 data URL part.</summary>
+    public sealed class ChatImagePart
+    {
+        /// <summary>MIME type of the image, e.g. "image/png" or "image/jpeg".</summary>
+        public string MediaType { get; set; } = "image/png";
+
+        /// <summary>Base64-encoded image bytes (without the "data:...;base64," prefix).</summary>
+        public string DataBase64 { get; set; } = "";
+    }
+
+
     /// <summary>A single chat message passed to the AI provider (role + content).</summary>
     public class ChatMessageData
     {
         /// <summary>Message role: "system" | "user" | "assistant" | "tool".</summary>
         public string Role { get; set; } = "";
         public string Content { get; set; } = "";
+
+        /// <summary>Images attached to this message (role "user" only). Empty for plain text messages.</summary>
+        public IReadOnlyList<ChatImagePart> Images { get; set; } = new List<ChatImagePart>();
 
         /// <summary>tool_call_id of the native tool call this message answers (role "tool" only).</summary>
         public string ToolCallId { get; set; } = "";

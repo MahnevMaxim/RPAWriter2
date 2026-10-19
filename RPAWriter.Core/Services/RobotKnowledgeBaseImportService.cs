@@ -159,7 +159,7 @@ namespace RPAWriter.Core.Services
 
                 report("Forming " + robotName + "-spec.md…");
                 var specMd = MarkdownContent.SpecToMarkdown(spec, generatedUtc);
-                File.WriteAllText(Path.Combine(kbDirectory, robotName + "-spec.md"), specMd);
+                LineEndings.WriteAllText(Path.Combine(kbDirectory, robotName + "-spec.md"), specMd);
                 result.SpecFilesWritten++;
 
                 report("Decomposing tasks for robot " + robotName + "…");
@@ -190,7 +190,7 @@ namespace RPAWriter.Core.Services
 
                 report("Forming " + robotName + "-tasks.md…");
                 var tasksMd = MarkdownContent.RobotTasksToMarkdown(robotName, entries, generatedUtc);
-                File.WriteAllText(Path.Combine(kbDirectory, robotName + "-tasks.md"), tasksMd);
+                LineEndings.WriteAllText(Path.Combine(kbDirectory, robotName + "-tasks.md"), tasksMd);
                 result.TaskFilesWritten++;
 
                 result.RobotsProcessed++;

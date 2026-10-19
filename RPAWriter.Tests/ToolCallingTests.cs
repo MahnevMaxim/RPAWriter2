@@ -346,4 +346,72 @@ namespace RPAWriter.Tests
             Assert.That(result.FinalText, Is.EqualTo("done"));
         }
     }
+
+    [TestFixture]
+    public class ImageContentTests
+    {
+        private static string OkResponse() =>
+            "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
+
+        [Test]
+        public async Task MessageWithImages_SerializesContentAsPartsArray()
+        {
+            var handler = new FakeHttpHandler { Responder = req => OkResponse() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                Model = "m",
+                ToolCallingMode = ToolCallingMode.JsonChat
+            }, new HttpClient(handler));
+
+            await provider.ChatAsync(
+                new List<ChatMessageData>
+                {
+                    new ChatMessageData
+                    {
+                        Role = "user",
+                        Content = "What is this?",
+                        Images = new List<ChatImagePart>
+                        {
+                            new ChatImagePart { MediaType = "image/png", DataBase64 = "aGVsbG8=" }
+                        }
+                    }
+                },
+                "SYS");
+
+            var body = JObject.Parse(handler.LastBody);
+            var messages = (JArray)body["messages"];
+            var userContent = messages[1]["content"];
+
+            Assert.That(userContent.Type, Is.EqualTo(JTokenType.Array));
+            var parts = (JArray)userContent;
+            Assert.That(parts.Count, Is.EqualTo(2));
+            Assert.That(parts[0]["type"].Value<string>(), Is.EqualTo("text"));
+            Assert.That(parts[0]["text"].Value<string>(), Is.EqualTo("What is this?"));
+            Assert.That(parts[1]["type"].Value<string>(), Is.EqualTo("image_url"));
+            Assert.That(parts[1]["image_url"]["url"].Value<string>(), Is.EqualTo("data:image/png;base64,aGVsbG8="));
+        }
+
+        [Test]
+        public async Task MessageWithoutImages_KeepsStringContent()
+        {
+            var handler = new FakeHttpHandler { Responder = req => OkResponse() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                Model = "m",
+                ToolCallingMode = ToolCallingMode.JsonChat
+            }, new HttpClient(handler));
+
+            await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "SYS");
+
+            var body = JObject.Parse(handler.LastBody);
+            var messages = (JArray)body["messages"];
+            Assert.That(messages[1]["content"].Type, Is.EqualTo(JTokenType.String));
+            Assert.That(messages[1]["content"].Value<string>(), Is.EqualTo("hi"));
+        }
+    }
+
 }
