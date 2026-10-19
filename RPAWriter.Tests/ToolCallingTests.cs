@@ -293,6 +293,31 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task NativeMode_CompletesRunTool_ReturnsItsResultAsFinal()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("submit_and_exit", "submit", "{}", mutates: false,
+                (a, c) => Task.FromResult("The summary result"),
+                completesRun: true));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(ToolCallsResponse("submit_and_exit", "call_1", "{\"summary\":\"The summary result\",\"verified\":true}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                ToolCallingMode = ToolCallingMode.Native
+            }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, toolCallingMode: ToolCallingMode.Native);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("The summary result"));
+            Assert.That(responses.Count, Is.Zero, "the run should stop after a completesRun tool without another model call");
+        }
+
+        [Test]
         public async Task NativeMode_MutatingToolInPlan_BlocksIt()
         {
             var executed = false;

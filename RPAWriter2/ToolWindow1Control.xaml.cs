@@ -77,6 +77,8 @@ namespace RPAWriter2
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private CancellationTokenSource? _chatCts;
+        private TaskCompletionSource<string>? _questionTcs;
+        private ChatMessage? _activeQuestion;
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -178,6 +180,7 @@ namespace RPAWriter2
             CacheHitPriceBox.Text = _settings.CacheHitPricePerMillion.ToString(CultureInfo.InvariantCulture);
             OutputPriceBox.Text = _settings.OutputPricePerMillion.ToString(CultureInfo.InvariantCulture);
             UserNameBox.Text = _settings.UserName ?? "";
+            SkillsPathBox.Text = _settings.SkillsPath ?? "";
             AddressByNameCheckBox.IsChecked = _settings.AddressByName;
             LoadRobotNameHistory();
         }
@@ -253,6 +256,61 @@ namespace RPAWriter2
         private void AppendModeSwitch(string text)
         {
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = text });
+        }
+
+        /// <summary>
+        /// Shows an interactive question in the chat (with answer buttons) and waits for the
+        /// user's answer. Invoked by the ask_question tool handler, possibly on a background thread.
+        /// </summary>
+        private async Task<string> AskQuestionAsync(string question, IReadOnlyList<string> options, CancellationToken ct)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+
+            var message = new ChatMessage
+            {
+                Kind = ChatMessageKind.Question,
+                Payload = new QuestionPayload { Question = question ?? "", Options = options ?? new List<string>() }
+            };
+            _activeQuestion = message;
+            AppendChatMessage(message);
+
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _questionTcs = tcs;
+            using (ct.Register(() => tcs.TrySetCanceled()))
+            {
+                try
+                {
+                    return await tcs.Task;
+                }
+                finally
+                {
+                    if (tcs.Task.IsCanceled && _activeQuestion?.Payload is QuestionPayload q && string.IsNullOrEmpty(q.Answer))
+                        q.Answer = "Cancelled.";
+                    _activeQuestion = null;
+                    _questionTcs = null;
+                }
+            }
+        }
+
+        private void OnQuestionOptionClick(object sender, RoutedEventArgs e)
+        {
+            if (_questionTcs == null) return;
+            var option = (sender as Button)?.Tag as string;
+            if (string.IsNullOrEmpty(option)) return;
+            if (_activeQuestion?.Payload is QuestionPayload q)
+                q.Answer = option;
+            ScheduleHistorySave();
+            _questionTcs.TrySetResult(option);
+        }
+
+        private void OnQuestionSkip(object sender, RoutedEventArgs e)
+        {
+            if (_questionTcs == null) return;
+            const string skipped = "User skipped the question.";
+            if (_activeQuestion?.Payload is QuestionPayload q)
+                q.Answer = skipped;
+            ScheduleHistorySave();
+            _questionTcs.TrySetResult(skipped);
         }
 
         private void AppendExtensionError(Exception ex)
@@ -2446,7 +2504,9 @@ namespace RPAWriter2
                 GetOpenSolutionDirectory,
                 () => _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2),
                 _buildFeedback,
-                _robotTemplate);
+                _robotTemplate,
+                AskQuestionAsync,
+                () => (SkillsPathBox?.Text ?? "").Trim());
             return factory.CreateRegistry();
         }
 
@@ -2459,6 +2519,8 @@ namespace RPAWriter2
             }
             var detail = string.IsNullOrWhiteSpace(e.DisplayResult) ? e.Result : e.DisplayResult;
             LogService.ChatInfo("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
+            if (string.Equals(e.ToolName, "ask_question", StringComparison.OrdinalIgnoreCase))
+                return; // The interactive question message already shows the Q&A.
             AppendToolCall(e.ToolName, detail, e.Blocked);
         }
 
@@ -2868,6 +2930,18 @@ namespace RPAWriter2
 
         private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)
         {
+            if (message.Payload is QuestionPayload question)
+            {
+                return new ChatHistoryMessage
+                {
+                    Kind = message.Kind,
+                    Text = question.Question ?? "",
+                    ToolName = question.Answer ?? "",
+                    Reasoning = message.Reasoning,
+                    Mode = message.Mode
+                };
+            }
+
             var tool = message.Payload as ToolCallPayload;
             return new ChatHistoryMessage
             {
@@ -2881,6 +2955,15 @@ namespace RPAWriter2
 
         private static ChatMessage FromHistoryMessage(ChatHistoryMessage m)
         {
+            if (m.Kind == ChatMessageKind.Question)
+            {
+                return new ChatMessage
+                {
+                    Kind = m.Kind,
+                    Payload = new QuestionPayload { Question = m.Text ?? "", Answer = m.ToolName ?? "" }
+                };
+            }
+
             if (m.Kind == ChatMessageKind.ToolCall || m.Kind == ChatMessageKind.ToolBlocked)
             {
                 return new ChatMessage
@@ -2968,6 +3051,7 @@ namespace RPAWriter2
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
             _settings.PackagesPath = PackagesPathBox.Text.Trim();
             _settings.RulesPath = RulesPathBox.Text.Trim();
+            _settings.SkillsPath = SkillsPathBox.Text.Trim();
             _settings.ContextWindowSize = ParseContextWindowSize();
             _settings.CompactThreshold = ParseFraction(CompactThresholdBox?.Text, 0.85, 0.0, 1.0);
             _settings.ReserveFraction = ParseFraction(ReserveFractionBox?.Text, 0.12, 0.0, 0.5);

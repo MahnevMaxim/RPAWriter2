@@ -19,13 +19,15 @@ namespace RPAWriter.Core.AgentTools
             bool mutates,
             Func<JObject, CancellationToken, Task<string>> handler,
             Func<JObject, CancellationToken, Task<string>> displayHandler = null,
-            AgentPermissions? permission = null)
+            AgentPermissions? permission = null,
+            bool completesRun = false)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             Description = description ?? "";
             ParametersSchema = parametersSchema ?? "{}";
             Mutates = mutates;
             Permission = permission ?? (mutates ? AgentPermissions.EditFiles : AgentPermissions.ReadFiles);
+            CompletesRun = completesRun;
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
             _displayHandler = displayHandler;
         }
@@ -35,6 +37,7 @@ namespace RPAWriter.Core.AgentTools
         public string ParametersSchema { get; }
         public bool Mutates { get; }
         public AgentPermissions Permission { get; }
+        public bool CompletesRun { get; }
 
         public Task<string> ExecuteAsync(JObject arguments, CancellationToken cancellationToken)
         {

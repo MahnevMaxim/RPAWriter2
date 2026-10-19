@@ -23,6 +23,9 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Permission category the tool belongs to (gated by the settings).</summary>
         AgentPermissions Permission { get; }
 
+        /// <summary>True when executing this tool completes the run (e.g. submit_and_exit).</summary>
+        bool CompletesRun { get; }
+
         /// <summary>Executes the tool and returns a text result fed back to the model.</summary>
         Task<string> ExecuteAsync(JObject arguments, CancellationToken cancellationToken);
 

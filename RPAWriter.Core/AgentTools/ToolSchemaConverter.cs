@@ -72,8 +72,15 @@ namespace RPAWriter.Core.AgentTools
 
             foreach (var prop in informal.Properties())
             {
-                properties[prop.Name] = ValueSchema(prop.Value);
-                required.Add(prop.Name);
+                // A trailing '?' marks the parameter as optional (omitted from "required").
+                var name = prop.Name;
+                var optional = name.EndsWith("?", StringComparison.Ordinal);
+                if (optional)
+                    name = name.Substring(0, name.Length - 1);
+
+                properties[name] = ValueSchema(prop.Value);
+                if (!optional)
+                    required.Add(name);
             }
 
             var schema = new JObject

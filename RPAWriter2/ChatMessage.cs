@@ -170,6 +170,13 @@ namespace RPAWriter2
                     return "⚙ " + name + " → " + (p?.Result ?? "");
                 }
 
+                if (Kind == ChatMessageKind.Question)
+                {
+                    var q = Payload as QuestionPayload;
+                    if (q == null) return Text ?? "";
+                    return string.IsNullOrEmpty(q.Answer) ? q.Question : q.Question + " → " + q.Answer;
+                }
+
                 var t = Text ?? "";
                 return string.IsNullOrEmpty(Label) ? t : Label + t;
             }

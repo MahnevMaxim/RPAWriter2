@@ -17,6 +17,10 @@ namespace RPAWriter2.Services
         public string RobotTemplateName { get; set; } = "";
         public string PackagesPath { get; set; } = "";
         public string RulesPath { get; set; } = PromptPaths.ResolveRulesDirectory();
+
+        /// <summary>Directory containing skills (each skill is a subdirectory with a SKILL.md).</summary>
+        public string SkillsPath { get; set; } = "";
+
         public int ContextWindowSize { get; set; } = 409600;
 
         /// <summary>HTTP request timeout in seconds (per provider request).</summary>

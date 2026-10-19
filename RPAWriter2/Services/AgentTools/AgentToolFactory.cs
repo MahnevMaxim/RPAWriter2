@@ -34,6 +34,8 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<DTE2?> _getDte;
         private readonly IBuildFeedbackService _buildFeedback;
         private readonly RobotTemplateService _robotTemplate;
+        private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> _askQuestionAsync;
+        private readonly Func<string?> _getSkillsPath;
         private readonly ShellCommandService _shell = new ShellCommandService();
 
         public AgentToolFactory(
@@ -45,7 +47,9 @@ namespace RPAWriter2.Services.AgentTools
             Func<string?> getSolutionDir,
             Func<DTE2?> getDte,
             IBuildFeedbackService buildFeedback,
-            RobotTemplateService robotTemplate)
+            RobotTemplateService robotTemplate,
+            Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> askQuestionAsync,
+            Func<string?> getSkillsPath)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSpec = getSpec ?? throw new ArgumentNullException(nameof(getSpec));
@@ -56,6 +60,8 @@ namespace RPAWriter2.Services.AgentTools
             _getDte = getDte ?? throw new ArgumentNullException(nameof(getDte));
             _buildFeedback = buildFeedback ?? throw new ArgumentNullException(nameof(buildFeedback));
             _robotTemplate = robotTemplate ?? throw new ArgumentNullException(nameof(robotTemplate));
+            _askQuestionAsync = askQuestionAsync ?? throw new ArgumentNullException(nameof(askQuestionAsync));
+            _getSkillsPath = getSkillsPath ?? throw new ArgumentNullException(nameof(getSkillsPath));
         }
         public AgentToolRegistry CreateRegistry()
         {
@@ -63,7 +69,9 @@ namespace RPAWriter2.Services.AgentTools
 
             // ---- Read-only tools ----
             registry.Register(new AgentTool("read_spec", "Return the currently imported specification (name, steps, inputs, outputs, tasks, raw text).", "{}", mutates: false, ReadSpecAsync));
-            registry.Register(new AgentTool("read_file", "Read a text file FROM DISK (saved content only) by absolute or solution-relative path. Does not reflect unsaved editor changes; to read the open editor tab use open_file then read_open_document.", "{\"path\":\"string\"}", false, ReadFileAsync));
+            // Temporarily excluded in favor of read_files (buffer-vs-disk is handled inside read_files):
+            // registry.Register(new AgentTool("read_file", "Read a text file FROM DISK (saved content only) by absolute or solution-relative path. Does not reflect unsaved editor changes; to read the open editor tab use open_file then read_open_document.", "{\"path\":\"string\"}", false, ReadFileAsync));
+            registry.Register(new AgentTool("read_files", "Read the content of text or image files at the provided absolute paths, or return only an inclusive one-based line range when start_line/end_line are provided on the same file entry as its path. When you already know multiple files you need, read them together in one call, and call this tool in the same response as other independent tool calls. Each read returns at most 2000 lines / ~47k characters; longer files report their total line count, page through them with start_line/end_line on that file's entry. Binary files that are not image and large files are not supported. Returns file contents or error messages for each path.", "{\"files\":[{\"path\":\"string\",\"start_line?\":\"integer\",\"end_line?\":\"integer\"}]}", false, ReadFilesAsync, ReadFilesDisplayAsync));
             registry.Register(new AgentTool("read_robot_sources", "List the robot source files (.xaml/.cs) under a directory with their contents.", "{\"directory\":\"string\"}", false, ReadRobotSourcesAsync));
             registry.Register(new AgentTool("analyze_spec", "Analyze the imported spec into a summary and tasks.", "{}", false, AnalyzeSpecAsync));
             registry.Register(new AgentTool("decompose_tasks", "Decompose a text into atomic tasks.", "{\"text\":\"string\"}", false, DecomposeTasksAsync));
@@ -73,16 +81,16 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("list_kb", "List the solutions in the knowledge base.", "{}", false, ListKbAsync));
             registry.Register(new AgentTool("read_errors", "Read compiler errors from the Visual Studio Error List.", "{}", false, ReadErrorsAsync));
             registry.Register(new AgentTool("read_output", "Read the Visual Studio Output window text.", "{}", false, ReadOutputAsync));
-            registry.Register(new AgentTool("open_file", "Open a file in Visual Studio and activate its tab. Use before read_open_document when the file's tab is not open yet. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
-            registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
+            // Temporarily excluded in favor of read_files:
+            // registry.Register(new AgentTool("open_file", "Open a file in Visual Studio and activate its tab. Use before read_open_document when the file's tab is not open yet. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
+            // registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
             registry.Register(new AgentTool("analyze_logs", "Analyze log files at the given paths.", "{\"paths\":[\"string\"]}", false, AnalyzeLogsAsync));
             registry.Register(new AgentTool("read_memory", "Read the project memory bank (memory-bank/*.md) to restore long-term context.", "{}", false, ReadMemoryAsync));
+            registry.Register(new AgentTool("ask_question", "Ask user a question for clarifying or gathering information needed to complete the task. For example, ask the user clarifying questions about a key implementation decision. You should only ask one question. Provide an array of 2-5 options for the user to choose from. Never include an option to toggle to Act mode.", "{\"question\":\"string\",\"options\":[\"string\"]}", mutates: false, AskQuestionAsync));
 
             // ---- Mutating tools (Act only) ----
             registry.Register(new AgentTool("generate_robot", "Generate a robot (XAML/C#) from the imported spec and save the artifacts next to the spec.", "{}", mutates: true, GenerateRobotAsync));
-            registry.Register(new AgentTool("write_file", "Write a text file (create or overwrite) by absolute or solution-relative path.", "{\"path\":\"string\",\"content\":\"string\"}", true, WriteFileAsync));
-            registry.Register(new AgentTool("apply_fix", "Replace the content of an existing file with corrected content. Edits through the open Visual Studio editor tab (single Undo step) and saves it; falls back to a disk write when the file cannot be opened in the editor.", "{\"path\":\"string\",\"content\":\"string\"}", true, ApplyFixAsync));
-            registry.Register(new AgentTool("edit_open_document", "Replace the text of an open editor tab directly in the Visual Studio editor buffer (not a raw disk write), then save it. Provide \"path\" to target a specific file (opens it if needed), or omit \"path\" to edit the active document. Applied as one Undo step.", "{\"path\":\"string\",\"content\":\"string\"}", true, EditOpenDocumentAsync, EditOpenDocumentDisplayAsync));
+            registry.Register(new AgentTool("editor", """An editor for controlled filesystem edits on the text file at the provided path. Provide `insert_line` to insert `new_text` at a specific line number. Otherwise, the tool replaces `old_text` with `new_text`, or creates the file with `new_text` if file does not exist. Use this tool for making small, precise edits to existing files or creating new files over shell commands. If several edits to different files or non-overlapping regions are already known, emit multiple editor tool calls in the same response instead of serializing them across turns.""", "{\"path\":\"string\",\"old_text?\":\"string\",\"new_text\":\"string\",\"insert_line?\":\"integer\"}", true, EditorAsync, EditorDisplayAsync, permission: AgentPermissions.EditFiles));
             registry.Register(new AgentTool("create_robot", "Create a robot solution (RPA-<number>) from the configured template.", "{\"number\":\"string\"}", true, CreateRobotAsync));
             registry.Register(new AgentTool("build", "Run a Release build of the open solution.", "{}", true, BuildAsync));
             registry.Register(new AgentTool("convert_uipath", "Convert a UiPath XAML file to Workflow Foundation and write the artifacts.", "{\"path\":\"string\"}", true, ConvertUiPathAsync));
@@ -91,17 +99,70 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("update_memory", "Write a project memory bank file (activeContext.md, progress.md, etc.).", "{\"file\":\"string\",\"content\":\"string\"}", true, UpdateMemoryAsync));
 
             // ---- Read-only navigation / inspection tools (permission-gated) ----
-            registry.Register(new AgentTool("list_directory", "List files and subdirectories in a directory (absolute or solution-relative path).", "{\"path\":\"string\",\"recursive\":\"boolean\"}", false, ListDirectoryAsync, permission: AgentPermissions.ReadFiles));
-            registry.Register(new AgentTool("search_files", "Search text files under a directory for a literal or regex pattern; returns matching file paths with line snippets.", "{\"directory\":\"string\",\"pattern\":\"string\",\"useRegex\":\"boolean\"}", false, SearchFilesAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool(
+                "list_files",
+                """
+                Request to list files and directories within the specified directory. If recursive is true, it will list all files and directories recursively. If recursive is false or not provided, it will only list the top-level contents. Do not use this tool to confirm the existence of files you may have created, as the user will let you know if the files were created successfully or not.
+
+                Parameters:
+                - path: (required) The path of the directory to list contents for (relative to the current workspace directory)
+                - recursive: (required) Whether to list files recursively. Use true for recursive listing, false for top-level only.
+
+                Example: Listing all files in the current directory (top-level only)
+                { "path": ".", "recursive": false }
+
+                Example: Listing all files recursively in src directory
+                { "path": "src", "recursive": true }
+                """,
+                "{\"path\":\"string\",\"recursive\":\"boolean\"}",
+                mutates: false,
+                ListFilesAsync,
+                permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("search_codebase", "Perform regex pattern searches across the codebase. Supports multiple parallel searches. When several search patterns could be useful and do not depend on each other, run them together in one call, and call this tool in the same response as other independent tool calls. Use for finding code patterns, function definitions, class names, imports, etc. Output beyond ~48k characters per query is middle-truncated; narrow patterns beat broad ones.", "{\"queries\":[\"string\"]}", false, SearchCodebaseAsync, permission: AgentPermissions.ReadFiles));
             registry.Register(new AgentTool("git_status", "Show the git working-tree status of the open solution's repository.", "{}", false, GitStatusAsync, permission: AgentPermissions.ReadFiles));
             registry.Register(new AgentTool("git_diff", "Show the uncommitted git diff of the open solution's repository (optionally for one path).", "{\"path\":\"string\"}", false, GitDiffAsync, permission: AgentPermissions.ReadFiles));
-            registry.Register(new AgentTool("web_fetch", "Fetch the content of a web URL (HTTP GET) and return the response text.", "{\"url\":\"string\"}", false, WebFetchAsync, permission: AgentPermissions.WebFetch));
+            registry.Register(new AgentTool("fetch_web_content", """Fetch content from URLs and analyze them using the provided prompts. Use for retrieving documentation, API references, or any web content. Each request includes a URL and a prompt describing what information to extract. Fetch independent URLs together in one call, and call this tool in the same response as other independent tool calls.""", "{\"requests\":[{\"url\":\"string\",\"prompt\":\"string\"}]}", false, FetchWebContentAsync, permission: AgentPermissions.WebFetch));
+            registry.Register(new AgentTool("skills", """Execute a skill within the main conversation. When users ask you to perform tasks, check if any available skills match. When users reference a slash command, invoke it with this tool. Input: `skill` (required) and optional `args`. Example: `skill: "pdf"`, `skill: "commit", args: "-m \"Fix bug\""`, `skill: "review-pr", args: "123"`, `skill: "ms-office-suite:pdf"`. When a skill matches the user's request, invoking this tool is a blocking requirement before any other response. Never mention a skill without invoking this tool.""", "{\"skill\":\"string\",\"args?\":\"string\"}", false, SkillsAsync, permission: AgentPermissions.ReadFiles));
+            registry.Register(new AgentTool("submit_and_exit", """Submit the final answer and exit the conversation. For example, submit a summary of the investigation and confirm the issue is resolved. You should only submit once all necessary steps are completed AND you have verified the result by execution. Before calling this, re-read the task, then confirm from your own tool output that every required file exists at the specified path and that its contents match the expected format, data types, and values. If the task provides tests, run them and confirm they pass; if it does not, run your own solution end to end and read the output back as evidence. Do not submit on the assumption that your solution works — submit because you have observed evidence that it does. Provide a summary of the investigation and confirm the issue is resolved.""", "{\"summary\":\"string\",\"verified\":\"boolean\"}", false, SubmitAndExitAsync, completesRun: true));
 
             // ---- Mutating tools (Act only, permission-gated) ----
-            registry.Register(new AgentTool("run_command", "Run an arbitrary PowerShell command in the solution directory and return its output. Use for dotnet build/test, git and environment inspection.", "{\"command\":\"string\"}", true, RunCommandAsync, permission: AgentPermissions.ExecuteCommand));
+            registry.Register(new AgentTool("run_commands", """Run non-interactive shell commands from the root of the workspace in Windows environment. Use for listing files, checking git status, running builds, executing tests, etc. Commands must be non-interactive. Commands that require follow-up input like pagers should be skipped or used with supported flags/env (e.g. git --no-pager, --non-interactive) to bypass the interaction steps. Output beyond ~47k characters is middle-truncated (start and end preserved); filter output when you need specific sections. Commands run through Windows PowerShell (powershell.exe); quote paths and arguments for powershell.exe and use ';' to sequence commands. Write commands directly; do not wrap them in another powershell.exe -Command invocation. Only start another shell when you intentionally need a different shell or a separate process. Include multiple commands in the same call when they are independent and safe to run concurrently. When independent reads, searches, or edits are also needed, call those tools in the same response.""", "{\"commands\":[\"string\"]}", true, RunCommandsAsync, permission: AgentPermissions.ExecuteCommand));
             registry.Register(new AgentTool("download_file", "Download a file from a URL and save it to disk.", "{\"url\":\"string\",\"path\":\"string\"}", true, DownloadFileAsync, permission: AgentPermissions.WebFetch));
 
             return registry;
+        }
+
+        private async Task<string> AskQuestionAsync(JObject args, CancellationToken ct)
+        {
+            var question = (args["question"]?.Value<string>() ?? "").Trim();
+            var options = new List<string>();
+            if (args["options"] is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    var text = item?.Value<string>() ?? "";
+                    if (!string.IsNullOrWhiteSpace(text))
+                        options.Add(text.Trim());
+                }
+            }
+
+            if (string.IsNullOrEmpty(question))
+                return "Missing or empty \"question\" argument.";
+            if (options.Count < 2 || options.Count > 5)
+                return "The \"options\" argument must contain between 2 and 5 non-empty options.";
+
+            try
+            {
+                return await _askQuestionAsync(question, options, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return "ask_question failed: " + ex.Message;
+            }
         }
 
         private Task<string> ReadSpecAsync(JObject args, CancellationToken ct)
@@ -143,6 +204,243 @@ namespace RPAWriter2.Services.AgentTools
             if (!File.Exists(p)) return Task.FromResult("File not found: " + p);
             try { return Task.FromResult(Truncate(File.ReadAllText(p))); }
             catch (Exception ex) { return Task.FromResult("Failed to read file: " + ex.Message); }
+        }
+
+        private const int ReadFilesMaxLines = 2000;
+        private const int ReadFilesMaxChars = 48000; // ~47k characters, matching Cline
+        private const int SearchMaxCharsPerQuery = 48000; // ~48k characters per query, matching Cline
+
+        /// <summary>
+        /// Cline-compatible file reader. Reads one or more files by absolute (or solution-relative)
+        /// path, optionally limited to an inclusive one-based line range. When a file is currently
+        /// open in Visual Studio, its content is read from the editor buffer (including unsaved
+        /// changes); otherwise it is read from disk. Disk is also the fallback when the buffer of an
+        /// open document cannot be read (e.g. a non-text document).
+        /// </summary>
+        private async Task<string> ReadFilesAsync(JObject args, CancellationToken ct)
+        {
+            var entries = ParseReadFilesEntries(args["files"]);
+            if (entries.Count == 0)
+                return "Missing or invalid \"files\" argument. Expected an array of {path, start_line?, end_line?} objects (or a string / array of strings).";
+
+            // Detecting an open editor tab and reading its buffer must happen on the VS UI thread.
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var dte = _getDte();
+
+            var sb = new StringBuilder();
+            foreach (var entry in entries)
+            {
+                var p = ResolvePath(entry.Path ?? "");
+                if (string.IsNullOrWhiteSpace(p))
+                {
+                    sb.AppendLine("Error reading a files entry: missing \"path\".");
+                    continue;
+                }
+
+                string text;
+                string source;
+
+                var doc = dte != null ? VsDocumentService.FindOpenDocument(dte, p) : null;
+                if (doc != null)
+                {
+                    await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
+                    var buffer = VsDocumentService.ReadDocumentText(doc);
+                    if (buffer != null)
+                    {
+                        text = buffer;
+                        source = "editor buffer";
+                    }
+                    else
+                    {
+                        var diskText = ReadFromDiskOrNull(p, out var diskError);
+                        if (diskError != null)
+                        {
+                            sb.AppendLine("Error reading " + p + ": " + diskError);
+                            continue;
+                        }
+                        text = diskText!;
+                        source = "disk (buffer unreadable, fallback)";
+                    }
+                }
+                else
+                {
+                    var diskText = ReadFromDiskOrNull(p, out var diskError);
+                    if (diskError != null)
+                    {
+                        sb.AppendLine("Error reading " + p + ": " + diskError);
+                        continue;
+                    }
+                    text = diskText!;
+                    source = "disk";
+                }
+
+                sb.Append(FormatReadFilesResult(p, source, text, entry.StartLine, entry.EndLine));
+            }
+
+            return sb.ToString();
+        }
+
+        private Task<string> ReadFilesDisplayAsync(JObject args, CancellationToken ct)
+        {
+            var paths = ParseReadFilesEntries(args["files"])
+                .Where(e => !string.IsNullOrWhiteSpace(e.Path))
+                .Select(e => ResolvePath(e.Path))
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToList();
+            return Task.FromResult(paths.Count == 0 ? string.Empty : string.Join(", ", paths));
+        }
+
+        private static List<ReadFilesEntry> ParseReadFilesEntries(JToken files)
+        {
+            var result = new List<ReadFilesEntry>();
+
+            if (files == null)
+                return result;
+
+            if (files.Type == JTokenType.String)
+            {
+                var s = files.Value<string>();
+                if (!string.IsNullOrWhiteSpace(s))
+                    result.Add(new ReadFilesEntry { Path = s });
+                return result;
+            }
+
+            if (files.Type == JTokenType.Array)
+            {
+                foreach (var item in (JArray)files)
+                {
+                    if (item.Type == JTokenType.String)
+                    {
+                        var s = item.Value<string>();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            result.Add(new ReadFilesEntry { Path = s });
+                    }
+                    else if (item.Type == JTokenType.Object)
+                    {
+                        var obj = (JObject)item;
+                        result.Add(new ReadFilesEntry
+                        {
+                            Path = obj["path"]?.Value<string>() ?? "",
+                            StartLine = obj["start_line"]?.Value<int>() ?? 0,
+                            EndLine = obj["end_line"]?.Value<int>() ?? 0
+                        });
+                    }
+                }
+                return result;
+            }
+
+            // Defensive: a single object {path, start_line?, end_line?}.
+            if (files.Type == JTokenType.Object)
+            {
+                var obj = (JObject)files;
+                result.Add(new ReadFilesEntry
+                {
+                    Path = obj["path"]?.Value<string>() ?? "",
+                    StartLine = obj["start_line"]?.Value<int>() ?? 0,
+                    EndLine = obj["end_line"]?.Value<int>() ?? 0
+                });
+            }
+
+            return result;
+        }
+
+        private sealed class ReadFilesEntry
+        {
+            public string Path { get; set; } = "";
+            public int StartLine { get; set; }
+            public int EndLine { get; set; }
+        }
+
+        /// <summary>Reads a text file from disk, or returns an error describing why it could not be read.</summary>
+        private static string? ReadFromDiskOrNull(string path, out string? error)
+        {
+            error = null;
+            if (!File.Exists(path))
+            {
+                error = "file not found";
+                return null;
+            }
+            if (IsBinaryFile(path))
+            {
+                error = "binary files that are not images are not supported";
+                return null;
+            }
+            try
+            {
+                return File.ReadAllText(path);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return null;
+            }
+        }
+
+        /// <summary>Heuristic: a file containing a NUL byte in its first 8KB is treated as binary.</summary>
+        private static bool IsBinaryFile(string path)
+        {
+            try
+            {
+                using (var fs = File.OpenRead(path))
+                {
+                    var buffer = new byte[8192];
+                    var read = fs.Read(buffer, 0, buffer.Length);
+                    for (var i = 0; i < read; i++)
+                    {
+                        if (buffer[i] == 0)
+                            return true;
+                    }
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string FormatReadFilesResult(string path, string source, string text, int startLine, int endLine)
+        {
+            var normalized = (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            var allLines = normalized.Split('\n');
+            if (allLines.Length > 1 && allLines[allLines.Length - 1].Length == 0)
+                allLines = allLines.Take(allLines.Length - 1).ToArray();
+            var totalLines = allLines.Length;
+
+            var hasRange = startLine > 0 || endLine > 0;
+            var start = startLine > 0 ? startLine : 1;
+            var end = endLine > 0 ? Math.Min(endLine, totalLines) : totalLines;
+            if (start < 1) start = 1;
+            if (start > totalLines) start = Math.Max(1, totalLines);
+            if (end < start) end = start;
+
+            var selected = allLines.Skip(start - 1).Take(end - start + 1).ToArray();
+            var content = string.Join("\n", selected);
+
+            var truncated = selected.Length > ReadFilesMaxLines;
+            if (truncated)
+                content = string.Join("\n", selected.Take(ReadFilesMaxLines));
+            if (content.Length > ReadFilesMaxChars)
+            {
+                content = content.Substring(0, ReadFilesMaxChars);
+                truncated = true;
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("FILE: ").Append(path).Append(" (").Append(source).Append(')');
+            if (hasRange)
+                sb.Append(" [lines ").Append(start).Append('-').Append(end).Append(']');
+            sb.AppendLine();
+            sb.Append(content);
+
+            if (truncated)
+            {
+                sb.AppendLine();
+                sb.Append("…(truncated; file has ").Append(totalLines)
+                  .Append(" lines, use start_line/end_line to page through it)");
+            }
+
+            return sb.ToString();
         }
 
         private async Task<string> OpenFileAsync(JObject args, CancellationToken ct)
@@ -468,73 +766,264 @@ namespace RPAWriter2.Services.AgentTools
             }
         }
 
-        private Task<string> ListDirectoryAsync(JObject args, CancellationToken ct)
+        private const int ListFilesLimit = 200;
+
+        private static readonly HashSet<string> ListFilesSkippedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".git", ".svn", ".hg", ".vs", "bin", "obj", "node_modules", "packages", "TestResults",
+            "__pycache__", "env", "venv", "dist", "out", "bundle", "vendor", "tmp", "temp",
+            "deps", "pkg", "Pods",
+        };
+
+        private Task<string> ListFilesAsync(JObject args, CancellationToken ct)
         {
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             if (string.IsNullOrWhiteSpace(p) || !Directory.Exists(p))
                 return Task.FromResult("Directory not found: " + p);
 
             var recursive = args["recursive"]?.Value<bool>() ?? false;
-            var sb = new StringBuilder();
+
+            // Load the nearest .gitignore (walking up to the repo root) and apply it only
+            // when the listed directory lives inside that repo.
+            var gitRoot = FindGitIgnoreRoot(_getSolutionDir() ?? p);
+            var ignore = gitRoot != null && IsUnder(gitRoot, p)
+                ? GitIgnoreMatcher.Load(Path.Combine(gitRoot, ".gitignore"))
+                : null;
+
+            var dirs = new List<string>();
+            var files = new List<string>();
             try
             {
-                foreach (var dir in Directory.EnumerateDirectories(p))
-                    sb.AppendLine("[dir] " + MakeRelative(p, dir));
-                foreach (var file in Directory.EnumerateFiles(p, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly))
-                    sb.AppendLine("[file] " + MakeRelative(p, file));
+                CollectListEntries(p, p, recursive, dirs, files, ignore, gitRoot ?? p);
             }
             catch (Exception ex)
             {
                 return Task.FromResult("Failed to list directory: " + ex.Message);
             }
-            return Task.FromResult(sb.Length == 0 ? "(empty directory)" : Truncate(sb.ToString()));
-        }
 
-        private Task<string> SearchFilesAsync(JObject args, CancellationToken ct)
-        {
-            var dir = ResolvePath(args["directory"]?.Value<string>() ?? "");
-            var pattern = args["pattern"]?.Value<string>() ?? "";
-            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
-                return Task.FromResult("Directory not found: " + dir);
-            if (string.IsNullOrWhiteSpace(pattern))
-                return Task.FromResult("Missing \"pattern\" argument.");
+            var total = dirs.Count + files.Count;
+            var entries = new List<string>(total);
+            foreach (var d in dirs) entries.Add(d + "/");
+            entries.AddRange(files);
 
-            var useRegex = args["useRegex"]?.Value<bool>() ?? false;
-            Regex? regex = null;
-            if (useRegex)
+            // Directories first (trailing '/'), then files, each alphabetically (case-insensitive).
+            entries.Sort((a, b) =>
             {
-                try { regex = new Regex(pattern, RegexOptions.IgnoreCase); }
-                catch (Exception ex) { return Task.FromResult("Invalid regex: " + ex.Message); }
-            }
+                var aIsDir = a.EndsWith("/", StringComparison.Ordinal);
+                var bIsDir = b.EndsWith("/", StringComparison.Ordinal);
+                if (aIsDir != bIsDir) return aIsDir ? -1 : 1;
+                return StringComparer.OrdinalIgnoreCase.Compare(a, b);
+            });
+
+            if (entries.Count == 0)
+                return Task.FromResult("No files found.");
 
             var sb = new StringBuilder();
-            try
-            {
-                foreach (var f in EnumerateTextFiles(dir))
-                {
-                    var lines = File.ReadAllLines(f);
-                    for (var i = 0; i < lines.Length; i++)
-                    {
-                        var line = lines[i];
-                        var match = regex != null ? regex.IsMatch(line) : line.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0;
-                        if (match)
-                            sb.AppendLine(MakeRelative(dir, f) + ":" + (i + 1) + ": " + Truncate(line, 200));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                return Task.FromResult("Search failed: " + ex.Message);
-            }
-            return Task.FromResult(sb.Length == 0 ? "No matches." : Truncate(sb.ToString()));
+            foreach (var e in entries.Take(ListFilesLimit))
+                sb.AppendLine(e);
+            if (total > ListFilesLimit)
+                sb.AppendLine().AppendLine("(File list truncated. Use list_files on specific subdirectories if you need to explore further.)");
+            return Task.FromResult(Truncate(sb.ToString()));
         }
 
-        private async Task<string> RunCommandAsync(JObject args, CancellationToken ct)
+        private void CollectListEntries(string root, string current, bool recursive, List<string> dirs, List<string> files, GitIgnoreMatcher? ignore, string gitRoot)
         {
-            var command = args["command"]?.Value<string>() ?? "";
-            if (string.IsNullOrWhiteSpace(command)) return "Missing \"command\" argument.";
-            var result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct).ConfigureAwait(false);
-            return result.Success ? result.Output : "Command failed (exit " + result.ExitCode + "):\n" + result.Output;
+            string[] subdirs;
+            string[] fs;
+            try
+            {
+                subdirs = Directory.GetDirectories(current);
+                fs = Directory.GetFiles(current);
+            }
+            catch
+            {
+                return; // unreadable directory
+            }
+
+            foreach (var d in subdirs)
+            {
+                if (ListFilesSkippedDirectories.Contains(Path.GetFileName(d)))
+                    continue;
+                if (ignore != null && ignore.IsIgnored(MakeRelative(gitRoot, d).Replace('\\', '/'), true))
+                    continue;
+
+                dirs.Add(MakeRelative(root, d).Replace('\\', '/'));
+                if (recursive)
+                    CollectListEntries(root, d, true, dirs, files, ignore, gitRoot);
+            }
+
+            foreach (var f in fs)
+            {
+                if (ignore != null && ignore.IsIgnored(MakeRelative(gitRoot, f).Replace('\\', '/'), false))
+                    continue;
+                files.Add(MakeRelative(root, f).Replace('\\', '/'));
+            }
+        }
+
+        private static string? FindGitIgnoreRoot(string startDir)
+        {
+            if (string.IsNullOrWhiteSpace(startDir)) return null;
+            var dir = Path.GetFullPath(startDir);
+            while (!string.IsNullOrEmpty(dir))
+            {
+                if (File.Exists(Path.Combine(dir, ".gitignore")) || Directory.Exists(Path.Combine(dir, ".git")))
+                    return dir;
+                var parent = Path.GetDirectoryName(dir);
+                if (parent == null || parent == dir) break;
+                dir = parent;
+            }
+            return null;
+        }
+
+        private static bool IsUnder(string root, string path)
+        {
+            var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var pathFull = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(rootFull, pathFull, StringComparison.OrdinalIgnoreCase)
+                || pathFull.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private Task<string> SearchCodebaseAsync(JObject args, CancellationToken ct)
+        {
+            var root = _getSolutionDir();
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                return Task.FromResult("No open solution directory to search.");
+
+            var queries = ParseQueries(args["queries"]);
+            if (queries.Count == 0)
+                return Task.FromResult("Missing or invalid \"queries\" argument. Expected an array of regex patterns.");
+
+            var sb = new StringBuilder();
+            foreach (var pattern in queries)
+            {
+                Regex regex;
+                try { regex = new Regex(pattern, RegexOptions.IgnoreCase); }
+                catch (ArgumentException ex)
+                {
+                    sb.AppendLine("Invalid regex \"" + pattern + "\": " + ex.Message);
+                    continue;
+                }
+
+                var matches = new StringBuilder();
+                try
+                {
+                    foreach (var file in EnumerateTextFiles(root))
+                    {
+                        string[] lines;
+                        try { lines = File.ReadAllLines(file); }
+                        catch { continue; }
+
+                        for (var i = 0; i < lines.Length; i++)
+                        {
+                            if (regex.IsMatch(lines[i]))
+                                matches.Append(MakeRelative(root, file)).Append(':').Append(i + 1).Append(": ").AppendLine(lines[i]);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine("Search for \"" + pattern + "\" failed: " + ex.Message);
+                    continue;
+                }
+
+                var text = matches.ToString();
+                sb.AppendLine("\"" + pattern + "\":");
+                sb.AppendLine(text.Length == 0 ? "(no matches)" : MiddleTruncateLines(text, SearchMaxCharsPerQuery));
+            }
+            return Task.FromResult(sb.ToString());
+        }
+
+        private static List<string> ParseQueries(JToken token)
+        {
+            var result = new List<string>();
+            if (token is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    var query = item?.Value<string>();
+                    if (!string.IsNullOrWhiteSpace(query))
+                        result.Add(query!);
+                }
+            }
+            else
+            {
+                var single = token?.Value<string>();
+                if (!string.IsNullOrWhiteSpace(single))
+                    result.Add(single!);
+            }
+            return result;
+        }
+
+        private static string MiddleTruncateLines(string text, int maxChars)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= maxChars)
+                return text;
+
+            var half = maxChars / 2;
+            var lines = text.Split('\n');
+
+            var head = new List<string>();
+            var headChars = 0;
+            var i = 0;
+            while (i < lines.Length && headChars + lines[i].Length + 1 <= half)
+            {
+                head.Add(lines[i].TrimEnd('\r'));
+                headChars += lines[i].Length + 1;
+                i++;
+            }
+
+            var tail = new List<string>();
+            var tailChars = 0;
+            var j = lines.Length - 1;
+            while (j >= i && tailChars + lines[j].Length + 1 <= half)
+            {
+                tail.Add(lines[j].TrimEnd('\r'));
+                tailChars += lines[j].Length + 1;
+                j--;
+            }
+            tail.Reverse();
+
+            if (head.Count == 0 && tail.Count == 0)
+            {
+                // No single whole line fits: fall back to a raw character-level cut.
+                return text.Substring(0, half) + "\n…(middle truncated)…\n" + text.Substring(text.Length - (maxChars - half));
+            }
+
+            var omitted = lines.Length - head.Count - tail.Count;
+            return string.Join("\n", head)
+                + "\n…(" + omitted + " lines omitted from the middle)…\n"
+                + string.Join("\n", tail);
+        }
+
+        private async Task<string> RunCommandsAsync(JObject args, CancellationToken ct)
+        {
+            var commands = new List<string>();
+            var token = args["commands"];
+            if (token != null && token.Type == JTokenType.Array)
+            {
+                foreach (var item in token)
+                {
+                    var c = item?.Value<string>();
+                    if (!string.IsNullOrWhiteSpace(c)) commands.Add(c);
+                }
+            }
+            else if (token != null)
+            {
+                var single = token.Value<string>();
+                if (!string.IsNullOrWhiteSpace(single)) commands.Add(single);
+            }
+
+            if (commands.Count == 0) return "Missing \"commands\" argument (array of command strings).";
+
+            var sb = new StringBuilder();
+            foreach (var command in commands)
+            {
+                var result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct).ConfigureAwait(false);
+                if (sb.Length > 0) sb.AppendLine();
+                sb.AppendLine("$ " + command);
+                sb.Append(result.Success ? result.Output : "Command failed (exit " + result.ExitCode + "):\n" + result.Output);
+            }
+            return Truncate(sb.ToString(), 48000);
         }
 
         private async Task<string> GitStatusAsync(JObject args, CancellationToken ct)
@@ -557,23 +1046,68 @@ namespace RPAWriter2.Services.AgentTools
             return string.IsNullOrWhiteSpace(result.Output) || result.Output == "(no output)" ? "(no diff)" : result.Output;
         }
 
-        private async Task<string> WebFetchAsync(JObject args, CancellationToken ct)
+        private async Task<string> FetchWebContentAsync(JObject args, CancellationToken ct)
         {
-            var url = args["url"]?.Value<string>() ?? "";
-            if (string.IsNullOrWhiteSpace(url)) return "Missing \"url\" argument.";
-            using (var wc = new WebClient())
-            using (ct.Register(wc.CancelAsync))
+            var requestsToken = args["requests"];
+            if (requestsToken == null || requestsToken.Type != JTokenType.Array)
+                return "Missing \"requests\" argument (array of { url, prompt }).";
+
+            var sb = new StringBuilder();
+            var index = 0;
+            foreach (var item in requestsToken)
             {
-                try
+                var req = item as JObject;
+                if (req == null) continue;
+                var url = req["url"]?.Value<string>() ?? "";
+                var prompt = req["prompt"]?.Value<string>() ?? "";
+                index++;
+                if (string.IsNullOrWhiteSpace(url))
                 {
-                    var text = await wc.DownloadStringTaskAsync(url).ConfigureAwait(false);
-                    return Truncate(text);
+                    sb.AppendLine("[" + index + "] Missing \"url\".");
+                    continue;
                 }
-                catch (Exception ex)
+
+                string text;
+                using (var wc = new WebClient())
+                using (ct.Register(wc.CancelAsync))
                 {
-                    return "Web fetch failed: " + ex.Message;
+                    try
+                    {
+                        text = await wc.DownloadStringTaskAsync(url).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine("[" + index + "] Web fetch failed (" + url + "): " + ex.Message);
+                        continue;
+                    }
                 }
+
+                var rendered = Truncate(text);
+                if (!string.IsNullOrWhiteSpace(prompt) && _ai != null)
+                {
+                    try
+                    {
+                        var analysis = await _ai.ChatAsync(
+                            new List<ChatMessageData>
+                            {
+                                new ChatMessageData { Role = "user", Content = prompt + "\n\nCONTENT:\n" + text }
+                            },
+                            "Extract the requested information from the provided web content according to the user's prompt.",
+                            ct).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(analysis?.Answer))
+                            rendered = analysis.Answer;
+                    }
+                    catch
+                    {
+                        // AI analysis is best-effort; fall back to the raw content.
+                    }
+                }
+
+                sb.AppendLine("[" + index + "] " + url);
+                sb.AppendLine(rendered);
             }
+
+            return sb.Length == 0 ? "(no requests)" : Truncate(sb.ToString(), 48000);
         }
 
         private async Task<string> DownloadFileAsync(JObject args, CancellationToken ct)
@@ -599,23 +1133,61 @@ namespace RPAWriter2.Services.AgentTools
             }
         }
 
+        private static readonly HashSet<string> SearchTextExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".xaml", ".cs", ".vb", ".fs", ".txt", ".md", ".json", ".xml", ".config", ".csproj", ".vbproj", ".fsproj",
+            ".sln", ".slnx", ".props", ".targets", ".vsct", ".yaml", ".yml", ".ps1", ".psm1", ".sh", ".bat", ".cmd",
+            ".py", ".js", ".ts", ".jsx", ".tsx", ".css", ".scss", ".html", ".htm", ".cshtml", ".razor", ".resx",
+            ".ruleset", ".gitignore", ".editorconfig", ".gitattributes", ".manifest", ".tt", ".proto"
+        };
+
+        private static readonly HashSet<string> SearchSkippedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".git", ".vs", "bin", "obj", "node_modules", "packages", "TestResults"
+        };
+
+        private const long SearchMaxFileBytes = 1024 * 1024; // skip files larger than ~1 MB
+
         private static IEnumerable<string> EnumerateTextFiles(string dir)
         {
-            try
+            var results = new List<string>();
+            var stack = new Stack<string>();
+            stack.Push(dir);
+
+            while (stack.Count > 0)
             {
-                var textExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                var current = stack.Pop();
+                string[] files;
+                string[] subdirs;
+                try
                 {
-                    ".xaml", ".cs", ".txt", ".md", ".json", ".xml", ".config", ".csproj", ".sln", ".slnx", ".props", ".targets", ".vsct", ".yaml", ".yml"
-                };
-                return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
-                    .Where(f => textExtensions.Contains(Path.GetExtension(f)))
-                    .Take(500)
-                    .ToList();
+                    files = Directory.GetFiles(current);
+                    subdirs = Directory.GetDirectories(current);
+                }
+                catch
+                {
+                    continue; // unreadable directory
+                }
+
+                foreach (var file in files)
+                {
+                    if (!SearchTextExtensions.Contains(Path.GetExtension(file)))
+                        continue;
+                    try
+                    {
+                        if (new FileInfo(file).Length <= SearchMaxFileBytes)
+                            results.Add(file);
+                    }
+                    catch { /* skip unreadable file */ }
+                }
+
+                foreach (var sub in subdirs)
+                {
+                    if (!SearchSkippedDirectories.Contains(Path.GetFileName(sub)))
+                        stack.Push(sub);
+                }
             }
-            catch
-            {
-                return new List<string>();
-            }
+            return results;
         }
 
         private string ResolvePath(string path)
@@ -690,91 +1262,146 @@ namespace RPAWriter2.Services.AgentTools
             return "Robot generated and saved: " + xamlPath + ", " + csPath;
         }
 
-        private Task<string> WriteFileAsync(JObject args, CancellationToken ct)
+        private async Task<string> EditorAsync(JObject args, CancellationToken ct)
         {
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
-            if (string.IsNullOrWhiteSpace(p)) return Task.FromResult("Missing \"path\" argument.");
-            var content = args["content"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(p)) return "Missing \"path\" argument.";
+
+            var newText = args["new_text"]?.Value<string>() ?? "";
+            var oldText = args["old_text"]?.Value<string>();
+            int? insertLine = null;
+            var insertToken = args["insert_line"];
+            if (insertToken != null && insertToken.Type != JTokenType.Null)
+            {
+                if (insertToken.Type == JTokenType.Integer) insertLine = insertToken.Value<int>();
+                else if (int.TryParse(insertToken.Value<string>(), out var parsed)) insertLine = parsed;
+            }
+
+            // Read the current content from the open VS editor buffer when available, else from disk.
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var dte = _getDte();
+            var openDoc = dte != null ? VsDocumentService.FindOpenDocument(dte, p) : null;
+
+            string current;
+            if (openDoc != null)
+            {
+                var ready = await VsDocumentService.WaitForDocumentReadyAsync(openDoc).ConfigureAwait(true);
+                current = ready ? (VsDocumentService.ReadDocumentText(openDoc) ?? "") : ReadDiskText(p);
+            }
+            else
+            {
+                current = ReadDiskText(p);
+            }
+
+            string newContent;
+            if (insertLine.HasValue)
+            {
+                newContent = InsertAtLine(current, insertLine.Value, newText);
+            }
+            else if (oldText != null)
+            {
+                var idx = current.IndexOf(oldText, StringComparison.Ordinal);
+                if (idx < 0) return "old_text was not found in the file (no edit was made).";
+                var second = current.IndexOf(oldText, idx + oldText.Length, StringComparison.Ordinal);
+                if (second >= 0) return "old_text is not unique in the file; make it more specific and retry.";
+                newContent = current.Substring(0, idx) + newText + current.Substring(idx + oldText.Length);
+            }
+            else
+            {
+                newContent = newText;
+            }
+
+            // Prefer editing the open VS editor buffer; otherwise write straight to disk.
+            if (openDoc != null && dte != null)
+            {
+                var error = VsDocumentService.ReplaceDocumentText(dte, openDoc, newContent);
+                if (error != null) return error;
+                try { openDoc.Save(); }
+                catch (Exception ex) { return "Edited in the editor but failed to save: " + ex.Message; }
+                return "Edited in editor and saved: " + p;
+            }
+
             try
             {
                 var dir = Path.GetDirectoryName(p);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(p, content);
-                return Task.FromResult("File written: " + p);
+                File.WriteAllText(p, newContent);
+                return "File written: " + p;
             }
-            catch (Exception ex) { return Task.FromResult("Failed to write file: " + ex.Message); }
+            catch (Exception ex) { return "Failed to write file: " + ex.Message; }
         }
 
-        private async Task<string> ApplyFixAsync(JObject args, CancellationToken ct)
+        private Task<string> EditorDisplayAsync(JObject args, CancellationToken ct)
         {
-            var raw = args["path"]?.Value<string>() ?? "";
-            if (string.IsNullOrWhiteSpace(raw)) return "Missing \"path\" argument.";
-            var content = args["content"]?.Value<string>() ?? "";
-            return await EditDocumentViaDteAsync(ResolvePath(raw), content, ct).ConfigureAwait(true);
+            var p = ResolvePath(args["path"]?.Value<string>() ?? "");
+            return Task.FromResult(string.IsNullOrWhiteSpace(p) ? "file" : p);
         }
 
-        private async Task<string> EditOpenDocumentAsync(JObject args, CancellationToken ct)
+        private static string ReadDiskText(string path)
         {
-            var raw = args["path"]?.Value<string>() ?? "";
-            var p = string.IsNullOrWhiteSpace(raw) ? null : ResolvePath(raw);
-            var content = args["content"]?.Value<string>() ?? "";
-            return await EditDocumentViaDteAsync(p, content, ct).ConfigureAwait(true);
+            try { return File.ReadAllText(path); }
+            catch { return ""; }
         }
 
-        private Task<string> EditOpenDocumentDisplayAsync(JObject args, CancellationToken ct)
+        private static string InsertAtLine(string text, int insertLine, string newText)
         {
-            var raw = args["path"]?.Value<string>() ?? "";
-            return Task.FromResult(string.IsNullOrWhiteSpace(raw) ? "active document" : ResolvePath(raw));
+            var newline = text.IndexOf("\r\n", StringComparison.Ordinal) >= 0 ? "\r\n" : "\n";
+            var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+            var idx = insertLine < 1 ? 0 : insertLine - 1;
+            if (idx > lines.Count) idx = lines.Count;
+            lines.Insert(idx, newText.Replace("\r\n", "\n").Replace("\r", "\n"));
+            return string.Join(newline, lines);
         }
 
-        /// <summary>
-        /// Edits a file through the Visual Studio editor buffer (DTE) rather than a raw
-        /// disk write: open/activate the tab, replace the buffer text, then save. This keeps
-        /// the editor in sync, gives a single Undo step, and avoids the "file modified
-        /// outside the editor" reload prompt. <paramref name="path"/> may be null to edit
-        /// the currently active document.
-        /// </summary>
-        private async Task<string> EditDocumentViaDteAsync(string? path, string content, CancellationToken ct)
+        private Task<string> SkillsAsync(JObject args, CancellationToken ct)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
-            var dte = _getDte();
-            if (dte == null) return "Visual Studio is not available.";
+            var skill = args["skill"]?.Value<string>() ?? "";
+            var skillArgs = args["args"]?.Value<string>() ?? "";
+            var skillsPath = _getSkillsPath();
+            if (string.IsNullOrWhiteSpace(skillsPath) || !Directory.Exists(skillsPath))
+                return Task.FromResult("No skills directory configured (set \"Skills directory\" in Settings).");
 
-            Document? doc;
-            string? resolved;
-
-            if (string.IsNullOrWhiteSpace(path))
+            if (string.IsNullOrWhiteSpace(skill))
             {
-                doc = dte.ActiveDocument;
-                if (doc == null) return "No document is active in the editor and no \"path\" was provided.";
-                resolved = doc.FullName;
-            }
-            else
-            {
-                resolved = ResolvePath(path!);
-                doc = await VsDocumentService.OpenOrActivateAsync(dte, resolved).ConfigureAwait(true);
-                if (doc == null) return "Could not open the file in Visual Studio: " + resolved;
-            }
-
-            var ready = await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
-            if (!ready) return "The document editor buffer is not ready: " + (resolved ?? doc.Name);
-
-            var oldText = VsDocumentService.ReadDocumentText(doc) ?? string.Empty;
-            var diff = TextDiff.Diff(oldText, content ?? string.Empty);
-
-            var error = VsDocumentService.ReplaceDocumentText(dte, doc, content ?? string.Empty);
-            if (error != null) return error;
-
-            try
-            {
-                doc.Save();
-            }
-            catch (Exception ex)
-            {
-                return "Edited in the editor but failed to save to disk: " + ex.Message;
+                try
+                {
+                    var names = Directory.EnumerateDirectories(skillsPath)
+                        .Select(Path.GetFileName)
+                        .Where(n => !string.IsNullOrWhiteSpace(n))
+                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    return Task.FromResult(names.Count == 0 ? "(no skills found)" : "Available skills: " + string.Join(", ", names));
+                }
+                catch (Exception ex) { return Task.FromResult("Failed to list skills: " + ex.Message); }
             }
 
-            return "Edited in editor and saved: " + (resolved ?? doc.Name) + Environment.NewLine + diff.Summary.TrimEnd();
+            var candidates = new[]
+            {
+                Path.Combine(skillsPath, skill, "SKILL.md"),
+                Path.Combine(skillsPath, skill + ".md")
+            };
+            foreach (var file in candidates)
+            {
+                try
+                {
+                    if (File.Exists(file))
+                    {
+                        var content = File.ReadAllText(file);
+                        if (!string.IsNullOrWhiteSpace(skillArgs))
+                            content += "\n\nInvocation arguments: " + skillArgs;
+                        return Task.FromResult(Truncate(content, 40000));
+                    }
+                }
+                catch { /* try the next candidate */ }
+            }
+
+            return Task.FromResult("Skill not found: " + skill);
+        }
+
+        private Task<string> SubmitAndExitAsync(JObject args, CancellationToken ct)
+        {
+            var summary = args["summary"]?.Value<string>() ?? "";
+            return Task.FromResult(string.IsNullOrWhiteSpace(summary) ? "(no summary)" : summary);
         }
 
         private async Task<string> CreateRobotAsync(JObject args, CancellationToken ct)
@@ -861,6 +1488,139 @@ namespace RPAWriter2.Services.AgentTools
             var kb = new FileKnowledgeBase(kbPath);
             await kb.AddAsync(record, ct).ConfigureAwait(false);
             return "Added to knowledge base: " + record.Id + " (" + record.Name + ")";
+        }
+
+        /// <summary>
+        /// Minimal .gitignore matcher: loads patterns from a .gitignore file and checks
+        /// whether a repo-relative (posix) path should be ignored. Supports comments,
+        /// '!' negation, trailing '/' (directory-only), leading '/' (anchored), '*', '?',
+        /// '**' and '[...]' character classes. The last matching pattern wins.
+        /// </summary>
+        private sealed class GitIgnoreMatcher
+        {
+            private sealed class Rule
+            {
+                public Regex Regex { get; set; } = null!;
+                public bool Negated { get; set; }
+            }
+
+            private readonly List<Rule> _rules = new List<Rule>();
+
+            public static GitIgnoreMatcher Load(string path)
+            {
+                var matcher = new GitIgnoreMatcher();
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                    return matcher;
+                try
+                {
+                    foreach (var raw in File.ReadAllLines(path))
+                        matcher.Add(raw);
+                }
+                catch
+                {
+                    // Unreadable .gitignore: treat as no rules.
+                }
+                return matcher;
+            }
+
+            private void Add(string line)
+            {
+                var trimmed = (line ?? "").Trim();
+                if (trimmed.Length == 0 || trimmed[0] == '#')
+                    return;
+
+                var negated = trimmed[0] == '!';
+                if (negated)
+                    trimmed = trimmed.Substring(1).TrimStart();
+
+                // Normalize backslashes (Windows-generated .gitignore) to forward slashes.
+                var pattern = trimmed.Replace('\\', '/');
+
+                var anchored = pattern.StartsWith("/", StringComparison.Ordinal);
+                if (anchored)
+                    pattern = pattern.Substring(1);
+
+                var directoryOnly = pattern.EndsWith("/", StringComparison.Ordinal);
+                if (directoryOnly)
+                    pattern = pattern.TrimEnd('/');
+
+                if (pattern.Length == 0)
+                    return;
+
+                _rules.Add(new Rule { Regex = BuildRegex(pattern, anchored, directoryOnly), Negated = negated });
+            }
+
+            private static Regex BuildRegex(string pattern, bool anchored, bool directoryOnly)
+            {
+                var sb = new StringBuilder();
+                if (anchored) sb.Append('^');
+                else sb.Append("(^|/)");
+
+                for (var i = 0; i < pattern.Length; i++)
+                {
+                    var c = pattern[i];
+                    if (c == '*')
+                    {
+                        if (i + 1 < pattern.Length && pattern[i + 1] == '*')
+                        {
+                            if (i + 2 < pattern.Length && pattern[i + 2] == '/')
+                            {
+                                sb.Append("(?:.*/)?");
+                                i += 2;
+                            }
+                            else
+                            {
+                                sb.Append(".*");
+                                i += 1;
+                            }
+                        }
+                        else
+                        {
+                            sb.Append("[^/]*");
+                        }
+                    }
+                    else if (c == '?')
+                    {
+                        sb.Append("[^/]");
+                    }
+                    else if (c == '[')
+                    {
+                        var close = pattern.IndexOf(']', i + 1);
+                        if (close < 0)
+                        {
+                            sb.Append(Regex.Escape(c.ToString()));
+                        }
+                        else
+                        {
+                            sb.Append(pattern.Substring(i, close - i + 1));
+                            i = close;
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(Regex.Escape(c.ToString()));
+                    }
+                }
+
+                if (directoryOnly) sb.Append("(/.*)?$");
+                else sb.Append('$');
+
+                return new Regex(sb.ToString(), RegexOptions.CultureInvariant);
+            }
+
+            public bool IsIgnored(string posixPath, bool isDirectory)
+            {
+                if (string.IsNullOrEmpty(posixPath))
+                    return false;
+
+                var ignored = false;
+                foreach (var rule in _rules)
+                {
+                    if (rule.Regex.IsMatch(posixPath))
+                        ignored = !rule.Negated;
+                }
+                return ignored;
+            }
         }
     }
 }

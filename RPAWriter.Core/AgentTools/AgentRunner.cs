@@ -164,7 +164,9 @@ namespace RPAWriter.Core.AgentTools
                     foreach (var call in nativeCalls)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                        var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                        if (finalText != null)
+                            return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
                     }
                     continue;
                 }
@@ -189,7 +191,9 @@ namespace RPAWriter.Core.AgentTools
                 foreach (var call in action.ToolCalls)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                    var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                    if (finalText != null)
+                        return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
                 }
             }
 
@@ -293,7 +297,7 @@ namespace RPAWriter.Core.AgentTools
         }
 
         /// <summary>Executes one native tool call and appends the tool result to the transcript.</summary>
-        private async Task ExecuteNativeToolCallAsync(
+        private async Task<string> ExecuteNativeToolCallAsync(
             List<ChatMessageData> messages,
             NativeToolCall call,
             AgentMode mode,
@@ -309,7 +313,7 @@ namespace RPAWriter.Core.AgentTools
                     Content = "Unknown tool: \"" + call.Name + "\". Use one of the tools listed in the system prompt.",
                     ToolCallId = call.Id ?? ""
                 });
-                return;
+                return null;
             }
 
             if (tool.Mutates && mode != AgentMode.Act)
@@ -322,7 +326,7 @@ namespace RPAWriter.Core.AgentTools
                 };
                 ToolExecuted?.Invoke(this, blocked);
                 messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
-                return;
+                return null;
             }
 
             if ((_allowedPermissions & tool.Permission) == 0)
@@ -335,7 +339,7 @@ namespace RPAWriter.Core.AgentTools
                 };
                 ToolExecuted?.Invoke(this, blocked);
                 messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
-                return;
+                return null;
             }
 
             var args = call.Arguments ?? new JObject();
@@ -378,10 +382,11 @@ namespace RPAWriter.Core.AgentTools
                 Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated,
                 ToolCallId = call.Id ?? ""
             });
+            return tool.CompletesRun ? resultText : null;
         }
 
         /// <summary>Executes one JSON-protocol tool call and appends the tool result to the transcript.</summary>
-        private async Task ExecuteJsonToolCallAsync(
+        private async Task<string> ExecuteJsonToolCallAsync(
             List<ChatMessageData> messages,
             AgentToolCallSpec call,
             AgentMode mode,
@@ -396,7 +401,7 @@ namespace RPAWriter.Core.AgentTools
                     Role = "user",
                     Content = "Unknown tool: \"" + call.ToolName + "\". Use one of the tools listed in the system prompt."
                 });
-                return;
+                return null;
             }
 
             if (tool.Mutates && mode != AgentMode.Act)
@@ -409,7 +414,7 @@ namespace RPAWriter.Core.AgentTools
                 };
                 ToolExecuted?.Invoke(this, blocked);
                 messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
-                return;
+                return null;
             }
 
             if ((_allowedPermissions & tool.Permission) == 0)
@@ -422,7 +427,7 @@ namespace RPAWriter.Core.AgentTools
                 };
                 ToolExecuted?.Invoke(this, blocked);
                 messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
-                return;
+                return null;
             }
 
             string resultText;
@@ -464,6 +469,7 @@ namespace RPAWriter.Core.AgentTools
                 Role = toolRole,
                 Content = "Tool \"" + tool.Name + "\" returned:\n" + truncated
             });
+            return tool.CompletesRun ? resultText : null;
         }
 
         /// <summary>Manually condenses a transcript (e.g. "Compact now" in the UI).</summary>

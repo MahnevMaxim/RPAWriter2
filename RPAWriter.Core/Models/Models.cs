@@ -80,7 +80,9 @@ namespace RPAWriter.Core.Models
         /// <summary>A Plan/Act mode switch notice.</summary>
         ModeSwitch,
         /// <summary>A diff edit produced by apply_fix (reserved for a future renderer).</summary>
-        DiffEdit
+        DiffEdit,
+        /// <summary>An interactive question asked by the agent, with answer options.</summary>
+        Question
     }
 
     /// <summary>How knowledge-base formation should treat a previous run.</summary>

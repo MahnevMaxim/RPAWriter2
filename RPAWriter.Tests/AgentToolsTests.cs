@@ -108,7 +108,7 @@ namespace RPAWriter.Tests
             var content =
                 "Agent [Plan]: <｜DSML｜ calls>\n" +
                 "<｜DSML｜ invoke name=\"tool_call\">\n" +
-                "<｜DSML｜ parameter name=\"tool\" string=\"true\">list_directory</｜DSML｜ parameter>\n" +
+                "<｜DSML｜ parameter name=\"tool\" string=\"true\">list_files</｜DSML｜ parameter>\n" +
                 "<｜DSML｜ parameter name=\"arguments\" string=\"false\">{\"path\": \".\", \"recursive\": true}</｜DSML｜ parameter>\n" +
                 "</｜DSML｜ invoke>\n" +
                 "<｜DSML｜ invoke name=\"tool_call\">\n" +
@@ -121,7 +121,7 @@ namespace RPAWriter.Tests
 
             Assert.That(result.IsFinal, Is.False);
             Assert.That(result.ToolCalls.Count, Is.EqualTo(2));
-            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("list_directory"));
+            Assert.That(result.ToolCalls[0].ToolName, Is.EqualTo("list_files"));
             Assert.That(result.ToolCalls[0].Arguments.Value<string>("path"), Is.EqualTo("."));
             Assert.That(result.ToolCalls[0].Arguments.Value<bool>("recursive"), Is.True);
             Assert.That(result.ToolCalls[1].ToolName, Is.EqualTo("git_status"));
@@ -408,6 +408,27 @@ namespace RPAWriter.Tests
 
             Assert.That(executed, Is.False);
             Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_CompletesRunTool_ReturnsItsResultAsFinal()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("submit_and_exit", "submit", "{}", mutates: false,
+                (a, c) => Task.FromResult("The summary result"),
+                completesRun: true));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("{\"action\":\"tool_call\",\"tool\":\"submit_and_exit\",\"arguments\":{\"summary\":\"The summary result\",\"verified\":true}}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("The summary result"));
+            Assert.That(responses.Count, Is.Zero, "the run should stop after a completesRun tool without another model call");
         }
 
         [Test]
