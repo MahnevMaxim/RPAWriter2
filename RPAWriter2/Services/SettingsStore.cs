@@ -65,6 +65,9 @@ namespace RPAWriter2.Services
         /// <summary>How the agent calls tools: "Native" (function calling) or "JsonChat" (JSON over chat).</summary>
         public string ToolCallingMode { get; set; } = "JsonChat";
 
+        /// <summary>How the agent uses the project memory bank: "Disabled", "Tool" or "Convention".</summary>
+        public string MemoryBankMode { get; set; } = "Disabled";
+
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
 
@@ -83,6 +86,15 @@ namespace RPAWriter2.Services
 
         /// <summary>Allow MCP-provided tools.</summary>
         public bool AllowMcp { get; set; } = false;
+
+        /// <summary>Allow the agent to spawn sub-agents (spawn_agent tool).</summary>
+        public bool AllowSubagents { get; set; } = false;
+
+        /// <summary>Maximum agent-loop iterations for a single sub-agent.</summary>
+        public int SubagentMaxIterations { get; set; } = 4;
+
+        /// <summary>Maximum nesting depth of sub-agents (sub-agent spawning sub-agents).</summary>
+        public int SubagentMaxDepth { get; set; } = 2;
 
         /// <summary>How to address the user (e.g. a first name). Used only when <see cref="AddressByName"/> is true.</summary>
         public string UserName { get; set; } = "";
@@ -163,10 +175,21 @@ namespace RPAWriter2.Services
                 settings.ToolResultMaxChars = 12000;
             if (settings.MaxIterations <= 0)
                 settings.MaxIterations = 8;
+            if (settings.SubagentMaxIterations <= 0)
+                settings.SubagentMaxIterations = 4;
+            if (settings.SubagentMaxDepth < 1)
+                settings.SubagentMaxDepth = 2;
+            if (settings.SubagentMaxDepth > 5)
+                settings.SubagentMaxDepth = 5;
             if (string.IsNullOrWhiteSpace(settings.ToolCallingMode) ||
                 (!string.Equals(settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) &&
                  !string.Equals(settings.ToolCallingMode, "JsonChat", StringComparison.OrdinalIgnoreCase)))
                 settings.ToolCallingMode = "JsonChat";
+            if (string.IsNullOrWhiteSpace(settings.MemoryBankMode) ||
+                (!string.Equals(settings.MemoryBankMode, "Disabled", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.MemoryBankMode, "Tool", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.MemoryBankMode, "Convention", StringComparison.OrdinalIgnoreCase)))
+                settings.MemoryBankMode = "Disabled";
             if (settings.RobotNameHistory == null)
                 settings.RobotNameHistory = new List<string>();
         }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System;
 using System.ComponentModel;
 using System.Globalization;
@@ -89,14 +90,17 @@ namespace RPAWriter2
         private const string CommitMessageSystemPrompt =
             "You are an expert at writing concise git commit messages. " +
             "Summarize the provided changes into a single-line commit message in the format \"type(scope): summary\". " +
+            "Write the summary in Russian. " +
             "Respond with only the commit message text — no markdown, no quotes, no extra explanation.";
         private const string CommitRobotSummarySystemPrompt =
             "You are an expert at writing concise git commit messages. " +
             "Summarize the robot changes below into a single concise line in the imperative mood. " +
+            "Write the summary in Russian. " +
             "Respond with only the summary text — no RPA-...: prefix, no markdown, no quotes, no extra explanation.";
         private const string CommitOtherSummarySystemPrompt =
             "You are an expert at writing concise git commit messages. " +
             "Summarize the changes below into a single concise line in the imperative mood. " +
+            "Write the summary in Russian. " +
             "Respond with only the summary text — no markdown, no quotes, no extra explanation.";
 
         private const int CommitDiffMaxChars = 8000;
@@ -169,6 +173,7 @@ namespace RPAWriter2
             AutoCompactCheckBox.IsChecked = _settings.AutoCompact;
             UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
             ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            MemoryBankModeCombo.SelectedIndex = MemoryBankModeToIndex(_settings.MemoryBankMode);
             LogFilePathBox.Text = _settings.LogFilePath ?? "";
             ChatLogFilePathBox.Text = _settings.ChatLogFilePath ?? "";
             LogProvidersPathBox.Text = _settings.LogProvidersPath ?? "";
@@ -182,6 +187,9 @@ namespace RPAWriter2
             UserNameBox.Text = _settings.UserName ?? "";
             SkillsPathBox.Text = _settings.SkillsPath ?? "";
             AddressByNameCheckBox.IsChecked = _settings.AddressByName;
+            AllowSubagentsCheckBox.IsChecked = _settings.AllowSubagents;
+            SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
+            SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
             LoadRobotNameHistory();
         }
 
@@ -1078,7 +1086,7 @@ namespace RPAWriter2
             SetKbStatus("Stopping…");
         }
 
-        private async void OnBuildRelease(object sender, RoutedEventArgs e)
+        private async void OnDeploy(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -1088,8 +1096,8 @@ namespace RPAWriter2
                     ShowNotice("No open solution. Open a solution and retry.");
                     return;
                 }
-                await _buildFeedback.BuildReleaseAsync();
-                LogService.Info("Release build started.");
+                await _buildFeedback.BuildAsync("Publish");
+                LogService.Info("Publish build started.");
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -1922,35 +1930,19 @@ namespace RPAWriter2
             return true;
         }
 
-        private static List<string> ExtractRobotNames(IEnumerable<string> changedPaths)
+        private static string BuildProjectChangeMaterial(string projectName, string diff, IReadOnlyList<string> files)
         {
-            var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var raw in changedPaths)
+            var sb = new StringBuilder();
+            sb.Append("Project: ").AppendLine(projectName);
+            if (!string.IsNullOrWhiteSpace(diff))
             {
-                var path = (raw ?? "").Trim();
-                if (path.Length == 0)
-                    continue;
-                var arrow = path.IndexOf(" -> ", StringComparison.Ordinal);
-                if (arrow >= 0)
-                    path = path.Substring(arrow + 4).Trim();
-                if (path.Length == 0)
-                    continue;
-                var slash = path.IndexOf("/", StringComparison.Ordinal);
-                var first = slash < 0 ? path : path.Substring(0, slash);
-                if (first.StartsWith("RPA-", StringComparison.OrdinalIgnoreCase) && first.Length > 4)
-                    names.Add(first);
+                sb.AppendLine("Diff:");
+                sb.AppendLine(diff.TrimEnd());
             }
-            return names.ToList();
-        }
-
-        private static bool IsUnderRobot(string path, string robotName)
-        {
-            var cleaned = (path ?? "").Trim();
-            var arrow = cleaned.IndexOf(" -> ", StringComparison.Ordinal);
-            if (arrow >= 0)
-                cleaned = cleaned.Substring(arrow + 4).Trim();
-            return cleaned.StartsWith(robotName + "/", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(cleaned, robotName, StringComparison.OrdinalIgnoreCase);
+            sb.AppendLine("Changed files:");
+            foreach (var f in files)
+                sb.AppendLine(f);
+            return sb.ToString();
         }
 
         private static string BuildRobotChangeMaterial(string robotName, string diff, IReadOnlyList<string> files)
@@ -1971,7 +1963,7 @@ namespace RPAWriter2
         private static string BuildOtherChangeMaterial(IReadOnlyList<string> files)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Changed files (outside robot folders):");
+            sb.AppendLine("Changed files (outside robot solutions and projects):");
             foreach (var f in files)
                 sb.AppendLine(f);
             return sb.ToString();
@@ -1997,30 +1989,41 @@ namespace RPAWriter2
             var changedFiles = await _git.GetChangedFilesAsync(repoRoot);
             if (changedFiles.Count == 0)
                 return null;
-            var robotNames = ExtractRobotNames(changedFiles);
-            if (robotNames.Count == 0)
+
+            var plan = CommitMessageBuilder.GroupChangedFiles(repoRoot, changedFiles);
+            if (plan.Robots.Count == 0 && plan.Projects.Count == 0 && plan.OtherFiles.Count == 0)
+                return null;
+
+            // No robot or project at all — keep the existing generic fallback.
+            if (plan.Robots.Count == 0 && plan.Projects.Count == 0)
             {
                 var diff = await _git.GetDiffForMessageAsync(repoRoot);
                 if (string.IsNullOrWhiteSpace(diff))
                     return null;
                 return await SummarizeChangesAsync(diff, CommitMessageSystemPrompt);
             }
+
             var parts = new List<string>();
-            foreach (var robot in robotNames)
+            foreach (var robot in plan.Robots)
             {
-                var files = changedFiles.Where(f => IsUnderRobot(f, robot)).ToList();
-                var diff = await _git.GetDiffForPathAsync(repoRoot, robot);
-                var material = BuildRobotChangeMaterial(robot, diff, files);
+                var diff = await _git.GetDiffForPathAsync(repoRoot, robot.RelativePath);
+                var material = BuildRobotChangeMaterial(robot.Name, diff, robot.Files);
                 var summary = await SummarizeChangesAsync(material, CommitRobotSummarySystemPrompt);
-                parts.Add(robot + ": " + summary);
+                parts.Add(CommitMessageBuilder.FormatRobotLine(robot.Name, summary));
             }
-            var otherFiles = changedFiles.Where(f => robotNames.All(r => !IsUnderRobot(f, r))).ToList();
-            if (otherFiles.Count > 0)
+            foreach (var project in plan.Projects)
             {
-                var summary = await SummarizeChangesAsync(BuildOtherChangeMaterial(otherFiles), CommitOtherSummarySystemPrompt);
-                parts.Add("chore: " + summary);
+                var diff = await _git.GetDiffForPathAsync(repoRoot, project.RelativePath);
+                var material = BuildProjectChangeMaterial(project.Name, diff, project.Files);
+                var summary = await SummarizeChangesAsync(material, CommitOtherSummarySystemPrompt);
+                parts.Add(CommitMessageBuilder.FormatProjectLine(project.Name, summary));
             }
-            return string.Join(Environment.NewLine, parts);
+            if (plan.OtherFiles.Count > 0)
+            {
+                var summary = await SummarizeChangesAsync(BuildOtherChangeMaterial(plan.OtherFiles), CommitOtherSummarySystemPrompt);
+                parts.Add(CommitMessageBuilder.FormatChoreLine(summary));
+            }
+            return CommitMessageBuilder.JoinLines(parts);
         }
 
         private void OnCommitClose(object sender, RoutedEventArgs e)
@@ -2379,9 +2382,83 @@ namespace RPAWriter2
             };
         }
 
+        private ContextBudget BuildSubAgentBudget()
+        {
+            var budget = BuildContextBudget();
+            budget.MaxIterations = _settings.SubagentMaxIterations > 0 ? _settings.SubagentMaxIterations : 4;
+            budget.AutoCompact = false;
+            return budget;
+        }
+
+        /// <summary>
+        /// Runs a nested agent loop for a sub-agent (spawn_agent). Appends a live
+        /// <see cref="ChatMessageKind.Subagent"/> status card and updates it in place
+        /// as the sub-agent makes tool calls, then returns the sub-agent's final report.
+        /// </summary>
+        private async Task<string> RunSubAgentAsync(string systemPrompt, string task, CancellationToken ct)
+        {
+            var registry = _toolRegistry;
+            if (registry == null)
+                return "spawn_agent unavailable: the tool registry is not initialized.";
+
+            var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
+                ? ToolCallingMode.Native
+                : ToolCallingMode.JsonChat;
+            var allowedPermissions = BuildAllowedPermissions();
+            var budget = BuildSubAgentBudget();
+
+            var item = new SubagentStatusItem { Prompt = task };
+            AppendChatMessage(new ChatMessage
+            {
+                Kind = ChatMessageKind.Subagent,
+                Payload = new SubagentPayload { Item = item },
+                Mode = _mode.ToString()
+            });
+            Dispatcher.BeginInvoke(new Action(() => item.Status = "running"));
+
+            var runner = new AgentRunner(
+                _ai,
+                registry,
+                m => AgentPromptBuilder.Build(m, registry, toolCallingMode, allowedPermissions),
+                budget,
+                toolCallingMode: toolCallingMode,
+                allowedPermissions: allowedPermissions);
+
+            runner.ToolExecuted += (s, e) =>
+            {
+                var toolName = e.ToolName ?? "";
+                var display = e.DisplayResult;
+                var latest = string.IsNullOrWhiteSpace(display) ? toolName : toolName + ": " + display;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    item.ToolCalls += 1;
+                    item.LatestToolCall = latest;
+                }));
+            };
+
+            try
+            {
+                var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), task, _mode, budget, ct);
+                var finalText = result?.FinalText ?? "";
+                Dispatcher.BeginInvoke(new Action(() => { item.Status = "completed"; item.Result = finalText; }));
+                return finalText;
+            }
+            catch (OperationCanceledException)
+            {
+                Dispatcher.BeginInvoke(new Action(() => { item.Status = "cancelled"; }));
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() => { item.Status = "failed"; item.Error = ex.Message; }));
+                return "spawn_agent sub-agent failed: " + ex.Message;
+            }
+        }
+
         private void RebuildAgentTools()
         {
-            var registry = BuildToolRegistry();
+            var memoryBankMode = ParseMemoryBankMode();
+            var registry = BuildToolRegistry(memoryBankMode);
             _toolRegistry = registry;
             if (_agentRunner != null)
             {
@@ -2393,10 +2470,11 @@ namespace RPAWriter2
                 ? ToolCallingMode.Native
                 : ToolCallingMode.JsonChat;
             var allowedPermissions = BuildAllowedPermissions();
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false, memoryBankMode), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
+            UpdateMemoryBankUi();
         }
 
         private void OnAgentRetryOccurred(object? sender, AgentRetryArgs e)
@@ -2452,8 +2530,20 @@ namespace RPAWriter2
 
         private void OnUpdateMemory(object sender, RoutedEventArgs e)
         {
-            InputBox.Text = "update memory bank: read the current memory bank with read_memory, then update the relevant files with update_memory.";
+            InputBox.Text = ParseMemoryBankMode() == MemoryBankMode.Convention
+                ? "update memory bank: read memory-bank/*.md files with read_files, then update the relevant files with editor."
+                : "update memory bank: read the current memory bank with read_memory, then update the relevant files with update_memory.";
             InputBox.Focus();
+        }
+
+        private void UpdateMemoryBankUi()
+        {
+            if (UpdateMemoryButton == null) return;
+            var mode = ParseMemoryBankMode();
+            UpdateMemoryButton.Visibility = mode == MemoryBankMode.Disabled ? Visibility.Collapsed : Visibility.Visible;
+            UpdateMemoryButton.ToolTip = mode == MemoryBankMode.Convention
+                ? "Ask the agent to update the project memory bank (convention)"
+                : "Ask the agent to update the project memory bank";
         }
 
         private void OnPermissionsClick(object sender, RoutedEventArgs e)
@@ -2490,10 +2580,33 @@ namespace RPAWriter2
             if (_settings.AllowExecuteCommand) allowed |= AgentPermissions.ExecuteCommand;
             if (_settings.AllowWebFetch) allowed |= AgentPermissions.WebFetch;
             if (_settings.AllowMcp) allowed |= AgentPermissions.Mcp;
+            if (_settings.AllowSubagents) allowed |= AgentPermissions.Subagents;
             return allowed;
         }
 
-        private AgentToolRegistry BuildToolRegistry()
+        private static int MemoryBankModeToIndex(string value)
+        {
+            if (string.Equals(value, "Tool", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (string.Equals(value, "Convention", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 0; // Disabled
+        }
+
+        private static string MemoryBankIndexToMode(int index)
+        {
+            if (index == 2) return "Convention";
+            if (index == 1) return "Tool";
+            return "Disabled";
+        }
+
+        private MemoryBankMode ParseMemoryBankMode()
+        {
+            var value = _settings?.MemoryBankMode;
+            if (string.Equals(value, "Tool", StringComparison.OrdinalIgnoreCase)) return MemoryBankMode.Tool;
+            if (string.Equals(value, "Convention", StringComparison.OrdinalIgnoreCase)) return MemoryBankMode.Convention;
+            return MemoryBankMode.Disabled;
+        }
+
+        private AgentToolRegistry BuildToolRegistry(MemoryBankMode memoryBankMode)
         {
             var factory = new AgentToolFactory(
                 _ai,
@@ -2506,7 +2619,11 @@ namespace RPAWriter2
                 _buildFeedback,
                 _robotTemplate,
                 AskQuestionAsync,
-                () => (SkillsPathBox?.Text ?? "").Trim());
+                () => (SkillsPathBox?.Text ?? "").Trim(),
+                memoryBankMode,
+                RunSubAgentAsync,
+                _settings.AllowSubagents,
+                _settings.SubagentMaxDepth);
             return factory.CreateRegistry();
         }
 
@@ -2521,6 +2638,8 @@ namespace RPAWriter2
             LogService.ChatInfo("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
             if (string.Equals(e.ToolName, "ask_question", StringComparison.OrdinalIgnoreCase))
                 return; // The interactive question message already shows the Q&A.
+            if (string.Equals(e.ToolName, "spawn_agent", StringComparison.OrdinalIgnoreCase))
+                return; // The sub-agent status card already shows progress and the final report.
             AppendToolCall(e.ToolName, detail, e.Blocked);
         }
 
@@ -3007,6 +3126,8 @@ namespace RPAWriter2
             }
         }
 
+        private const double SettingsToastMaxHeight = 160.0;
+
         private void ShowSettingsToast(string text)
         {
             if (!Dispatcher.CheckAccess())
@@ -3018,6 +3139,7 @@ namespace RPAWriter2
             SettingsToast.Visibility = Visibility.Visible;
             _settingsToastTimer.Stop();
             _settingsToastTimer.Start();
+            SlideSettingsToast(0, SettingsToastMaxHeight);
         }
 
         private void HideSettingsToast()
@@ -3028,7 +3150,8 @@ namespace RPAWriter2
                 return;
             }
             _settingsToastTimer.Stop();
-            SettingsToast.Visibility = Visibility.Collapsed;
+            SlideSettingsToast(SettingsToast.ActualHeight, 0,
+                () => SettingsToast.Visibility = Visibility.Collapsed);
         }
 
         private void OnSettingsToastTick(object? sender, EventArgs e)
@@ -3039,6 +3162,18 @@ namespace RPAWriter2
         private void OnSettingsToastClose(object sender, RoutedEventArgs e)
         {
             HideSettingsToast();
+        }
+
+        private void SlideSettingsToast(double from, double to, Action? onCompleted = null)
+        {
+            SettingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+            var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(180)))
+            {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            if (onCompleted != null)
+                animation.Completed += (_, __) => onCompleted();
+            SettingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
         }
 
         private void OnSaveSettings(object sender, RoutedEventArgs e)
@@ -3061,6 +3196,7 @@ namespace RPAWriter2
             _settings.AutoCompact = AutoCompactCheckBox?.IsChecked ?? true;
             _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
             _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
+            _settings.MemoryBankMode = MemoryBankIndexToMode(MemoryBankModeCombo?.SelectedIndex ?? 0);
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
             _settings.ChatLogFilePath = ChatLogFilePathBox.Text.Trim();
             _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
@@ -3075,6 +3211,9 @@ namespace RPAWriter2
             _settings.OutputPricePerMillion = ParsePrice(OutputPriceBox?.Text, 1.10);
             _settings.UserName = UserNameBox.Text.Trim();
             _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
+            _settings.AllowSubagents = AllowSubagentsCheckBox?.IsChecked ?? false;
+            _settings.SubagentMaxIterations = ParsePositiveInt(SubagentMaxIterationsBox?.Text, 4);
+            _settings.SubagentMaxDepth = ParsePositiveInt(SubagentMaxDepthBox?.Text, 2);
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();

@@ -13,7 +13,7 @@ using RPAWriter.Core.Models;
 namespace RPAWriter2.Services
 {
     /// <summary>
-    /// Build feedback: one-click Release build, compiler diagnostics from the
+    /// Build feedback: one-click build with a given solution configuration, compiler diagnostics from the
     /// Visual Studio Error List, and text from the Output window build pane.
     /// </summary>
     public class BuildFeedbackService : IBuildFeedbackService
@@ -22,7 +22,7 @@ namespace RPAWriter2.Services
 
         private static readonly string[] OutputPaneNames = { "Build", "Debug", "General" };
 
-        public async Task BuildReleaseAsync(CancellationToken cancellationToken = default)
+        public async Task BuildAsync(string configuration, CancellationToken cancellationToken = default)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
@@ -30,14 +30,14 @@ namespace RPAWriter2.Services
                 throw new InvalidOperationException("No open solution.");
 
             var build = dte.Solution.SolutionBuild;
-            build?.SolutionConfigurations?.Item("Release")?.Activate();
+            build?.SolutionConfigurations?.Item(configuration)?.Activate();
             try
             {
                 build?.Build(true);
             }
             finally
             {
-                // Always switch the solution back to Debug after a Release build.
+                // Always switch the solution back to Debug after a build.
                 build?.SolutionConfigurations?.Item("Debug")?.Activate();
             }
         }

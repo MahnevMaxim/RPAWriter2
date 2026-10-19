@@ -562,7 +562,7 @@
                         <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
                         <Button Content="commit" Click="OnCommit" Margin="0,0,8,4"/>
-                        <Button Content="deploy" Click="OnBuildRelease" Margin="0,0,8,4"/>
+                        <Button Content="deploy" Click="OnDeploy" Margin="0,0,8,4"/>
                         <Button Content="generate robot" Click="OnGenerateRobot" Margin="0,0,8,4"/>
                         <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,4"/>
                         <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
@@ -746,6 +746,10 @@
                                                         <Setter Property="BorderBrush" Value="#4A6B9A"/>
                                                         <Setter Property="Background" Value="#1E2733"/>
                                                     </DataTrigger>
+                                                    <DataTrigger Binding="{Binding KindName}" Value="Subagent">
+                                                        <Setter Property="BorderBrush" Value="#4A6B9A"/>
+                                                        <Setter Property="Background" Value="#1E2733"/>
+                                                    </DataTrigger>
                                                     <MultiDataTrigger>
                                                         <MultiDataTrigger.Conditions>
                                                             <Condition Binding="{Binding IsLastMessage}" Value="True"/>
@@ -806,6 +810,19 @@
                                                                Foreground="{StaticResource Dark.Accent}" TextWrapping="Wrap" Margin="0,6,0,0"
                                                                Visibility="{Binding Payload.IsAnswered, Converter={StaticResource BoolToVis}}"/>
                                                 </StackPanel>
+                                                <StackPanel x:Name="SubagentPanel" Visibility="Collapsed">
+                                                    <TextBlock Text="{Binding Payload.Item.Prompt}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
+                                                    <TextBlock Text="{Binding Payload.Item.StatusText}" Foreground="#C8C8C8" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding Payload.Item.LatestToolCall}" Foreground="#9A9A9A" FontFamily="Consolas" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Payload.Item.LatestToolCall}"/>
+                                                    <Expander Header="Show output" Margin="0,8,0,0" Foreground="{StaticResource Dark.Text}" IsExpanded="False"
+                                                              Visibility="{Binding Payload.Item.HasOutput, Converter={StaticResource BoolToVis}}">
+                                                        <TextBox Text="{Binding Payload.Item.Result, Mode=OneWay}" TextWrapping="Wrap"
+                                                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"
+                                                                 Foreground="{StaticResource Dark.Text}" MaxHeight="400" VerticalScrollBarVisibility="Auto"/>
+                                                    </Expander>
+                                                    <TextBlock Text="{Binding Payload.Item.Error}" Foreground="{StaticResource Dark.ErrorText}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                                               Visibility="{Binding Payload.Item.HasError, Converter={StaticResource BoolToVis}}"/>
+                                                </StackPanel>
                                                 <ItemsControl x:Name="BlocksPanel" ItemsSource="{Binding Blocks, Mode=OneWay}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
@@ -825,6 +842,10 @@
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding KindName}" Value="Question">
                                             <Setter TargetName="QuestionPanel" Property="Visibility" Value="Visible"/>
+                                            <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding KindName}" Value="Subagent">
+                                            <Setter TargetName="SubagentPanel" Property="Visibility" Value="Visible"/>
                                             <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
@@ -1161,13 +1182,41 @@
         </TabItem>
 
         <TabItem x:Name="SettingsTab" Header="Settings">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border x:Name="SettingsToast" Grid.Row="0"
+                        Background="{StaticResource Commit.SuccessBackground}"
+                        CornerRadius="2" Padding="10,8" Margin="8,8,8,4"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="SettingsToastText" Grid.Column="0" Text=""
+                                   Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        <Button x:Name="SettingsToastCloseButton" Grid.Column="1"
+                                Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
+                                ToolTip="Close" Click="OnSettingsToastClose">
+                            <TextBlock Text="✕" FontSize="11" Foreground="White"/>
+                        </Button>
+                    </Grid>
+                </Border>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid Margin="8" VerticalAlignment="Top">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -1253,80 +1302,78 @@
                     <ComboBoxItem Content="Native function calling"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="16" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <DockPanel Grid.Row="16" Grid.Column="1" Margin="0,0,0,4">
+                <TextBlock Grid.Row="16" Grid.Column="0" Text="Memory bank" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="16" Grid.Column="1" x:Name="MemoryBankModeCombo" SelectedIndex="0"
+                          VerticalAlignment="Center" Margin="0,0,0,4">
+                    <ComboBoxItem Content="Disabled"/>
+                    <ComboBoxItem Content="Tool (read_memory / update_memory)"/>
+                    <ComboBoxItem Content="Convention (read/update with file tools)"/>
+                </ComboBox>
+
+                <TextBlock Grid.Row="17" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="17" Grid.Column="1" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Click="OnOpenLog" Margin="8,0,0,0"/>
                     <TextBox x:Name="LogFilePathBox"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="17" Grid.Column="0" Text="Chat log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <DockPanel Grid.Row="17" Grid.Column="1" Margin="0,0,0,4">
+                <TextBlock Grid.Row="18" Grid.Column="0" Text="Chat log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="18" Grid.Column="1" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" x:Name="OpenChatLogButton" Content="Open log" Click="OnOpenChatLog" Margin="8,0,0,0"/>
                     <TextBox x:Name="ChatLogFilePathBox"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="18" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="18" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="19" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="19" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="19" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="19" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="20" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="20" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="20" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="20" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="21" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="21" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="21" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="21" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="22" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="22" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="22" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="22" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="23" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="23" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="23" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="23" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="24" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="24" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="24" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="24" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="25" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="25" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="25" Grid.Column="0" Text="Packages directory (NuGet source)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="25" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="26" Grid.Column="0" Text="Packages directory (NuGet source)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="26" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="26" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,8,8,4"/>
-                <TextBox Grid.Row="26" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4"/>
+                <TextBlock Grid.Row="27" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,8,8,4"/>
+                <TextBox Grid.Row="27" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4"/>
 
-                <TextBlock Grid.Row="27" Grid.Column="0" Text="User name" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="27" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="28" Grid.Column="0" Text="User name" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="28" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="28" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="28" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="29" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="29" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4"/>
 
-                <CheckBox Grid.Row="29" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox"
+                <CheckBox Grid.Row="30" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox"
                           Content="Address me by name" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <StackPanel Grid.Row="30" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <CheckBox Grid.Row="31" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AllowSubagentsCheckBox"
+                          Content="Enable sub-agents (spawn_agent)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                <TextBlock Grid.Row="32" Grid.Column="0" Text="Sub-agent max iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="32" Grid.Column="1" x:Name="SubagentMaxIterationsBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="33" Grid.Column="0" Text="Sub-agent max depth" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="33" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
+
+                <StackPanel Grid.Row="34" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>
-
-                <Border x:Name="SettingsToast" Grid.Row="31" Grid.Column="0" Grid.ColumnSpan="2"
-                        Background="{StaticResource Commit.SuccessBackground}"
-                        CornerRadius="2" Padding="10,8" Margin="0,8,0,0"
-                        Visibility="Collapsed">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="SettingsToastText" Grid.Column="0" Text=""
-                                   Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                        <Button x:Name="SettingsToastCloseButton" Grid.Column="1"
-                                Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
-                                ToolTip="Close" Click="OnSettingsToastClose">
-                            <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                        </Button>
-                    </Grid>
-                </Border>
                 </Grid>
             </ScrollViewer>
+            </Grid>
         </TabItem>
 
         <TabItem x:Name="PackagesTab" Header="Packages">

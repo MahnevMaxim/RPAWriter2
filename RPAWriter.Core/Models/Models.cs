@@ -44,8 +44,10 @@ namespace RPAWriter.Core.Models
         WebFetch = 8,
         /// <summary>Call MCP-provided tools.</summary>
         Mcp = 16,
+        /// <summary>Spawn sub-agents / delegate tasks (spawn_agent tool).</summary>
+        Subagents = 32,
         /// <summary>All permissions enabled.</summary>
-        All = ReadFiles | EditFiles | ExecuteCommand | WebFetch | Mcp
+        All = ReadFiles | EditFiles | ExecuteCommand | WebFetch | Mcp | Subagents
     }
 
     /// <summary>How the agent talks to the model about tools.</summary>
@@ -55,6 +57,17 @@ namespace RPAWriter.Core.Models
         JsonChat,
         /// <summary>Native OpenAI-style tools / tool_calls.</summary>
         Native
+    }
+
+    /// <summary>How the agent uses the project memory bank.</summary>
+    public enum MemoryBankMode
+    {
+        /// <summary>Memory bank is not used at all.</summary>
+        Disabled,
+        /// <summary>Memory bank is exposed as dedicated tools (read_memory / update_memory).</summary>
+        Tool,
+        /// <summary>Memory bank is a convention: read/update the files with regular file tools.</summary>
+        Convention
     }
 
     /// <summary>
@@ -82,7 +95,9 @@ namespace RPAWriter.Core.Models
         /// <summary>A diff edit produced by apply_fix (reserved for a future renderer).</summary>
         DiffEdit,
         /// <summary>An interactive question asked by the agent, with answer options.</summary>
-        Question
+        Question,
+        /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
+        Subagent
     }
 
     /// <summary>How knowledge-base formation should treat a previous run.</summary>

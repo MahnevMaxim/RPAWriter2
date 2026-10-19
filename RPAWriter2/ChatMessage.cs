@@ -177,6 +177,13 @@ namespace RPAWriter2
                     return string.IsNullOrEmpty(q.Answer) ? q.Question : q.Question + " → " + q.Answer;
                 }
 
+                if (Kind == ChatMessageKind.Subagent)
+                {
+                    var s = Payload as SubagentPayload;
+                    var prompt = s?.Item?.Prompt ?? "";
+                    return "⚙ spawn_agent → " + (string.IsNullOrWhiteSpace(prompt) ? "(sub-agent)" : prompt);
+                }
+
                 var t = Text ?? "";
                 return string.IsNullOrEmpty(Label) ? t : Label + t;
             }

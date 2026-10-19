@@ -171,11 +171,11 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
-    /// One-click Release build, plus reading compiler diagnostics and the VS output pane.
+    /// One-click build using a given solution configuration, plus reading compiler diagnostics and the VS output pane.
     /// </summary>
     public interface IBuildFeedbackService
     {
-        Task BuildReleaseAsync(CancellationToken cancellationToken = default);
+        Task BuildAsync(string configuration, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<BuildError>> GetCompilationErrorsAsync(CancellationToken cancellationToken = default);
         Task<string> GetOutputWindowTextAsync(CancellationToken cancellationToken = default);
     }

@@ -37,6 +37,11 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> _askQuestionAsync;
         private readonly Func<string?> _getSkillsPath;
         private readonly ShellCommandService _shell = new ShellCommandService();
+        private readonly MemoryBankMode _memoryBankMode;
+        private readonly Func<string, string, CancellationToken, Task<string>> _spawnSubAgentAsync;
+        private readonly bool _enableSubagents;
+        private readonly int _subagentMaxDepth;
+        private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
             IAiProvider ai,
@@ -49,7 +54,11 @@ namespace RPAWriter2.Services.AgentTools
             IBuildFeedbackService buildFeedback,
             RobotTemplateService robotTemplate,
             Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> askQuestionAsync,
-            Func<string?> getSkillsPath)
+            Func<string?> getSkillsPath,
+            MemoryBankMode memoryBankMode,
+            Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
+            bool enableSubagents,
+            int subagentMaxDepth)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSpec = getSpec ?? throw new ArgumentNullException(nameof(getSpec));
@@ -62,6 +71,10 @@ namespace RPAWriter2.Services.AgentTools
             _robotTemplate = robotTemplate ?? throw new ArgumentNullException(nameof(robotTemplate));
             _askQuestionAsync = askQuestionAsync ?? throw new ArgumentNullException(nameof(askQuestionAsync));
             _getSkillsPath = getSkillsPath ?? throw new ArgumentNullException(nameof(getSkillsPath));
+            _memoryBankMode = memoryBankMode;
+            _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
+            _enableSubagents = enableSubagents;
+            _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
         }
         public AgentToolRegistry CreateRegistry()
         {
@@ -85,8 +98,22 @@ namespace RPAWriter2.Services.AgentTools
             // registry.Register(new AgentTool("open_file", "Open a file in Visual Studio and activate its tab. Use before read_open_document when the file's tab is not open yet. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
             // registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
             registry.Register(new AgentTool("analyze_logs", "Analyze log files at the given paths.", "{\"paths\":[\"string\"]}", false, AnalyzeLogsAsync));
-            registry.Register(new AgentTool("read_memory", "Read the project memory bank (memory-bank/*.md) to restore long-term context.", "{}", false, ReadMemoryAsync));
+            if (_memoryBankMode == MemoryBankMode.Tool)
+            {
+                registry.Register(new AgentTool("read_memory", "Read the project memory bank (memory-bank/*.md) to restore long-term context.", "{}", false, ReadMemoryAsync));
+            }
             registry.Register(new AgentTool("ask_question", "Ask user a question for clarifying or gathering information needed to complete the task. For example, ask the user clarifying questions about a key implementation decision. You should only ask one question. Provide an array of 2-5 options for the user to choose from. Never include an option to toggle to Act mode.", "{\"question\":\"string\",\"options\":[\"string\"]}", mutates: false, AskQuestionAsync));
+            if (_enableSubagents)
+            {
+                registry.Register(new AgentTool(
+                    "spawn_agent",
+                    "Spawn a sub-agent with custom instructions for a specialized task. The sub-agent runs with a fresh context window and the same tools available to you, then returns a final report. Use this to delegate focused, self-contained work (research, analysis, codebase exploration) so your own context stays clean. Provide system_prompt (the sub-agent's role/behavior) and task (what it should do). Waits for the sub-agent to finish and returns its result before your next step.",
+                    "{\"system_prompt\":\"string\",\"task\":\"string\"}",
+                    mutates: false,
+                    SpawnAgentAsync,
+                    SpawnAgentDisplayAsync,
+                    permission: AgentPermissions.Subagents));
+            }
 
             // ---- Mutating tools (Act only) ----
             registry.Register(new AgentTool("generate_robot", "Generate a robot (XAML/C#) from the imported spec and save the artifacts next to the spec.", "{}", mutates: true, GenerateRobotAsync));
@@ -96,7 +123,10 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("convert_uipath", "Convert a UiPath XAML file to Workflow Foundation and write the artifacts.", "{\"path\":\"string\"}", true, ConvertUiPathAsync));
             registry.Register(new AgentTool("kb_import", "Import the knowledge base from the robots directory.", "{\"mode\":\"override|continue\"}", true, KbImportAsync));
             registry.Register(new AgentTool("kb_add", "Add a record to the knowledge base.", "{\"name\":\"string\",\"task\":\"string\",\"xamlFragment\":\"string\",\"csharpCode\":\"string\"}", true, KbAddAsync));
-            registry.Register(new AgentTool("update_memory", "Write a project memory bank file (activeContext.md, progress.md, etc.).", "{\"file\":\"string\",\"content\":\"string\"}", true, UpdateMemoryAsync));
+            if (_memoryBankMode == MemoryBankMode.Tool)
+            {
+                registry.Register(new AgentTool("update_memory", "Write a project memory bank file (activeContext.md, progress.md, etc.).", "{\"file\":\"string\",\"content\":\"string\"}", true, UpdateMemoryAsync));
+            }
 
             // ---- Read-only navigation / inspection tools (permission-gated) ----
             registry.Register(new AgentTool(
@@ -163,6 +193,45 @@ namespace RPAWriter2.Services.AgentTools
             {
                 return "ask_question failed: " + ex.Message;
             }
+        }
+
+        private async Task<string> SpawnAgentAsync(JObject args, CancellationToken ct)
+        {
+            var systemPrompt = (args["system_prompt"]?.Value<string>() ?? string.Empty).Trim();
+            var task = (args["task"]?.Value<string>() ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(systemPrompt))
+                return "Missing or empty \"system_prompt\" argument.";
+            if (string.IsNullOrEmpty(task))
+                return "Missing or empty \"task\" argument.";
+
+            var depth = _subagentDepth.Value;
+            if (depth >= _subagentMaxDepth)
+                return "spawn_agent refused: maximum sub-agent nesting depth reached (" + _subagentMaxDepth + ").";
+
+            _subagentDepth.Value = depth + 1;
+            try
+            {
+                return await _spawnSubAgentAsync(systemPrompt, task, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return "spawn_agent failed: " + ex.Message;
+            }
+            finally
+            {
+                _subagentDepth.Value = depth;
+            }
+        }
+
+        private Task<string> SpawnAgentDisplayAsync(JObject args, CancellationToken ct)
+        {
+            var task = (args["task"]?.Value<string>() ?? string.Empty).Trim();
+            var shortTask = task.Length > 60 ? task.Substring(0, 60) + "…" : task;
+            return Task.FromResult(string.IsNullOrEmpty(shortTask) ? "sub-agent" : shortTask);
         }
 
         private Task<string> ReadSpecAsync(JObject args, CancellationToken ct)
@@ -1420,7 +1489,7 @@ namespace RPAWriter2.Services.AgentTools
 
         private async Task<string> BuildAsync(JObject args, CancellationToken ct)
         {
-            await _buildFeedback.BuildReleaseAsync(ct).ConfigureAwait(false);
+            await _buildFeedback.BuildAsync("Release", ct).ConfigureAwait(false);
             return "Release build started.";
         }
 

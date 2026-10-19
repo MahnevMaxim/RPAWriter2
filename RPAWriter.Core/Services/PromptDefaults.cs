@@ -115,5 +115,12 @@ namespace RPAWriter.Core.Services
             "Always be polite, courteous and respectful in your replies.\n\n" +
             "Reading source files: use read_files to read one or more files. It reads from the open Visual Studio editor tab (including unsaved changes and crash-recovery buffers) when the file is open, and from disk otherwise. Pass several files in one call and use start_line/end_line to page through long files.\n\n" +
             "Tools are provided as native function definitions. Invoke them directly as function calls - do not write any text-based tool-call format (no JSON action objects, no XML or DSML tags). Workflow: read before you change, make the change (edit_open_document for an open editor tab, or apply_fix / write_file), then verify with build and read_errors before answering the user in Russian. You may call several independent tools in one turn.";
+
+        public const string MemoryBankConventionInstructions =
+            "# Memory Bank convention\n\n" +
+            "This project keeps long-term context in a Memory Bank under the memory-bank directory. Follow these rules:\n" +
+            "1. At the start of each task, read ALL memory-bank/*.md files (projectbrief.md, productContext.md, activeContext.md, systemPatterns.md, techContext.md, progress.md) with read_files before doing anything else.\n" +
+            "2. After significant changes, update activeContext.md and progress.md with the editor tool to keep them current.\n" +
+            "3. When resuming after a context reset, re-read the memory bank first.";
     }
 }

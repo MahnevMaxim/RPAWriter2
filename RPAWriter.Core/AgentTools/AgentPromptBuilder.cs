@@ -59,12 +59,24 @@ namespace RPAWriter.Core.AgentTools
         /// </summary>
         public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, string userName, bool addressByName)
         {
+            return Build(mode, registry, toolCallingMode, allowed, userName, addressByName, MemoryBankMode.Tool);
+        }
+
+        /// <summary>
+        /// Builds the prompt for a mode, protocol, permission set, optional user addressing
+        /// and an optional memory-bank convention.
+        /// </summary>
+        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, string userName, bool addressByName, MemoryBankMode memoryBankMode)
+        {
             var prompt = Build(mode, registry, toolCallingMode, allowed);
             var name = (userName ?? string.Empty).Trim();
-            if (!addressByName || name.Length == 0)
-                return prompt;
+            if (addressByName && name.Length > 0)
+                prompt = prompt + "\n\nAddress the user by their name when replying: \"" + name + "\".";
 
-            return prompt + "\n\nAddress the user by their name when replying: \"" + name + "\".";
+            if (memoryBankMode == MemoryBankMode.Convention)
+                prompt = prompt + "\n\n" + PromptDefaults.MemoryBankConventionInstructions;
+
+            return prompt;
         }
     }
 }

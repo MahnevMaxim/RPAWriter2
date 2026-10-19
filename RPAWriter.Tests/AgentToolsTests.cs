@@ -486,5 +486,29 @@ namespace RPAWriter.Tests
 
             Assert.That(prompt, Does.Contain("Available tools"));
         }
+
+        [Test]
+        public void Build_ConventionMode_AppendsMemoryBankConvention()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "", false, MemoryBankMode.Convention);
+
+            Assert.That(prompt, Does.Contain(PromptDefaults.MemoryBankConventionInstructions));
+        }
+
+        [Test]
+        public void Build_ToolMode_DoesNotAppendMemoryBankConvention()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "", false, MemoryBankMode.Tool);
+
+            Assert.That(prompt, Does.Not.Contain(PromptDefaults.MemoryBankConventionInstructions));
+        }
+
+        [Test]
+        public void Build_DisabledMode_DoesNotAppendMemoryBankConvention()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "", false, MemoryBankMode.Disabled);
+
+            Assert.That(prompt, Does.Not.Contain(PromptDefaults.MemoryBankConventionInstructions));
+        }
     }
 }
