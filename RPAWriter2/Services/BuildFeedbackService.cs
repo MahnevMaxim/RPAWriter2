@@ -42,6 +42,27 @@ namespace RPAWriter2.Services
             }
         }
 
+        public async Task<bool> HasSolutionConfigurationAsync(string configuration, CancellationToken cancellationToken = default)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            if (dte?.Solution == null || !dte.Solution.IsOpen)
+                return false;
+
+            var configurations = dte.Solution.SolutionBuild?.SolutionConfigurations;
+            if (configurations == null)
+                return false;
+
+            try
+            {
+                return configurations.Item(configuration) != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public async Task<IReadOnlyList<BuildError>> GetCompilationErrorsAsync(CancellationToken cancellationToken = default)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);

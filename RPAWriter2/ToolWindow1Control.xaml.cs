@@ -84,6 +84,7 @@ namespace RPAWriter2
         private volatile bool _kbImportPaused;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
@@ -133,6 +134,7 @@ namespace RPAWriter2
         {
             this.InitializeComponent();
             _settingsToastTimer.Tick += OnSettingsToastTick;
+            _deployToastTimer.Tick += OnDeployToastTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
@@ -1091,13 +1093,30 @@ namespace RPAWriter2
             try
             {
                 var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
-                if (dte?.Solution == null || !dte.Solution.IsOpen)
+                if (dte == null || dte.Solution == null || !dte.Solution.IsOpen)
                 {
                     ShowNotice("No open solution. Open a solution and retry.");
                     return;
                 }
+
+                var robotProjects = _packageCatalog.GetRobotProjectState(dte).Names;
+                if (robotProjects.Count == 0)
+                {
+                    LogService.Warn("Deploy blocked: no RPA- robot project found in the open solution.");
+                    ShowDeployToast("No RPA- robot project found in the open solution.", success: false);
+                    return;
+                }
+
+                if (!await _buildFeedback.HasSolutionConfigurationAsync("Publish"))
+                {
+                    LogService.Warn("Deploy blocked: 'Publish' solution configuration is not configured.");
+                    ShowDeployToast("The 'Publish' solution configuration is not configured. Create it in Build → Configuration Manager and retry.", success: false);
+                    return;
+                }
+
                 await _buildFeedback.BuildAsync("Publish");
                 LogService.Info("Publish build started.");
+                ShowDeployToast("Publish build started.", success: true);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -3174,6 +3193,57 @@ namespace RPAWriter2
             if (onCompleted != null)
                 animation.Completed += (_, __) => onCompleted();
             SettingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
+        }
+
+        private const double DeployToastMaxHeight = 120.0;
+
+        private void ShowDeployToast(string text, bool success)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowDeployToast(text, success)));
+                return;
+            }
+            DeployToastText.Text = text ?? "";
+            DeployToast.Background = (Brush)FindResource(success ? "Deploy.SuccessBackground" : "Deploy.WarningBackground");
+            DeployToast.Visibility = Visibility.Visible;
+            _deployToastTimer.Stop();
+            _deployToastTimer.Start();
+            SlideDeployToast(0, DeployToastMaxHeight);
+        }
+
+        private void HideDeployToast()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(HideDeployToast));
+                return;
+            }
+            _deployToastTimer.Stop();
+            SlideDeployToast(DeployToast.ActualHeight, 0,
+                () => DeployToast.Visibility = Visibility.Collapsed);
+        }
+
+        private void OnDeployToastTick(object? sender, EventArgs e)
+        {
+            HideDeployToast();
+        }
+
+        private void OnDeployToastClose(object sender, RoutedEventArgs e)
+        {
+            HideDeployToast();
+        }
+
+        private void SlideDeployToast(double from, double to, Action? onCompleted = null)
+        {
+            DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+            var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(180)))
+            {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            if (onCompleted != null)
+                animation.Completed += (_, __) => onCompleted();
+            DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
         }
 
         private void OnSaveSettings(object sender, RoutedEventArgs e)

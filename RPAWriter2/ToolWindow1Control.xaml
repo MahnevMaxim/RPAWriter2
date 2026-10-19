@@ -29,6 +29,8 @@
         <SolidColorBrush x:Key="Chat.LastActBorder" Color="#4CAF50"/>
         <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#4DFF8C00"/>
         <SolidColorBrush x:Key="Chat.LastPlanBorder" Color="#FF8C00"/>
+        <SolidColorBrush x:Key="Deploy.WarningBackground" Color="#E65100"/>
+        <SolidColorBrush x:Key="Deploy.SuccessBackground" Color="#B32E7D32"/>
 
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
@@ -558,6 +560,23 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel x:Name="ChatToolbarPanel" Grid.Row="0" Margin="0,0,0,6">
+                    <Border x:Name="DeployToast" Margin="0,0,0,6"
+                            Background="{StaticResource Deploy.WarningBackground}"
+                            CornerRadius="2" Padding="10,8" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="DeployToastText" Grid.Column="0" Text=""
+                                       Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                    Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
+                                    ToolTip="Close" Click="OnDeployToastClose">
+                                <TextBlock Text="✕" FontSize="11" Foreground="White"/>
+                            </Button>
+                        </Grid>
+                    </Border>
                     <WrapPanel Margin="0,5,0,6">
                         <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
