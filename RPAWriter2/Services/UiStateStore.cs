@@ -1,23 +1,62 @@
 using System;
 using System.IO;
+using System.Runtime.Serialization;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using RPAWriter.Core.Models;
 
 namespace RPAWriter2.Services
 {
+    /// <summary>Chat tab view: the active conversation or the history list.</summary>
+    public enum ChatViewMode
+    {
+        /// <summary>The active conversation is shown.</summary>
+        Conversation,
+
+        /// <summary>The list of saved conversations is shown.</summary>
+        History
+    }
+
+    /// <summary>Main tabs of the RPA Writer window.</summary>
+    public enum MainTab
+    {
+        /// <summary>Agent chat.</summary>
+        Chat,
+
+        /// <summary>Specification import/parsing.</summary>
+        Spec,
+
+        /// <summary>Knowledge base.</summary>
+        [EnumMember(Value = "Knowledge base")]
+        KnowledgeBase,
+
+        /// <summary>Extension settings.</summary>
+        Settings,
+
+        /// <summary>Package gallery.</summary>
+        Packages,
+
+        /// <summary>Hidden controls gallery (debug).</summary>
+        Controls
+    }
+
     /// <summary>Per-session UI state persisted between Visual Studio sessions.</summary>
     public class UiStateData
     {
-        /// <summary>Chat tab view: "Conversation" or "History".</summary>
-        public string ChatViewMode { get; set; } = "Conversation";
+        /// <summary>Chat tab view: Conversation or History.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public ChatViewMode ChatViewMode { get; set; }
 
         /// <summary>Id of the active conversation, or empty when none.</summary>
         public string LastConversationId { get; set; } = "";
 
-        /// <summary>Agent mode: "Plan" or "Act".</summary>
-        public string AgentMode { get; set; } = "Plan";
+        /// <summary>Agent mode: Plan or Act.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public AgentMode AgentMode { get; set; }
 
-        /// <summary>Header of the active main tab (e.g. "Chat", "Settings").</summary>
-        public string ActiveTab { get; set; } = "Chat";
+        /// <summary>Active main tab.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public MainTab ActiveTab { get; set; }
     }
 
     /// <summary>Loads/saves the UI state JSON at %AppData%\RPAWriter2\ui_state.json.</summary>
@@ -67,16 +106,18 @@ namespace RPAWriter2.Services
         private static void EnsureDefaults(UiStateData state)
         {
             if (state == null) return;
-            if (!string.Equals(state.ChatViewMode, "History", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(state.ChatViewMode, "Conversation", StringComparison.OrdinalIgnoreCase))
-                state.ChatViewMode = "Conversation";
+
+            if (state.ChatViewMode != ChatViewMode.Conversation && state.ChatViewMode != ChatViewMode.History)
+                state.ChatViewMode = ChatViewMode.Conversation;
+
             if (state.LastConversationId == null)
                 state.LastConversationId = "";
-            if (!string.Equals(state.AgentMode, "Act", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(state.AgentMode, "Plan", StringComparison.OrdinalIgnoreCase))
-                state.AgentMode = "Plan";
-            if (string.IsNullOrWhiteSpace(state.ActiveTab))
-                state.ActiveTab = "Chat";
+
+            if (state.AgentMode != AgentMode.Plan && state.AgentMode != AgentMode.Act)
+                state.AgentMode = AgentMode.Plan;
+
+            if (!Enum.IsDefined(typeof(MainTab), state.ActiveTab))
+                state.ActiveTab = MainTab.Chat;
         }
     }
 }

@@ -46,13 +46,6 @@ namespace RPAWriter2
             Error
         }
 
-        /// <summary>Whether the chat tab shows the active conversation or the history list.</summary>
-        private enum ChatViewMode
-        {
-            Conversation,
-            History
-        }
-
         private SettingsData _settings;
         private IAiProvider _ai;
         private SpecModel _currentSpec;
@@ -130,6 +123,8 @@ namespace RPAWriter2
         private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
         private bool _pinnedExpanded;
+        private bool _chatAutoScroll = true;
+        private const double ChatAutoScrollThreshold = 1.0;
 
         public ToolWindow1Control()
         {
@@ -137,6 +132,7 @@ namespace RPAWriter2
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
+            ChatScroll.ScrollChanged += OnChatScrollChanged;
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
             ChatList.ItemsSource = _chatListView;
@@ -347,7 +343,8 @@ namespace RPAWriter2
             _messages.Add(message);
             if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
                 RefreshPinnedMessage();
-            ChatScroll.ScrollToEnd();
+            if (_chatAutoScroll)
+                ChatScroll.ScrollToEnd();
             if (!_loadingHistory)
                 ScheduleHistorySave();
         }
@@ -405,6 +402,25 @@ namespace RPAWriter2
                 RoutedEvent = MouseWheelEvent,
                 Source = parent
             });
+        }
+
+        /// <summary>
+        /// Disables chat auto-scroll as soon as the user scrolls away from the bottom
+        /// and re-enables it when they scroll back to the bottom.
+        /// Content/viewport size changes are ignored so that growing content doesn't
+        /// spuriously disable auto-scroll while the user is still at the bottom.
+        /// </summary>
+        private void OnChatScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            bool atBottom = ChatScroll.VerticalOffset >= ChatScroll.ScrollableHeight - ChatAutoScrollThreshold;
+            if (atBottom)
+            {
+                _chatAutoScroll = true;
+            }
+            else if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
+            {
+                _chatAutoScroll = false;
+            }
         }
 
         private void OnCopyConversation(object sender, RoutedEventArgs e)
@@ -2873,9 +2889,7 @@ namespace RPAWriter2
             {
                 var state = UiStateStore.Load();
 
-                _mode = string.Equals(state.AgentMode, "Act", StringComparison.OrdinalIgnoreCase)
-                    ? AgentMode.Act
-                    : AgentMode.Plan;
+                _mode = state.AgentMode;
                 if (_mode == AgentMode.Act)
                     ActModeButton.IsChecked = true;
                 else
@@ -2883,7 +2897,7 @@ namespace RPAWriter2
 
                 SelectTabByHeader(state.ActiveTab);
 
-                if (string.Equals(state.ChatViewMode, "History", StringComparison.OrdinalIgnoreCase))
+                if (state.ChatViewMode == ChatViewMode.History)
                 {
                     ShowHistoryView();
                 }
@@ -2922,16 +2936,44 @@ namespace RPAWriter2
             return _conversations.FirstOrDefault();
         }
 
-        private void SelectTabByHeader(string header)
+        private static string MainTabToHeader(MainTab tab)
+        {
+            switch (tab)
+            {
+                case MainTab.Spec: return "Spec";
+                case MainTab.KnowledgeBase: return "Knowledge base";
+                case MainTab.Settings: return "Settings";
+                case MainTab.Packages: return "Packages";
+                case MainTab.Controls: return "Controls";
+                default: return "Chat";
+            }
+        }
+
+        private static MainTab HeaderToMainTab(string? header)
         {
             if (string.IsNullOrWhiteSpace(header))
-                return;
+                return MainTab.Chat;
+
+            var value = header.Trim();
+            if (string.Equals(value, "Spec", StringComparison.OrdinalIgnoreCase)) return MainTab.Spec;
+            if (string.Equals(value, "Knowledge base", StringComparison.OrdinalIgnoreCase)) return MainTab.KnowledgeBase;
+            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return MainTab.Settings;
+            if (string.Equals(value, "Packages", StringComparison.OrdinalIgnoreCase)) return MainTab.Packages;
+            if (string.Equals(value, "Controls", StringComparison.OrdinalIgnoreCase)) return MainTab.Controls;
+            return MainTab.Chat;
+        }
+
+        private void SelectTabByHeader(MainTab tab)
+        {
+            var header = MainTabToHeader(tab);
 
             foreach (var item in MainTabs.Items)
             {
-                if (item is TabItem tab && string.Equals(tab.Header as string, header, StringComparison.OrdinalIgnoreCase))
+                if (item is TabItem tabItem &&
+                    tabItem.Visibility == Visibility.Visible &&
+                    string.Equals(tabItem.Header as string, header, StringComparison.OrdinalIgnoreCase))
                 {
-                    MainTabs.SelectedItem = tab;
+                    MainTabs.SelectedItem = tabItem;
                     return;
                 }
             }
@@ -2952,17 +2994,20 @@ namespace RPAWriter2
 
             UiStateStore.Save(new UiStateData
             {
-                ChatViewMode = _chatViewMode == ChatViewMode.History ? "History" : "Conversation",
+                ChatViewMode = _chatViewMode,
                 LastConversationId = _currentConversation?.Id ?? "",
-                AgentMode = _mode == AgentMode.Act ? "Act" : "Plan",
-                ActiveTab = (MainTabs.SelectedItem as TabItem)?.Header as string ?? "Chat"
+                AgentMode = _mode,
+                ActiveTab = HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Header as string)
             });
         }
 
         private void OnWindowUnloaded(object sender, RoutedEventArgs e)
         {
+            // UI state is already persisted on every explicit change (tab switch, view switch,
+            // mode change, conversation open). Persisting again here would re-save whatever
+            // transient state the window is in during teardown and can clobber an explicitly
+            // chosen "History" view back to "Conversation".
             SaveHistoryNow();
-            PersistUiState();
         }
 
         private void ScheduleHistorySave()
@@ -3061,6 +3106,7 @@ namespace RPAWriter2
                 }
                 _currentConversation = stored;
                 RefreshPinnedMessage();
+                _chatAutoScroll = true;
                 ChatScroll.ScrollToEnd();
             }
             finally

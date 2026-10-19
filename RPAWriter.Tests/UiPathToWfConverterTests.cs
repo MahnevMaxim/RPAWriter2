@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
@@ -104,6 +105,111 @@ namespace RPAWriter.Tests
             Assert.That(ifNode.Children.Count, Is.EqualTo(2));
             Assert.That(ifNode.Children[0].Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
             Assert.That(ifNode.Children[1].Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
+        }
+
+        [Test]
+        public void ConvertToPlan_Flowchart_DowngradesToSequenceWithWarning()
+        {
+            var xaml = """
+<Activity x:Class="Flow" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:UiPath.Core.Activities;assembly=UiPath.Activities">
+  <Flowchart DisplayName="Main Flow">
+    <Flowchart.Nodes>
+      <ui:WriteLine Text="step" />
+    </Flowchart.Nodes>
+  </Flowchart>
+</Activity>
+""";
+            var warnings = new List<string>();
+
+            var plan = CreateConverter().ConvertToPlan(xaml, warnings);
+
+            Assert.That(plan.Root.Kind, Is.EqualTo(ActivityNodeKind.Sequence));
+            Assert.That(plan.Root.Children.Count, Is.EqualTo(1));
+            Assert.That(plan.Root.Children[0].Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
+            Assert.That(warnings, Does.Contain("Flowchart converted to Sequence (simplification)."));
+        }
+
+        [Test]
+        public void ConvertToPlan_DoWhile_MapsToWhile()
+        {
+            var xaml = """
+<Activity x:Class="Loop" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:UiPath.Core.Activities;assembly=UiPath.Activities">
+  <Sequence>
+    <ui:DoWhile Condition="[x &lt; 10]">
+      <ui:DoWhile.Body>
+        <ui:WriteLine Text="loop" />
+      </ui:DoWhile.Body>
+    </ui:DoWhile>
+  </Sequence>
+</Activity>
+""";
+
+            var plan = CreateConverter().ConvertToPlan(xaml);
+            var loop = plan.Root.Children[0];
+
+            Assert.That(loop.Kind, Is.EqualTo(ActivityNodeKind.While));
+            Assert.That(loop.Expression, Is.EqualTo("[x < 10]"));
+        }
+
+        [Test]
+        public void ConvertToPlan_TryCatch_DowngradesToSequenceWithWarning()
+        {
+            var xaml = """
+<Activity x:Class="Try" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:UiPath.Core.Activities;assembly=UiPath.Activities">
+  <ui:TryCatch DisplayName="Guarded">
+    <ui:TryCatch.Try>
+      <ui:WriteLine Text="body" />
+    </ui:TryCatch.Try>
+  </ui:TryCatch>
+</Activity>
+""";
+            var warnings = new List<string>();
+
+            var plan = CreateConverter().ConvertToPlan(xaml, warnings);
+
+            Assert.That(plan.Root.Kind, Is.EqualTo(ActivityNodeKind.Sequence));
+            Assert.That(warnings, Does.Contain("TryCatch converted to Sequence (simplification)."));
+        }
+
+        [Test]
+        public void ConvertToPlan_LogMessage_MapsToWriteLine()
+        {
+            var xaml = """
+<Activity x:Class="Log" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:UiPath.Core.Activities;assembly=UiPath.Activities">
+  <Sequence>
+    <ui:LogMessage DisplayName="Log" Message="done" />
+  </Sequence>
+</Activity>
+""";
+
+            var plan = CreateConverter().ConvertToPlan(xaml);
+            var node = plan.Root.Children[0];
+
+            Assert.That(node.Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
+            Assert.That(node.Expression, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public void ConvertToPlan_UnknownActivity_MapsToInvokeMethodWithWarning()
+        {
+            var xaml = """
+<Activity x:Class="Unknown" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:UiPath.Core.Activities;assembly=UiPath.Activities">
+  <Sequence>
+    <ui:Click DisplayName="Click" Selector="#btn" />
+  </Sequence>
+</Activity>
+""";
+            var warnings = new List<string>();
+
+            var plan = CreateConverter().ConvertToPlan(xaml, warnings);
+            var node = plan.Root.Children[0];
+
+            Assert.That(node.Kind, Is.EqualTo(ActivityNodeKind.InvokeMethod));
+            Assert.That(node.MethodName, Is.EqualTo("Click"));
+            Assert.That(node.ClassName, Is.EqualTo("RpaActions"));
+            Assert.That(node.Arguments, Has.Count.EqualTo(1));
+            Assert.That(node.Arguments[0].Parameter, Is.EqualTo("Selector"));
+            Assert.That(warnings, Does.Contain("Activity Click mapped to InvokeMethod Click."));
         }
     }
 }
