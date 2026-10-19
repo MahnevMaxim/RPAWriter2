@@ -80,6 +80,7 @@ namespace RPAWriter2
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
@@ -117,6 +118,7 @@ namespace RPAWriter2
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage;
+        private ChatMessage? _lastMessage;
         private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
         private bool _pinnedExpanded;
@@ -124,6 +126,7 @@ namespace RPAWriter2
         public ToolWindow1Control()
         {
             this.InitializeComponent();
+            _settingsToastTimer.Tick += OnSettingsToastTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
@@ -165,6 +168,7 @@ namespace RPAWriter2
             UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
             ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             LogFilePathBox.Text = _settings.LogFilePath ?? "";
+            ChatLogFilePathBox.Text = _settings.ChatLogFilePath ?? "";
             LogProvidersPathBox.Text = _settings.LogProvidersPath ?? "";
             TimeoutSecondsBox.Text = _settings.TimeoutSeconds.ToString();
             RetryTimeoutMinutesBox.Text = _settings.RetryTimeoutMinutes.ToString();
@@ -266,12 +270,35 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => AppendChatMessage(message)));
                 return;
             }
+            ClearLastMessage();
             _messages.Add(message);
             if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
                 RefreshPinnedMessage();
             ChatScroll.ScrollToEnd();
             if (!_loadingHistory)
                 ScheduleHistorySave();
+        }
+
+        /// <summary>Removes the finish highlight from the previously marked message, if any.</summary>
+        private void ClearLastMessage()
+        {
+            if (_lastMessage == null)
+                return;
+            _lastMessage.IsLastMessage = false;
+            _lastMessage = null;
+        }
+
+        /// <summary>Marks a message as the finished answer of the current agent turn.</summary>
+        private void MarkLastMessage(ChatMessage message)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => MarkLastMessage(message)));
+                return;
+            }
+            ClearLastMessage();
+            message.IsLastMessage = true;
+            _lastMessage = message;
         }
 
         private void AppendSpecMessage(ChatMessage message)
@@ -454,7 +481,7 @@ namespace RPAWriter2
         {
             // AI message tracing is logged only (not written to the knowledge-base panel),
             // so commit auto-generation and chat traffic no longer pollute the KB "Messages" box.
-            LogService.Debug("AI message sent: role=" + (e.Role ?? "") + ", chars=" + (e.Content == null ? 0 : e.Content.Length));
+            LogService.ChatDebug("AI message sent: role=" + (e.Role ?? "") + ", chars=" + (e.Content == null ? 0 : e.Content.Length));
         }
 
         private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
@@ -466,7 +493,7 @@ namespace RPAWriter2
                 UpdateTokenUsageDisplay();
 
             var dump = FormatPromptDump(e);
-            LogService.Info(dump);
+            LogService.ChatInfo(dump);
             try
             {
                 if (_outputWindow != null)
@@ -508,7 +535,7 @@ namespace RPAWriter2
         private void OnRetryAttempt(object? sender, RetryAttemptEventArgs e)
         {
             // Retry attempts are logged only (not written to the knowledge-base panel).
-            LogService.Warn(
+            LogService.ChatWarn(
                 "Provider retry #" + e.Attempt +
                 " status=" + (e.StatusCode.HasValue ? e.StatusCode.Value.ToString() : "no-response") +
                 " reason=" + (e.ReasonPhrase ?? "").Replace("\r", " ").Replace("\n", " ") +
@@ -1327,12 +1354,27 @@ namespace RPAWriter2
             var packages = await _packageCatalog.ScanAsync(folder);
 
             _packages.Clear();
-            foreach (var package in packages)
+            foreach (var group in packages.GroupBy(p => p.Id, StringComparer.OrdinalIgnoreCase))
             {
-                package.IsInstalled = state.Installed.TryGetValue(package.Id, out var installedVersion);
-                if (package.IsInstalled)
-                    package.InstalledVersion = installedVersion;
-                _packages.Add(new PackageListItem(package));
+                var versions = group
+                    .Select(p => p.Version)
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var info = group.First();
+                info.IsInstalled = state.Installed.TryGetValue(info.Id, out var installedVersion);
+                if (info.IsInstalled)
+                    info.InstalledVersion = installedVersion;
+
+                var item = new PackageListItem(info, versions)
+                {
+                    SelectedVersion = info.IsInstalled && versions.Contains(info.InstalledVersion, StringComparer.OrdinalIgnoreCase)
+                        ? info.InstalledVersion
+                        : versions.FirstOrDefault() ?? ""
+                };
+                _packages.Add(item);
             }
 
             var installedCount = _packages.Count(p => p.IsInstalled);
@@ -1364,8 +1406,10 @@ namespace RPAWriter2
                 {
                     foreach (var package in selected)
                     {
+                        if (string.IsNullOrWhiteSpace(package.SelectedVersion))
+                            continue;
                         await _robotTemplate.RunPackageManagerCommandAsync(
-                            "Install-Package " + package.Id + " -Version " + package.Version +
+                            "Install-Package " + package.Id + " -Version " + package.SelectedVersion +
                             " -Source \"" + folder + "\" -ProjectName \"" + project + "\"",
                             _outputWindow.CreateProgress());
                     }
@@ -1399,8 +1443,11 @@ namespace RPAWriter2
                 {
                     foreach (var package in selected)
                     {
+                        if (string.IsNullOrWhiteSpace(package.SelectedVersion))
+                            continue;
                         await _robotTemplate.RunPackageManagerCommandAsync(
-                            "Update-Package " + package.Id + " -Source \"" + folder + "\" -ProjectName \"" + project + "\"",
+                            "Update-Package " + package.Id + " -Version " + package.SelectedVersion +
+                            " -Source \"" + folder + "\" -ProjectName \"" + project + "\"",
                             _outputWindow.CreateProgress());
                     }
                 }
@@ -2111,7 +2158,7 @@ namespace RPAWriter2
             var cts = new CancellationTokenSource();
             _chatCts = cts;
             StartChatStatus();
-            LogService.Info("Agent chat request started (mode=" + modeName + ", input chars=" + text.Length + ").");
+            LogService.ChatInfo("Agent chat request started (mode=" + modeName + ", input chars=" + text.Length + ").");
             try
             {
                 var progress = new Progress<ChatStreamDelta>(delta =>
@@ -2145,15 +2192,17 @@ namespace RPAWriter2
                 // Emit the final answer as a new message so it appears after the tool calls.
                 if (!string.IsNullOrWhiteSpace(result.FinalText))
                 {
-                    AppendChatMessage(new ChatMessage
+                    var finalMessage = new ChatMessage
                     {
                         Kind = ChatMessageKind.AgentText,
                         Mode = modeName,
                         Text = result.FinalText
-                    });
+                    };
+                    AppendChatMessage(finalMessage);
+                    MarkLastMessage(finalMessage);
                 }
                 StopChatStatus();
-                LogService.Info("Agent chat completed (mode=" + modeName + ", answer chars=" + (result.FinalText == null ? 0 : result.FinalText.Length) + ").");
+                LogService.ChatInfo("Agent chat completed (mode=" + modeName + ", answer chars=" + (result.FinalText == null ? 0 : result.FinalText.Length) + ").");
             }
             catch (OperationCanceledException)
             {
@@ -2161,14 +2210,14 @@ namespace RPAWriter2
                 if (_messages.Contains(thinking))
                     AppendChat("Request cancelled.");
                 StopChatStatus();
-                LogService.Info("Agent chat request cancelled.");
+                LogService.ChatInfo("Agent chat request cancelled.");
             }
             catch (Exception ex)
             {
                 thinking.IsThinking = false;
                 AppendExtensionError(ex);
                 ShowChatStatusError(ex.Message);
-                LogService.Error(ex, "Agent chat request failed.");
+                LogService.ChatError(ex, "Agent chat request failed.");
             }
             finally
             {
@@ -2294,7 +2343,7 @@ namespace RPAWriter2
 
         private void OnAgentRetryOccurred(object? sender, AgentRetryArgs e)
         {
-            LogService.Warn("Agent retry: " + (e.Kind ?? "") + " attempt " + e.Attempt + "/" + e.AttemptLimit + " - " + (e.Detail ?? ""));
+            LogService.ChatWarn("Agent retry: " + (e.Kind ?? "") + " attempt " + e.Attempt + "/" + e.AttemptLimit + " - " + (e.Detail ?? ""));
         }
 
         private void OnAgentContextCompacted(object? sender, EventArgs e)
@@ -2304,7 +2353,7 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => OnAgentContextCompacted(sender, e)));
                 return;
             }
-            LogService.Info("Agent context compacted (summarized) to fit the context window.");
+            LogService.ChatInfo("Agent context compacted (summarized) to fit the context window.");
             AppendCompaction("Context compacted (summarized) to fit the context window.");
         }
 
@@ -2325,6 +2374,7 @@ namespace RPAWriter2
                 var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
 
                 _messages.Clear();
+                _lastMessage = null;
                 foreach (var m in condensed)
                 {
                     var kind = m.Role == "assistant" ? ChatMessageKind.AgentText
@@ -2408,7 +2458,7 @@ namespace RPAWriter2
                 return;
             }
             var detail = string.IsNullOrWhiteSpace(e.DisplayResult) ? e.Result : e.DisplayResult;
-            LogService.Info("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
+            LogService.ChatInfo("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
             AppendToolCall(e.ToolName, detail, e.Blocked);
         }
 
@@ -2580,6 +2630,7 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
+                _lastMessage = null;
                 _currentConversation = new ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -2624,6 +2675,7 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
+                _lastMessage = null;
                 foreach (var m in stored.Messages)
                 {
                     _messages.Add(FromHistoryMessage(m));
@@ -2763,6 +2815,7 @@ namespace RPAWriter2
             try
             {
                 _messages.Clear();
+                _lastMessage = null;
                 _currentConversation = new ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -2779,7 +2832,6 @@ namespace RPAWriter2
             PersistUiState();
         }
 
-        private const double PinnedCollapsedHeight = 48.0;
         private const double PinnedExpandedHeight = 240.0;
 
         private void OnPinnedExpandToggle(object sender, RoutedEventArgs e)
@@ -2790,7 +2842,9 @@ namespace RPAWriter2
 
         private void UpdatePinnedExpandState()
         {
-            PinnedTextScroll.MaxHeight = _pinnedExpanded ? PinnedExpandedHeight : PinnedCollapsedHeight;
+            PinnedSummaryText.Visibility = _pinnedExpanded ? Visibility.Collapsed : Visibility.Visible;
+            PinnedTextScroll.Visibility = _pinnedExpanded ? Visibility.Visible : Visibility.Collapsed;
+            PinnedTextScroll.MaxHeight = PinnedExpandedHeight;
             PinnedTextScroll.VerticalScrollBarVisibility = _pinnedExpanded ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
             PinnedExpandGlyph.Points = PointCollection.Parse(_pinnedExpanded ? "6,9 12,15 18,9" : "9,18 15,12 9,6");
         }
@@ -2870,6 +2924,40 @@ namespace RPAWriter2
             }
         }
 
+        private void ShowSettingsToast(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text)));
+                return;
+            }
+            SettingsToastText.Text = text ?? "";
+            SettingsToast.Visibility = Visibility.Visible;
+            _settingsToastTimer.Stop();
+            _settingsToastTimer.Start();
+        }
+
+        private void HideSettingsToast()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(HideSettingsToast));
+                return;
+            }
+            _settingsToastTimer.Stop();
+            SettingsToast.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnSettingsToastTick(object? sender, EventArgs e)
+        {
+            HideSettingsToast();
+        }
+
+        private void OnSettingsToastClose(object sender, RoutedEventArgs e)
+        {
+            HideSettingsToast();
+        }
+
         private void OnSaveSettings(object sender, RoutedEventArgs e)
         {
             _settings.BaseUrl = BaseUrlBox.Text.Trim();
@@ -2890,6 +2978,7 @@ namespace RPAWriter2
             _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
             _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
+            _settings.ChatLogFilePath = ChatLogFilePathBox.Text.Trim();
             _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
             _logProviders = null;
             _selectedLogProvider = null;
@@ -2903,18 +2992,27 @@ namespace RPAWriter2
             _settings.UserName = UserNameBox.Text.Trim();
             _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
             SettingsStore.Save(_settings);
-            LogService.Configure(_settings.LogFilePath);
+            LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
             RebuildAgentTools();
-            AppendChat("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+            ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
         }
 
         private void OnOpenLog(object sender, RoutedEventArgs e)
         {
-            var logFile = LogService.CurrentLogFilePath;
+            OpenLogFile(LogService.CurrentLogFilePath, "Log file path is not available.", "log");
+        }
+
+        private void OnOpenChatLog(object sender, RoutedEventArgs e)
+        {
+            OpenLogFile(LogService.CurrentChatLogFilePath, "Chat log file path is not available.", "chat log");
+        }
+
+        private void OpenLogFile(string logFile, string unavailableMessage, string logKind)
+        {
             if (string.IsNullOrWhiteSpace(logFile))
             {
-                AppendExtensionError("Log file path is not available.");
+                AppendExtensionError(unavailableMessage);
                 return;
             }
 
@@ -2934,8 +3032,8 @@ namespace RPAWriter2
             }
             catch (Exception ex)
             {
-                AppendExtensionError("Failed to open log: " + ex.Message);
-                LogService.Error(ex, "Failed to open log file.");
+                AppendExtensionError("Failed to open " + logKind + ": " + ex.Message);
+                LogService.Error(ex, "Failed to open " + logKind + " file.");
             }
         }
 

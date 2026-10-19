@@ -20,6 +20,7 @@ namespace RPAWriter2
         private string _mode = "";
         private bool _isThinking;
         private bool _isPartial;
+        private bool _isLastMessage;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -35,6 +36,7 @@ namespace RPAWriter2
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(Label));
                     OnPropertyChanged(nameof(DisplayText));
+                    OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
                     OnPropertyChanged(nameof(KindName));
                 }
@@ -57,6 +59,7 @@ namespace RPAWriter2
                     OnPropertyChanged(nameof(Text));
                     OnPropertyChanged(nameof(Label));
                     OnPropertyChanged(nameof(DisplayText));
+                    OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
                 }
             }
@@ -75,6 +78,7 @@ namespace RPAWriter2
                         current.Text = value;
                         OnPropertyChanged();
                         OnPropertyChanged(nameof(DisplayText));
+                        OnPropertyChanged(nameof(SingleLineDisplayText));
                         OnPropertyChanged(nameof(Blocks));
                     }
                 }
@@ -121,6 +125,13 @@ namespace RPAWriter2
             set { if (_isPartial != value) { _isPartial = value; OnPropertyChanged(); } }
         }
 
+        /// <summary>True when this is the final message of a completed agent turn; drives the finish highlight.</summary>
+        public bool IsLastMessage
+        {
+            get => _isLastMessage;
+            set { if (_isLastMessage != value) { _isLastMessage = value; OnPropertyChanged(); } }
+        }
+
         /// <summary>When this entry was created (UTC).</summary>
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
@@ -163,6 +174,9 @@ namespace RPAWriter2
                 return string.IsNullOrEmpty(Label) ? t : Label + t;
             }
         }
+
+        /// <summary>Single-line form of <see cref="DisplayText"/> with line breaks collapsed to spaces; used by the collapsed pinned header.</summary>
+        public string SingleLineDisplayText => DisplayText.Replace('\r', ' ').Replace('\n', ' ').Trim();
 
         /// <summary>Message content split into text and code blocks (for syntax-highlighted rendering).</summary>
         public IReadOnlyList<MessageBlock> Blocks => ChatMarkdown.SplitBlocks(DisplayText);

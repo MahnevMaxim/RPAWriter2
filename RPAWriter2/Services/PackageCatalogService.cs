@@ -24,20 +24,24 @@ namespace RPAWriter2.Services
         public string InstalledVersion { get; set; } = "";
     }
 
-    /// <summary>List row for the Packages tab (adds a checkbox selection flag).</summary>
+    /// <summary>List row for the Packages tab (one row per package, versions selected via a combo box).</summary>
     public class PackageListItem : INotifyPropertyChanged
     {
         private bool _isSelected;
+        private string _selectedVersion = "";
 
-        public PackageListItem(PackageInfo info)
+        public PackageListItem(PackageInfo info, IReadOnlyList<string> versions)
         {
             Info = info ?? throw new ArgumentNullException(nameof(info));
+            Versions = versions ?? new List<string>();
         }
 
         public PackageInfo Info { get; }
 
+        /// <summary>Available versions of this package, sorted ascending.</summary>
+        public IReadOnlyList<string> Versions { get; }
+
         public string Id => Info.Id;
-        public string Version => Info.Version;
         public string Description => Info.Description;
         public string Authors => Info.Authors;
         public bool IsInstalled => Info.IsInstalled;
@@ -45,6 +49,17 @@ namespace RPAWriter2.Services
         public string InstalledBadge => Info.IsInstalled
             ? "installed v" + Info.InstalledVersion
             : "";
+
+        public string SelectedVersion
+        {
+            get => _selectedVersion;
+            set
+            {
+                if (_selectedVersion == value) return;
+                _selectedVersion = value;
+                OnPropertyChanged();
+            }
+        }
 
         public bool IsSelected
         {
