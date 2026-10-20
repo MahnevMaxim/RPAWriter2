@@ -818,6 +818,12 @@ namespace RPAWriter2
             }
         }
 
+        private void OnClearInput(object sender, RoutedEventArgs e)
+        {
+            InputBox.Clear();
+            InputBox.Focus();
+        }
+
         private void OnAttach(object sender, RoutedEventArgs e)
         {
             var dlg = new OpenFileDialog
