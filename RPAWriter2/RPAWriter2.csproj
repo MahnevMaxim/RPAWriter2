@@ -72,6 +72,21 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <!-- Legal documents: license text and third-party notices shipped inside the VSIX.
+         The repository root LICENSE is linked as License.txt because the VSIX manifest
+         <License> element requires a .txt/.rtf file present in the package. -->
+    <Content Include="..\LICENSE">
+      <Link>License.txt</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\THIRD-PARTY-NOTICES.md">
+      <Link>THIRD-PARTY-NOTICES.md</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <VSCTCompile Include="RPAWriter2Package.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
       <Generator>VsctGenerator</Generator>

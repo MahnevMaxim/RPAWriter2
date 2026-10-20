@@ -3,7 +3,8 @@
   <Metadata>
     <Identity Id="RPAWriter2.7e1fa476-aabc-4995-b50b-8f3f76e647ec" Version="1.0.0.1" Language="en-US" Publisher="RPAWriter2" />
     <DisplayName>RPAWriter2</DisplayName>
-    <Description>Empty VSIX Project.</Description>
+    <Description>Visual Studio extension for building RPA robots on Windows Workflow Foundation with an AI agent: reads specifications from Word/Excel/text, maintains a knowledge base, one-click Release build, and converts UiPath robots to WF.</Description>
+    <License>License.txt</License>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.14, )">
