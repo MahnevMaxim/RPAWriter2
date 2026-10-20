@@ -71,12 +71,19 @@ namespace RPAWriter.Core.Services
             {
                 var body = doc.MainDocumentPart?.Document?.Body;
                 if (body == null) return "";
+                var tracker = new ListMarkerTracker(doc.MainDocumentPart?.NumberingDefinitionsPart?.Numbering);
                 foreach (var element in body.ChildElements)
                 {
                     if (element is Paragraph p)
-                        sb.AppendLine(ReadParagraph(p));
+                    {
+                        var text = ReadParagraph(p);
+                        var marker = tracker.GetMarker(p);
+                        sb.AppendLine(marker != null ? marker + " " + text.Trim() : text);
+                    }
                     else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
-                        ReadTable(table, sb);
+                    {
+                        ReadTable(table, tracker, sb);
+                    }
                 }
             }
             return sb.ToString();
@@ -124,17 +131,18 @@ namespace RPAWriter.Core.Services
                 var mainPart = doc.MainDocumentPart;
                 var body = mainPart?.Document?.Body;
                 if (body == null) return "";
+                var tracker = new ListMarkerTracker(mainPart?.NumberingDefinitionsPart?.Numbering);
                 foreach (var element in body.ChildElements)
                 {
                     if (element is Paragraph p)
                     {
                         ReadParagraphImages(p, mainPart, extractor, sb);
-                        ReadParagraphMarkdown(p, sb);
+                        ReadParagraphMarkdown(p, tracker, sb);
                     }
                     else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
                     {
                         ReadTableImages(table, mainPart, extractor, sb);
-                        ReadTableMarkdown(table, sb);
+                        ReadTableMarkdown(table, tracker, sb);
                         sb.AppendLine();
                     }
                 }
@@ -181,7 +189,7 @@ namespace RPAWriter.Core.Services
             return sb.ToString();
         }
 
-        private void ReadParagraphMarkdown(Paragraph p, StringBuilder sb)
+        private void ReadParagraphMarkdown(Paragraph p, ListMarkerTracker tracker, StringBuilder sb)
         {
             var text = ReadParagraph(p);
             int level = HeadingLevel(p.ParagraphProperties?.ParagraphStyleId?.Val?.Value);
@@ -190,9 +198,10 @@ namespace RPAWriter.Core.Services
                 sb.AppendLine(new string('#', level) + " " + text.Trim());
                 return;
             }
-            if (IsList(p))
+            var marker = tracker.GetMarker(p);
+            if (marker != null)
             {
-                sb.AppendLine("- " + text.Trim());
+                sb.AppendLine(marker + " " + text.Trim());
                 return;
             }
             if (string.IsNullOrWhiteSpace(text))
@@ -203,13 +212,13 @@ namespace RPAWriter.Core.Services
             sb.AppendLine(text.Trim());
         }
 
-        private void ReadTableMarkdown(DocumentFormat.OpenXml.Wordprocessing.Table table, StringBuilder sb)
+        private void ReadTableMarkdown(DocumentFormat.OpenXml.Wordprocessing.Table table, ListMarkerTracker tracker, StringBuilder sb)
         {
             var rows = new List<IReadOnlyList<string>>();
             foreach (var row in table.Descendants<TableRow>())
             {
                 var cells = row.Descendants<TableCell>()
-                    .Select(c => string.Join("", c.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text ?? "")))
+                    .Select(c => ReadCellLines(c, tracker, "<br>"))
                     .ToList();
                 rows.Add(cells);
             }
@@ -329,6 +338,155 @@ namespace RPAWriter.Core.Services
             return styleId != null && styleId.IndexOf("list", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// Reconstructs Word list markers (numbers/bullets) from the document numbering definitions.
+        /// Word does not store the rendered "1." text in the runs — it is computed from numbering.xml.
+        /// </summary>
+        private sealed class ListMarkerTracker
+        {
+            private sealed class LevelInfo
+            {
+                public NumberFormatValues Format = NumberFormatValues.Decimal;
+                public string Text = "";
+                public int Start = 1;
+                public bool IsBullet { get { return Format == NumberFormatValues.Bullet; } }
+            }
+
+            private readonly Dictionary<int, LevelInfo[]> _levels = new Dictionary<int, LevelInfo[]>();
+            private readonly Dictionary<int, int[]> _counters = new Dictionary<int, int[]>();
+            private readonly Dictionary<int, int> _lastLevel = new Dictionary<int, int>();
+
+            public ListMarkerTracker(Numbering numbering)
+            {
+                if (numbering == null) return;
+
+                var abstractById = new Dictionary<int, List<LevelInfo>>();
+                foreach (var abs in numbering.Elements<AbstractNum>())
+                {
+                    var abstractId = abs.AbstractNumberId?.Value ?? -1;
+                    if (abstractId < 0) continue;
+
+                    var list = new List<LevelInfo>();
+                    foreach (var lvl in abs.Elements<Level>())
+                    {
+                        var ilvl = lvl.LevelIndex?.Value ?? list.Count;
+                        var info = new LevelInfo
+                        {
+                            Format = lvl.NumberingFormat?.Val?.Value ?? NumberFormatValues.Decimal,
+                            Text = lvl.LevelText?.Val?.Value ?? "",
+                            Start = lvl.StartNumberingValue?.Val?.Value ?? 1
+                        };
+                        while (list.Count <= ilvl) list.Add(null);
+                        list[ilvl] = info;
+                    }
+                    abstractById[abstractId] = list;
+                }
+
+                foreach (var num in numbering.Elements<NumberingInstance>())
+                {
+                    var numId = num.NumberID?.Value ?? -1;
+                    var abstractId = num.AbstractNumId?.Val?.Value ?? -1;
+                    if (numId < 0 || abstractId < 0 || !abstractById.TryGetValue(abstractId, out var list)) continue;
+                    _levels[numId] = list.ToArray();
+                }
+            }
+
+            /// <summary>Returns the list marker for a paragraph (e.g. "1." or "-"), or null when it is not a list item.</summary>
+            public string GetMarker(Paragraph p)
+            {
+                var numPr = p?.ParagraphProperties?.NumberingProperties;
+                var numId = numPr?.NumberingId?.Val?.Value ?? -1;
+                var ilvl = numPr?.NumberingLevelReference?.Val?.Value ?? 0;
+
+                if (numId >= 0 && _levels.TryGetValue(numId, out var levels) && ilvl >= 0 && ilvl < levels.Length && levels[ilvl] != null)
+                    return NextMarker(numId, ilvl, levels);
+
+                // A list paragraph that cannot be resolved (style-based or missing numbering part) degrades to a bullet.
+                return IsList(p) ? "-" : null;
+            }
+
+            private string NextMarker(int numId, int ilvl, LevelInfo[] levels)
+            {
+                if (!_counters.TryGetValue(numId, out var counters))
+                    _counters[numId] = counters = new int[9];
+
+                var last = _lastLevel.TryGetValue(numId, out var lastValue) ? lastValue : -1;
+                var level = levels[ilvl];
+
+                if (counters[ilvl] == 0 || ilvl > last)
+                {
+                    counters[ilvl] = level.Start;
+                }
+                else if (ilvl == last)
+                {
+                    counters[ilvl]++;
+                }
+                else
+                {
+                    counters[ilvl]++;
+                    for (int i = ilvl + 1; i < counters.Length; i++) counters[i] = 0;
+                }
+                _lastLevel[numId] = ilvl;
+
+                if (level.IsBullet) return "-";
+
+                var template = string.IsNullOrEmpty(level.Text) ? "%1." : level.Text;
+                var result = template;
+                for (int i = 0; i < 9; i++)
+                {
+                    var token = "%" + (i + 1);
+                    if (result.IndexOf(token, StringComparison.Ordinal) < 0) continue;
+
+                    var info = i < levels.Length ? levels[i] : null;
+                    var value = i < counters.Length ? counters[i] : 0;
+                    if (value == 0 && info != null) value = info.Start;
+                    result = result.Replace(token, FormatValue(value, info != null ? info.Format : NumberFormatValues.Decimal));
+                }
+                return result;
+            }
+
+            private static string FormatValue(int value, NumberFormatValues format)
+            {
+                if (format == NumberFormatValues.LowerLetter) return ToLetters(value, false);
+                if (format == NumberFormatValues.UpperLetter) return ToLetters(value, true);
+                if (format == NumberFormatValues.LowerRoman) return ToRoman(value).ToLowerInvariant();
+                if (format == NumberFormatValues.UpperRoman) return ToRoman(value);
+                return value.ToString();
+            }
+
+            private static string ToLetters(int value, bool upper)
+            {
+                var sb = new StringBuilder();
+                int n = value;
+                while (n > 0)
+                {
+                    n--;
+                    sb.Insert(0, (char)('a' + (n % 26)));
+                    n /= 26;
+                }
+                var text = sb.Length == 0 ? "a" : sb.ToString();
+                return upper ? text.ToUpperInvariant() : text;
+            }
+
+            private static string ToRoman(int value)
+            {
+                if (value <= 0) return value.ToString();
+                var numerals = new[] { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+                var symbols = new[] { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" };
+                var sb = new StringBuilder();
+                int n = value;
+                for (int i = 0; i < numerals.Length; i++)
+                {
+                    while (n >= numerals[i])
+                    {
+                        sb.Append(symbols[i]);
+                        n -= numerals[i];
+                    }
+                }
+                return sb.ToString();
+            }
+        }
+
         private static List<string> LoadSharedStrings(WorkbookPart workbookPart)
         {
             return workbookPart.SharedStringTablePart?.SharedStringTable?
@@ -341,15 +499,32 @@ namespace RPAWriter.Core.Services
             return string.Join("", p.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text ?? ""));
         }
 
-        private static void ReadTable(DocumentFormat.OpenXml.Wordprocessing.Table table, StringBuilder sb)
+        private static void ReadTable(DocumentFormat.OpenXml.Wordprocessing.Table table, ListMarkerTracker tracker, StringBuilder sb)
         {
             foreach (var row in table.Descendants<TableRow>())
             {
                 var cells = row.Descendants<TableCell>()
-                    .Select(c => string.Join("", c.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text ?? "")))
+                    .Select(c => ReadCellLines(c, tracker, "\n"))
                     .ToList();
                 sb.AppendLine(string.Join("\t", cells));
             }
+        }
+
+        private static string ReadCellLines(TableCell cell, ListMarkerTracker tracker, string separator)
+        {
+            var paragraphs = cell.ChildElements.OfType<Paragraph>().ToList();
+            if (paragraphs.Count == 0)
+                return string.Join("", cell.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text ?? ""));
+
+            var lines = new List<string>();
+            foreach (var p in paragraphs)
+            {
+                var text = ReadParagraph(p).Trim();
+                if (text.Length == 0) continue;
+                var marker = tracker.GetMarker(p);
+                lines.Add(marker != null ? marker + " " + text : text);
+            }
+            return string.Join(separator, lines);
         }
 
         private static string ReadCell(Cell cell, List<string> sharedStrings)

@@ -179,6 +179,19 @@ namespace RPAWriter.Tests
             Assert.That(spec.MarkdownText, Does.Contain("| Open browser | Read table |"));
         }
 
+        [Test]
+        public void OpenXmlDocumentReader_PreservesNumberedListInTableCell()
+        {
+            var path = Path.Combine(_dir, "list.docx");
+            Directory.CreateDirectory(_dir);
+            CreateDocxWithNumberedListInCell(path);
+
+            var spec = new OpenXmlDocumentReader().Read(path);
+
+            Assert.That(spec.MarkdownText, Does.Contain("1. item 1<br>2. item 2<br>3. item 3"));
+            Assert.That(spec.RawText, Does.Contain("1. item 1\n2. item 2\n3. item 3"));
+        }
+
         private static void CreateDocxStructured(string path)
         {
             using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
@@ -195,6 +208,46 @@ namespace RPAWriter.Tests
                     new TableRow(
                         new TableCell(new Paragraph(new Run(new Text("value 1")))),
                         new TableCell(new Paragraph(new Run(new Text("value 2"))))));
+                main.Document.Body.AppendChild(table);
+                main.Document.Save();
+            }
+        }
+
+        private static void CreateDocxWithNumberedListInCell(string path)
+        {
+            using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
+            {
+                var main = doc.AddMainDocumentPart();
+                main.Document = new Document(new Body());
+
+                var numberingPart = main.AddNewPart<NumberingDefinitionsPart>();
+                numberingPart.Numbering = new Numbering(
+                    new AbstractNum(
+                        new Level(
+                            new StartNumberingValue { Val = 1 },
+                            new NumberingFormat { Val = NumberFormatValues.Decimal },
+                            new LevelText { Val = "%1." })
+                        { LevelIndex = 0 })
+                    { AbstractNumberId = 0 },
+                    new NumberingInstance(
+                        new AbstractNumId { Val = 0 })
+                    { NumberID = 1 });
+
+                var listCell = new TableCell();
+                for (int i = 1; i <= 3; i++)
+                {
+                    listCell.Append(new Paragraph(
+                        new ParagraphProperties(
+                            new NumberingProperties(
+                                new NumberingLevelReference { Val = 0 },
+                                new NumberingId { Val = 1 })),
+                        new Run(new Text("item " + i))));
+                }
+
+                var table = new DocumentFormat.OpenXml.Wordprocessing.Table(
+                    new TableRow(
+                        new TableCell(new Paragraph(new Run(new Text("Header")))),
+                        listCell));
                 main.Document.Body.AppendChild(table);
                 main.Document.Save();
             }
