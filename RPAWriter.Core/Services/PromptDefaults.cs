@@ -54,6 +54,23 @@ namespace RPAWriter.Core.Services
             "solutionPaths must list the file(s) (relative path) where the task is implemented.\n\n" +
             "Task: {task}\n\nRobot files (relativePath + content):\n{files}";
 
+        public const string GenerateAlgorithmDraft =
+            "Сгенерируй алгоритм по приведённому техническому заданию. Верни ТОЛЬКО Markdown, без пояснений вокруг.\n\n" +
+            "Обязательно включи три раздела:\n" +
+            "1. Пошаговый алгоритм — нумерованный список шагов с условиями и ветвлениями.\n" +
+            "2. Диаграмма алгоритма — блок Mermaid (flowchart или graph), отражающий все переходы и ветвления.\n" +
+            "3. Древовидная структура алгоритма — иерархия шагов отступами с указанием переходов (успех/ошибка/повтор).\n\n" +
+            "Техническое задание:\n{spec}";
+
+        public const string ConsolidateAlgorithm =
+            "Дано техническое задание и несколько независимо сгенерированных черновиков алгоритма.\n\n" +
+            "Выполни:\n" +
+            "1. Найди и перечисли противоречия и расхождения между черновиками и с техническим заданием.\n" +
+            "2. Сгенерируй итоговый правильный алгоритм с учётом всех неточностей (Markdown: пошаговый текст, диаграмма Mermaid, древовидная структура с переходами).\n" +
+            "3. Составь список вопросов по техническому заданию, требующих уточнения.\n\n" +
+            "Верни СТРОГО JSON без текста вокруг: {\"algorithm\":\"<итоговый алгоритм в Markdown>\",\"questions\":\"<список вопросов в Markdown>\"}.\n\n" +
+            "Техническое задание:\n{spec}\n\n{drafts}";
+
         public const string AgentJsonBaseSystemPrompt =
             "You are an RPA robot development agent for Windows Workflow Foundation.\n" +
             "Always answer in Russian unless the user writes in another language.\n" +

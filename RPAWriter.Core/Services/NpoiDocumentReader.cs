@@ -20,8 +20,9 @@ namespace RPAWriter.Core.Services
     {
         private const string WordDocumentStream = "WordDocument";
 
-        public SpecModel Read(string path)
+        public SpecModel Read(string path, string mediaOutputDir = null)
         {
+            // Legacy .doc/.xls do not support image extraction; mediaOutputDir is ignored.
             if (string.IsNullOrWhiteSpace(path)) throw new ArgumentNullException(nameof(path));
             if (!File.Exists(path)) throw new FileNotFoundException("File not found", path);
 

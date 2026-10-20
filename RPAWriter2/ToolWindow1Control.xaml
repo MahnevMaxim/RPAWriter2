@@ -1205,8 +1205,10 @@
             <DockPanel>
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Button Content="Import spec" Click="OnImportSpec" Margin="0,5,8,0"/>
+                    <Button Content="Generate algorithm" Click="OnGenerateAlgorithm" Margin="0,5,8,0"/>
                     <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
                     <Button Content="UiPath → WF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
+                    <Button Content="Convert md to docx" Click="OnConvertMarkdownToDocx" Margin="0,5,8,0"/>
                 </WrapPanel>
                 <controls:NotificationBanner x:Name="NoticeBar" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
                                               CloseRequested="OnNoticeClose"
@@ -1358,6 +1360,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1369,138 +1372,148 @@
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Model" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <TextBox Grid.Row="2" Grid.Column="1" x:Name="ModelBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="3" Grid.Column="1" x:Name="KbPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Temperature" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,4">
+                    <Slider x:Name="TemperatureSlider" Width="200" Minimum="0" Maximum="1"
+                            TickFrequency="0.1" IsSnapToTickEnabled="True"
+                            SmallChange="0.1" LargeChange="0.2"
+                            ValueChanged="OnTemperatureChanged" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TemperatureValueText" Text="0.2" VerticalAlignment="Center"
+                               Margin="10,0,0,0" Width="40" Foreground="{StaticResource Dark.Text}"/>
+                </StackPanel>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Robot solutions directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="4" Grid.Column="1" x:Name="RobotsRootPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="KbPathBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="Robot template file name" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="5" Grid.Column="1" x:Name="RobotTemplateNameBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="Robot solutions directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="5" Grid.Column="1" x:Name="RobotsRootPathBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="6" Grid.Column="0" Text="Rules directory (md)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="6" Grid.Column="1" x:Name="RulesPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="6" Grid.Column="0" Text="Robot template file name" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="6" Grid.Column="1" x:Name="RobotTemplateNameBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="7" Grid.Column="0" Text="Context window (tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="7" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="7" Grid.Column="0" Text="Rules directory (md)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="7" Grid.Column="1" x:Name="RulesPathBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="8" Grid.Column="0" Text="Compact threshold (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="8" Grid.Column="1" x:Name="CompactThresholdBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="8" Grid.Column="0" Text="Context window (tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="8" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="9" Grid.Column="0" Text="Reserve fraction (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="9" Grid.Column="1" x:Name="ReserveFractionBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="9" Grid.Column="0" Text="Compact threshold (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="9" Grid.Column="1" x:Name="CompactThresholdBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="10" Grid.Column="0" Text="Keep recent messages" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="10" Grid.Column="1" x:Name="KeepRecentBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="10" Grid.Column="0" Text="Reserve fraction (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="10" Grid.Column="1" x:Name="ReserveFractionBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="11" Grid.Column="0" Text="Tool result max chars" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="11" Grid.Column="1" x:Name="ToolResultMaxCharsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="11" Grid.Column="0" Text="Keep recent messages" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="11" Grid.Column="1" x:Name="KeepRecentBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="12" Grid.Column="0" Text="Max agent iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="12" Grid.Column="1" x:Name="MaxIterationsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="12" Grid.Column="0" Text="Tool result max chars" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="12" Grid.Column="1" x:Name="ToolResultMaxCharsBox" Margin="0,0,0,4"/>
 
-                <CheckBox Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCompactCheckBox"
+                <TextBlock Grid.Row="13" Grid.Column="0" Text="Max agent iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="13" Grid.Column="1" x:Name="MaxIterationsBox" Margin="0,0,0,4"/>
+
+                <CheckBox Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCompactCheckBox"
                           Content="Auto-compact (summarize)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <CheckBox Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox"
+                <CheckBox Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox"
                           Content="Use 'tool' role for tool results" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <TextBlock Grid.Row="15" Grid.Column="0" Text="Tool calling" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <ComboBox Grid.Row="15" Grid.Column="1" x:Name="ToolCallingModeCombo" SelectedIndex="0"
+                <TextBlock Grid.Row="16" Grid.Column="0" Text="Tool calling" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="16" Grid.Column="1" x:Name="ToolCallingModeCombo" SelectedIndex="0"
                           VerticalAlignment="Center" Margin="0,0,0,4">
                     <ComboBoxItem Content="JSON over chat (compatible)"/>
                     <ComboBoxItem Content="Native function calling"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="16" Grid.Column="0" Text="Memory bank" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <ComboBox Grid.Row="16" Grid.Column="1" x:Name="MemoryBankModeCombo" SelectedIndex="0"
+                <TextBlock Grid.Row="17" Grid.Column="0" Text="Memory bank" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="17" Grid.Column="1" x:Name="MemoryBankModeCombo" SelectedIndex="0"
                           VerticalAlignment="Center" Margin="0,0,0,4">
                     <ComboBoxItem Content="Disabled"/>
                     <ComboBoxItem Content="Tool (read_memory / update_memory)"/>
                     <ComboBoxItem Content="Convention (read/update with file tools)"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="17" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <DockPanel Grid.Row="17" Grid.Column="1" Margin="0,0,0,4">
+                <TextBlock Grid.Row="18" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="18" Grid.Column="1" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Click="OnOpenLog" Margin="8,0,0,0"/>
                     <TextBox x:Name="LogFilePathBox"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="18" Grid.Column="0" Text="Chat log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <DockPanel Grid.Row="18" Grid.Column="1" Margin="0,0,0,4">
+                <TextBlock Grid.Row="19" Grid.Column="0" Text="Chat log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="19" Grid.Column="1" Margin="0,0,0,4">
                     <Button DockPanel.Dock="Right" x:Name="OpenChatLogButton" Content="Open log" Click="OnOpenChatLog" Margin="8,0,0,0"/>
                     <TextBox x:Name="ChatLogFilePathBox"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="19" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="19" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="20" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="20" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="20" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="20" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="21" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="21" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="21" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="21" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="22" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="22" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="22" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="22" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="23" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="23" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="23" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="23" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="24" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="24" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="24" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="24" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="25" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="25" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="25" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="25" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="26" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="26" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="26" Grid.Column="0" Text="Packages directory (NuGet source)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="26" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="27" Grid.Column="0" Text="Packages directory (NuGet source)" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="27" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="27" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,8,8,4"/>
-                <TextBox Grid.Row="27" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4"/>
+                <TextBlock Grid.Row="28" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,8,8,4"/>
+                <TextBox Grid.Row="28" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4"/>
 
-                <TextBlock Grid.Row="28" Grid.Column="0" Text="User name" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="28" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="29" Grid.Column="0" Text="User name" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="29" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="29" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="29" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="30" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="30" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4"/>
 
-                <CheckBox Grid.Row="30" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox"
+                <CheckBox Grid.Row="31" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox"
                           Content="Address me by name" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <CheckBox Grid.Row="31" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AllowSubagentsCheckBox"
+                <CheckBox Grid.Row="32" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AllowSubagentsCheckBox"
                           Content="Enable sub-agents (spawn_agent)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <TextBlock Grid.Row="32" Grid.Column="0" Text="Sub-agent max iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="32" Grid.Column="1" x:Name="SubagentMaxIterationsBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="33" Grid.Column="0" Text="Sub-agent max iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="33" Grid.Column="1" x:Name="SubagentMaxIterationsBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="33" Grid.Column="0" Text="Sub-agent max depth" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="33" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="34" Grid.Column="0" Text="Sub-agent max depth" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="34" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
 
-                <CheckBox Grid.Row="34" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox"
+                <CheckBox Grid.Row="35" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox"
                           Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <TextBlock Grid.Row="35" Grid.Column="0" Text="Speech recognition" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <ComboBox Grid.Row="35" Grid.Column="1" x:Name="SpeechToTextProviderCombo" SelectedIndex="0"
+                <TextBlock Grid.Row="36" Grid.Column="0" Text="Speech recognition" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="36" Grid.Column="1" x:Name="SpeechToTextProviderCombo" SelectedIndex="0"
                           VerticalAlignment="Center" Margin="0,0,0,4">
                     <ComboBoxItem Content="Auto (Whisper, fallback Vosk)"/>
                     <ComboBoxItem Content="OpenAI Whisper"/>
                     <ComboBoxItem Content="Vosk (offline)"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="36" Grid.Column="0" Text="Whisper STT model" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="36" Grid.Column="1" x:Name="SpeechToTextModelBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="37" Grid.Column="0" Text="Whisper STT model" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="37" Grid.Column="1" x:Name="SpeechToTextModelBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="37" Grid.Column="0" Text="Speech language" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="37" Grid.Column="1" x:Name="SpeechToTextLanguageBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="38" Grid.Column="0" Text="Speech language" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="38" Grid.Column="1" x:Name="SpeechToTextLanguageBox" Margin="0,0,0,4"/>
 
-                <TextBlock Grid.Row="38" Grid.Column="0" Text="Vosk model directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="38" Grid.Column="1" x:Name="VoskModelPathBox" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="39" Grid.Column="0" Text="Vosk model directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="39" Grid.Column="1" x:Name="VoskModelPathBox" Margin="0,0,0,4"/>
 
-                <CheckBox Grid.Row="39" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox"
+                <CheckBox Grid.Row="40" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox"
                           Content="Auto-send voice input" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <StackPanel Grid.Row="40" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <StackPanel Grid.Row="41" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>

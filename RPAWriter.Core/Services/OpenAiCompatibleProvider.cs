@@ -58,7 +58,7 @@ namespace RPAWriter.Core.Services
     /// OpenAI-compatible provider: POST {BaseUrl}/chat/completions.
     /// Interoperable with OpenAI, Azure OpenAI (compatible endpoint), Ollama, LM Studio, and vLLM.
     /// </summary>
-    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable, IStreamingAiProvider, IPromptNotifier
+    public class OpenAiCompatibleProvider : IAiProvider, ITokenUsageProvider, IMessageNotifier, IRetryNotifier, IPromptReloadable, IStreamingAiProvider, IPromptNotifier, IAlgorithmGenerator
     {
         private readonly HttpClient _http;
         private readonly OpenAiOptions _options;
@@ -259,6 +259,46 @@ namespace RPAWriter.Core.Services
             };
             AddStringArray(record.SolutionPaths, obj["solutionPaths"]);
             return record;
+        }
+
+        public async Task<string> GenerateAlgorithmDraftAsync(string specMarkdown, CancellationToken cancellationToken = default)
+        {
+            var content = await CompleteAsync(
+                _prompts.GenerateAlgorithmDraft.Replace("{spec}", specMarkdown ?? ""),
+                _prompts.ChatSystemPrompt,
+                cancellationToken).ConfigureAwait(false);
+            return content;
+        }
+
+        public async Task<AlgorithmConsolidation> ConsolidateAlgorithmAsync(string specMarkdown, IReadOnlyList<string> drafts, CancellationToken cancellationToken = default)
+        {
+            var content = await CompleteAsync(
+                _prompts.ConsolidateAlgorithm
+                    .Replace("{spec}", specMarkdown ?? "")
+                    .Replace("{drafts}", BuildDraftsText(drafts)),
+                _prompts.SystemPrompt,
+                cancellationToken).ConfigureAwait(false);
+
+            var obj = ParseJson(content);
+            return new AlgorithmConsolidation
+            {
+                AlgorithmMarkdown = obj.Value<string>("algorithm") ?? "",
+                QuestionsMarkdown = obj.Value<string>("questions") ?? ""
+            };
+        }
+
+        private static string BuildDraftsText(IReadOnlyList<string> drafts)
+        {
+            var sb = new StringBuilder();
+            var list = drafts ?? new List<string>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (i > 0)
+                    sb.AppendLine().AppendLine("---").AppendLine();
+                sb.AppendLine("## Черновик " + (i + 1));
+                sb.AppendLine(list[i] ?? "");
+            }
+            return sb.ToString();
         }
 
         private static TaskDescriptor ParseTask(JToken t)

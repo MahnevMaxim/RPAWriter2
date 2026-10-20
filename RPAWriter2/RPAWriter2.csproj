@@ -26,6 +26,7 @@
     <PackageReference Include="Vosk" Version="0.3.38" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="19.8.0" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -71,6 +72,10 @@
     <VSIXSourceItem Include="$(OutputPath)libgcc_s_seh-1.dll" />
     <VSIXSourceItem Include="$(OutputPath)libstdc++-6.dll" />
     <VSIXSourceItem Include="$(OutputPath)libwinpthread-1.dll" />
+    <!-- WebView2 (Mermaid diagram rendering): managed assemblies + native loader. -->
+    <VSIXSourceItem Include="$(OutputPath)Microsoft.Web.WebView2.Core.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Microsoft.Web.WebView2.Wpf.dll" />
+    <VSIXSourceItem Include="$(OutputPath)WebView2Loader.dll" />
   </ItemGroup>
   <ItemGroup>
     <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
@@ -89,6 +94,12 @@
   <Target Name="CopySqliteInteropToOutput" BeforeTargets="GetVsixSourceItems">
     <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x86" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x64" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyWebView2LoaderToOutput" BeforeTargets="GetVsixSourceItems">
+    <!-- The WebView2 NuGet package only drops the native loader under runtimes\ for this
+         SDK-style net472 project. Copy the x64 loader next to the managed assemblies so the
+         VSIX (and F5 debug) can find it. -->
+    <Copy SourceFiles="$(NuGetPackageRoot)microsoft.web.webview2\1.0.4258.31\runtimes\win-x64\native\WebView2Loader.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
   <ItemGroup>
     <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->
@@ -113,6 +124,12 @@
       <IncludeInVSIX>true</IncludeInVSIX>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Mermaid.js bundled as an embedded resource and read at runtime by MermaidDiagramControl. -->
+    <EmbeddedResource Include="Assets\mermaid.min.js">
+      <LogicalName>RPAWriter2.Assets.mermaid.min.js</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <VSCTCompile Include="RPAWriter2Package.vsct">

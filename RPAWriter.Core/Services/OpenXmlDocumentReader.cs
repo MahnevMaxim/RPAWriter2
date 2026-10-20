@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Blip = DocumentFormat.OpenXml.Drawing.Blip;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -17,23 +18,29 @@ namespace RPAWriter.Core.Services
     /// </summary>
     public class OpenXmlDocumentReader : IDocumentReader
     {
-        public SpecModel Read(string path)
+        /// <summary>
+        /// Reads a spec document. When <paramref name="mediaOutputDir"/> is provided, embedded
+        /// images (.docx/.xlsx) are extracted there and referenced from the Markdown by the
+        /// directory's own name (e.g. <c>media/image1.png</c>); EMF/WMF metafiles are skipped.
+        /// </summary>
+        public SpecModel Read(string path, string mediaOutputDir = null)
         {
             if (string.IsNullOrWhiteSpace(path)) throw new ArgumentNullException(nameof(path));
             if (!File.Exists(path)) throw new FileNotFoundException("File not found", path);
 
             var ext = Path.GetExtension(path).ToLowerInvariant();
+            var extractor = string.IsNullOrWhiteSpace(mediaOutputDir) ? null : new MediaExtractor(mediaOutputDir);
             string text;
             string markdown;
             switch (ext)
             {
                 case ".docx":
                     text = ReadWordText(path);
-                    markdown = ReadWordMarkdown(path);
+                    markdown = ReadWordMarkdown(path, extractor);
                     break;
                 case ".xlsx":
                     text = ReadExcelText(path);
-                    markdown = ReadExcelMarkdown(path);
+                    markdown = ReadExcelMarkdown(path, extractor);
                     break;
                 case ".doc":
                 case ".xls":
@@ -106,17 +113,27 @@ namespace RPAWriter.Core.Services
         /// <summary>Generates structured Markdown for Word (.docx): headings, lists, and tables.</summary>
         public string ReadWordMarkdown(string path)
         {
+            return ReadWordMarkdown(path, null);
+        }
+
+        private string ReadWordMarkdown(string path, MediaExtractor extractor)
+        {
             var sb = new StringBuilder();
             using (var doc = WordprocessingDocument.Open(path, false))
             {
-                var body = doc.MainDocumentPart?.Document?.Body;
+                var mainPart = doc.MainDocumentPart;
+                var body = mainPart?.Document?.Body;
                 if (body == null) return "";
                 foreach (var element in body.ChildElements)
                 {
                     if (element is Paragraph p)
+                    {
+                        ReadParagraphImages(p, mainPart, extractor, sb);
                         ReadParagraphMarkdown(p, sb);
+                    }
                     else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
                     {
+                        ReadTableImages(table, mainPart, extractor, sb);
                         ReadTableMarkdown(table, sb);
                         sb.AppendLine();
                     }
@@ -127,6 +144,11 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Generates structured Markdown for Excel (.xlsx): sheet → heading + table.</summary>
         public string ReadExcelMarkdown(string path)
+        {
+            return ReadExcelMarkdown(path, null);
+        }
+
+        private string ReadExcelMarkdown(string path, MediaExtractor extractor)
         {
             var sb = new StringBuilder();
             using (var doc = SpreadsheetDocument.Open(path, false))
@@ -152,6 +174,8 @@ namespace RPAWriter.Core.Services
                     }
                     sb.Append(MarkdownContent.Table(rows));
                     sb.AppendLine();
+
+                    ReadSheetImages(worksheetPart, extractor, sb);
                 }
             }
             return sb.ToString();
@@ -190,6 +214,97 @@ namespace RPAWriter.Core.Services
                 rows.Add(cells);
             }
             sb.Append(MarkdownContent.Table(rows));
+        }
+
+        private void ReadParagraphImages(Paragraph p, OpenXmlPart part, MediaExtractor extractor, StringBuilder sb)
+        {
+            if (extractor == null) return;
+            foreach (var blip in p.Descendants<Blip>())
+                EmitBlip(blip, part, extractor, sb);
+        }
+
+        private void ReadTableImages(DocumentFormat.OpenXml.Wordprocessing.Table table, OpenXmlPart part, MediaExtractor extractor, StringBuilder sb)
+        {
+            if (extractor == null) return;
+            foreach (var blip in table.Descendants<Blip>())
+                EmitBlip(blip, part, extractor, sb);
+        }
+
+        private void ReadSheetImages(WorksheetPart worksheetPart, MediaExtractor extractor, StringBuilder sb)
+        {
+            if (extractor == null) return;
+            var drawingsPart = worksheetPart.DrawingsPart;
+            if (drawingsPart?.WorksheetDrawing == null) return;
+            foreach (var blip in drawingsPart.WorksheetDrawing.Descendants<Blip>())
+                EmitBlip(blip, drawingsPart, extractor, sb);
+        }
+
+        private void EmitBlip(Blip blip, OpenXmlPart part, MediaExtractor extractor, StringBuilder sb)
+        {
+            var embed = blip.Embed?.Value;
+            if (string.IsNullOrEmpty(embed)) return; // linked (external) image, not embedded
+
+            OpenXmlPart target;
+            try { target = part.GetPartById(embed); }
+            catch { return; }
+
+            if (!(target is ImagePart imagePart)) return;
+
+            var relative = extractor.Extract(imagePart);
+            if (relative == null) return; // unsupported content type (EMF/WMF, etc.)
+
+            sb.AppendLine("![" + ImageAltText + "](" + relative + ")");
+        }
+
+        private const string ImageAltText = "image";
+
+        /// <summary>Writes embedded images to disk and produces Markdown-relative references.</summary>
+        private sealed class MediaExtractor
+        {
+            private readonly string _outputDir;
+            private readonly string _relativePrefix;
+            private int _counter;
+
+            public MediaExtractor(string outputDir)
+            {
+                if (string.IsNullOrWhiteSpace(outputDir))
+                    throw new ArgumentNullException(nameof(outputDir));
+                _outputDir = outputDir;
+                var folder = Path.GetFileName(Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                _relativePrefix = string.IsNullOrEmpty(folder) ? "media" : folder;
+            }
+
+            /// <summary>Extracts one image part; returns the Markdown-relative path, or null for unsupported types.</summary>
+            public string Extract(OpenXmlPart part)
+            {
+                var ext = ExtensionFromContentType(part.ContentType);
+                if (ext == null) return null;
+
+                _counter++;
+                var fileName = "image" + _counter + ext;
+                Directory.CreateDirectory(_outputDir);
+                using (var src = part.GetStream(FileMode.Open, FileAccess.Read))
+                using (var dst = File.Create(Path.Combine(_outputDir, fileName)))
+                    src.CopyTo(dst);
+                return _relativePrefix + "/" + fileName;
+            }
+        }
+
+        private static string ExtensionFromContentType(string contentType)
+        {
+            switch ((contentType ?? "").ToLowerInvariant())
+            {
+                case "image/png": return ".png";
+                case "image/jpeg":
+                case "image/jpg": return ".jpg";
+                case "image/gif": return ".gif";
+                case "image/bmp": return ".bmp";
+                case "image/tiff":
+                case "image/tif": return ".tiff";
+                case "image/svg+xml": return ".svg";
+                // EMF/WMF vector metafiles are intentionally not extracted.
+                default: return null;
+            }
         }
 
         private static int HeadingLevel(string styleId)

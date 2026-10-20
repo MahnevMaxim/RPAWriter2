@@ -13,6 +13,8 @@ namespace RPAWriter.Core.Services
         public string DecomposeTasks { get; set; }
         public string ReconstructSpec { get; set; }
         public string MapTaskToSolution { get; set; }
+        public string GenerateAlgorithmDraft { get; set; }
+        public string ConsolidateAlgorithm { get; set; }
         public string AgentJsonBaseSystemPrompt { get; set; }
         public string AgentCompactSystemPrompt { get; set; }
         public string AgentPlanSystemPromptNative { get; set; }
@@ -30,6 +32,8 @@ namespace RPAWriter.Core.Services
                 DecomposeTasks = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "decompose-tasks.txt", PromptDefaults.DecomposeTasks),
                 ReconstructSpec = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "reconstruct-spec.txt", PromptDefaults.ReconstructSpec),
                 MapTaskToSolution = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "map-task-to-solution.txt", PromptDefaults.MapTaskToSolution),
+                GenerateAlgorithmDraft = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "generate-algorithm.txt", PromptDefaults.GenerateAlgorithmDraft),
+                ConsolidateAlgorithm = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.Tasks, "consolidate-algorithm.txt", PromptDefaults.ConsolidateAlgorithm),
                 AgentJsonBaseSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-json-base.txt", PromptDefaults.AgentJsonBaseSystemPrompt),
                 AgentCompactSystemPrompt = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-compact.txt", PromptDefaults.AgentCompactSystemPrompt),
                 AgentPlanSystemPromptNative = PromptLibrary.Load(promptsPath, PromptLibrary.Categories.System, "agent-plan-system-native.txt", PromptDefaults.AgentPlanSystemPromptNative),

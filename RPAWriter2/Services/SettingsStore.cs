@@ -12,6 +12,9 @@ namespace RPAWriter2.Services
         public string BaseUrl { get; set; } = "https://api.openai.com/v1";
         public string ApiKey { get; set; } = "";
         public string Model { get; set; } = "gpt-4o-mini";
+
+        /// <summary>Sampling temperature sent to the model (0..1).</summary>
+        public double Temperature { get; set; } = 0.2;
         public string KnowledgeBasePath { get; set; } = "";
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
@@ -169,6 +172,8 @@ namespace RPAWriter2.Services
                 settings.RulesPath = PromptPaths.ResolveRulesDirectory();
             if (settings.ContextWindowSize <= 0)
                 settings.ContextWindowSize = 409600;
+            if (double.IsNaN(settings.Temperature) || settings.Temperature < 0.0 || settings.Temperature > 1.0)
+                settings.Temperature = 0.2;
             if (settings.TimeoutSeconds <= 0)
                 settings.TimeoutSeconds = 300;
             if (settings.RetryTimeoutMinutes <= 0)

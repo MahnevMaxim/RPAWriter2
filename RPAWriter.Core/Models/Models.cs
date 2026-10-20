@@ -215,6 +215,19 @@ namespace RPAWriter.Core.Models
         public List<SimilarTaskMatch> ReusedSolutions { get; set; } = new List<SimilarTaskMatch>();
     }
 
+    /// <summary>
+    /// Result of reconciling several algorithm drafts: the final algorithm and the list of
+    /// clarifying questions about the spec, kept as separate Markdown documents.
+    /// </summary>
+    public class AlgorithmConsolidation
+    {
+        /// <summary>Final algorithm Markdown (step-by-step text, Mermaid diagram, tree structure).</summary>
+        public string AlgorithmMarkdown { get; set; }
+
+        /// <summary>Markdown list of questions about the technical specification.</summary>
+        public string QuestionsMarkdown { get; set; }
+    }
+
     /// <summary>Workflow node kinds (standard WF activities).</summary>
     public enum ActivityNodeKind
     {

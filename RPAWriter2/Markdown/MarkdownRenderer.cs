@@ -12,6 +12,7 @@ using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using RPAWriter.Core.Services;
+using RPAWriter2.Controls;
 using RPAWriter2.Converters;
 
 // WPF's System.Windows.Documents namespace also defines Block/Inline/Table/TableRow/TableCell,
@@ -142,6 +143,9 @@ namespace RPAWriter2.Markdown
             string language = FirstWord(info);
             string text = MarkdownCodeBlockText.GetText(code);
             text = text.TrimEnd('\r', '\n');
+
+            if (string.Equals(language, "mermaid", StringComparison.OrdinalIgnoreCase))
+                return new MermaidDiagramControl(text);
 
             IReadOnlyList<CodeToken> tokens = IsCSharp(language)
                 ? CSharpHighlighter.Highlight(text)

@@ -36,7 +36,8 @@ namespace RPAWriter2.Services
                 RetryMaxDelay = TimeSpan.FromSeconds(settings.RetryMaxDelaySeconds > 0 ? settings.RetryMaxDelaySeconds : 30),
                 InputPricePerMillion = settings.InputPricePerMillion >= 0 ? settings.InputPricePerMillion : 0.27,
                 CacheHitPricePerMillion = settings.CacheHitPricePerMillion >= 0 ? settings.CacheHitPricePerMillion : 0.07,
-                OutputPricePerMillion = settings.OutputPricePerMillion >= 0 ? settings.OutputPricePerMillion : 1.10
+                OutputPricePerMillion = settings.OutputPricePerMillion >= 0 ? settings.OutputPricePerMillion : 1.10,
+                Temperature = Math.Max(0.0, Math.Min(1.0, settings.Temperature))
             });
         }
     }

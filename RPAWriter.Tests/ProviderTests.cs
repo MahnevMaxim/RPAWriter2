@@ -725,5 +725,51 @@ namespace RPAWriter.Tests
             Assert.That(captured.Messages[0].Content, Is.EqualTo("hello"));
             Assert.That(captured.EstimatedInputTokens, Is.GreaterThan(0));
         }
+
+        [Test]
+        public async Task GenerateAlgorithmDraftAsync_SubstitutesSpecAndReturnsContent()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion("ALGORITHM")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            var result = await provider.GenerateAlgorithmDraftAsync("SPEC-MD");
+
+            Assert.That(result, Is.EqualTo("ALGORITHM"));
+            Assert.That(handler.LastBody, Does.Contain("SPEC-MD"));
+        }
+
+        [Test]
+        public async Task ConsolidateAlgorithmAsync_SubstitutesDraftsAndParsesJson()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion("{\"algorithm\":\"ALG\",\"questions\":\"Q\"}")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            var result = await provider.ConsolidateAlgorithmAsync("SPEC-MD", new[] { "draft-one", "draft-two" });
+
+            Assert.That(result.AlgorithmMarkdown, Is.EqualTo("ALG"));
+            Assert.That(result.QuestionsMarkdown, Is.EqualTo("Q"));
+            Assert.That(handler.LastBody, Does.Contain("SPEC-MD"));
+            Assert.That(handler.LastBody, Does.Contain("Черновик 1"));
+            Assert.That(handler.LastBody, Does.Contain("draft-two"));
+        }
+
+        [Test]
+        public async Task StubAiProvider_GeneratesAlgorithmAndQuestions()
+        {
+            var stub = new StubAiProvider();
+
+            var draft = await stub.GenerateAlgorithmDraftAsync("spec");
+            Assert.That(draft, Does.Contain("mermaid"));
+
+            var consolidated = await stub.ConsolidateAlgorithmAsync("spec", new[] { "d1" });
+            Assert.That(consolidated.AlgorithmMarkdown, Does.Contain("mermaid"));
+            Assert.That(consolidated.QuestionsMarkdown, Does.Contain("Вопросы"));
+        }
     }
 }

@@ -14,7 +14,7 @@ namespace RPAWriter.Core.Services
     /// Deterministic AI provider stub (offline/demo mode).
     /// Splits text into sentences and maps activity types by keyword.
     /// </summary>
-    public class StubAiProvider : IAiProvider
+    public class StubAiProvider : IAiProvider, IAlgorithmGenerator
     {
         private static readonly Dictionary<string, string> ActivityMap =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -142,6 +142,34 @@ namespace RPAWriter.Core.Services
                 .Select(m => m.Value.TrimEnd('(').Trim())
                 .Where(n => !string.IsNullOrWhiteSpace(n))
                 .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        public Task<string> GenerateAlgorithmDraftAsync(string specMarkdown, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(
+                "# Алгоритм (заглушка)\n\n" +
+                "1. Получить входные данные.\n" +
+                "2. Выполнить обработку.\n" +
+                "3. Сформировать результат.\n\n" +
+                "```mermaid\nflowchart TD\n  A[Начало] --> B[Обработка]\n  B --> C[Результат]\n```\n\n" +
+                "## Древовидная структура\n\n" +
+                "- Шаг 1\n  - Успех → Шаг 2\n  - Ошибка → Конец\n" +
+                "- Шаг 2\n");
+        }
+
+        public Task<AlgorithmConsolidation> ConsolidateAlgorithmAsync(string specMarkdown, IReadOnlyList<string> drafts, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new AlgorithmConsolidation
+            {
+                AlgorithmMarkdown =
+                    "# Итоговый алгоритм (заглушка)\n\n" +
+                    "1. Выполнить работу по ТЗ.\n\n" +
+                    "```mermaid\nflowchart TD\n  A[Начало] --> B[Конец]\n```\n",
+                QuestionsMarkdown =
+                    "# Вопросы по ТЗ\n\n" +
+                    "- Уточнить входные данные.\n" +
+                    "- Уточнить ожидаемый результат.\n"
+            });
         }
 
         public Task<ChatResponse> ChatAsync(string message, CancellationToken cancellationToken = default)

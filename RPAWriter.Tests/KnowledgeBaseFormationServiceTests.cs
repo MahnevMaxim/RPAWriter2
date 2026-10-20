@@ -16,7 +16,7 @@ namespace RPAWriter.Tests
         {
             public Func<string, SpecModel> OnRead { get; set; }
 
-            public SpecModel Read(string path) => OnRead?.Invoke(path) ?? new SpecModel { RawText = path };
+            public SpecModel Read(string path, string mediaOutputDir = null) => OnRead?.Invoke(path) ?? new SpecModel { RawText = path };
         }
 
         private sealed class FakeAiProvider : IAiProvider

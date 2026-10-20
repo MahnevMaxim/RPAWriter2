@@ -177,6 +177,8 @@ namespace RPAWriter2
             BaseUrlBox.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl) ? "https://api.openai.com/v1" : _settings.BaseUrl;
             ApiKeyBox.Password = _settings.ApiKey ?? "";
             ModelBox.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "gpt-4o-mini" : _settings.Model;
+            TemperatureSlider.Value = _settings.Temperature;
+            UpdateTemperatureLabel();
             KbPathBox.Text = _settings.KnowledgeBasePath ?? "";
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
@@ -216,6 +218,17 @@ namespace RPAWriter2
             SpeechToTextLanguageBox.Text = _settings.SpeechToTextLanguage ?? "ru";
             VoskModelPathBox.Text = _settings.VoskModelPath ?? "";
             SpeechAutoSendCheckBox.IsChecked = _settings.SpeechAutoSend;
+        }
+
+        private void OnTemperatureChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            UpdateTemperatureLabel();
+        }
+
+        private void UpdateTemperatureLabel()
+        {
+            if (TemperatureValueText != null)
+                TemperatureValueText.Text = Math.Round(TemperatureSlider.Value, 1).ToString("0.0", CultureInfo.InvariantCulture);
         }
 
         private void RecreateAiProvider()
@@ -1122,7 +1135,8 @@ namespace RPAWriter2
                 // Unchanged copy of the original spec file.
                 SaveImportedSpec(dlg.FileName, solutionDir);
 
-                var spec = new OpenXmlDocumentReader().Read(dlg.FileName);
+                var mediaDir = Path.Combine(docsDir, "media");
+                var spec = new OpenXmlDocumentReader().Read(dlg.FileName, mediaDir);
 
                 // 1. Structured spec.md (headings, lists, tables).
                 WriteMarkdownWithConfirm(Path.Combine(docsDir, "spec.md"), spec.MarkdownText, "spec.md");
@@ -1167,6 +1181,79 @@ namespace RPAWriter2
             {
                 HideImportProgress();
             }
+        }
+
+        private async void OnGenerateAlgorithm(object sender, RoutedEventArgs e)
+        {
+            var solutionDir = GetOpenSolutionDirectory();
+            if (solutionDir == null)
+            {
+                ShowNotice("Generate algorithm is only available when a solution is open.", NotificationKind.Warning);
+                return;
+            }
+
+            var algorithmGenerator = _ai as IAlgorithmGenerator;
+            if (algorithmGenerator == null)
+            {
+                ShowNotice("The current AI provider does not support algorithm generation.", NotificationKind.Warning);
+                return;
+            }
+
+            var docsDir = Path.Combine(solutionDir, "docs");
+            Directory.CreateDirectory(docsDir);
+
+            var specMarkdown = ResolveSpecMarkdown(docsDir);
+            if (specMarkdown == null)
+            {
+                ShowNotice("Import a spec first or ensure docs/spec.md exists.", NotificationKind.Warning);
+                return;
+            }
+
+            ShowImportProgress("Generating algorithm…");
+            try
+            {
+                var drafts = new List<string>();
+                for (var i = 0; i < 3; i++)
+                {
+                    SetImportStatus("Generating algorithm draft " + (i + 1) + "/3…");
+                    var streaming = AppendSpecStreaming();
+                    streaming.Reasoning = "Generating algorithm draft " + (i + 1) + "/3…";
+                    var draft = await algorithmGenerator.GenerateAlgorithmDraftAsync(specMarkdown);
+                    streaming.IsThinking = false;
+                    streaming.Text = "Draft " + (i + 1) + " generated.";
+                    drafts.Add(draft);
+                    File.WriteAllText(Path.Combine(docsDir, "alg-" + (i + 1) + ".md"), draft);
+                    AppendSpecText("Wrote alg-" + (i + 1) + ".md");
+                }
+
+                SetImportStatus("Reconciling drafts…");
+                var consolidating = AppendSpecStreaming();
+                consolidating.Reasoning = "Reconciling drafts…";
+                var consolidated = await algorithmGenerator.ConsolidateAlgorithmAsync(specMarkdown, drafts);
+                consolidating.IsThinking = false;
+                consolidating.Text = "Algorithm consolidated.";
+
+                File.WriteAllText(Path.Combine(docsDir, "alg.md"), consolidated.AlgorithmMarkdown ?? "");
+                File.WriteAllText(Path.Combine(docsDir, "questions.md"), consolidated.QuestionsMarkdown ?? "");
+                AppendSpecText("Wrote alg.md and questions.md");
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+            finally
+            {
+                HideImportProgress();
+            }
+        }
+
+        private string? ResolveSpecMarkdown(string docsDir)
+        {
+            if (_currentSpec != null && !string.IsNullOrWhiteSpace(_currentSpec.MarkdownText))
+                return _currentSpec.MarkdownText;
+
+            var specPath = Path.Combine(docsDir, "spec.md");
+            return File.Exists(specPath) ? File.ReadAllText(specPath) : null;
         }
 
         /// <summary>
@@ -1716,6 +1803,29 @@ namespace RPAWriter2
             }
             catch (Exception ex) { ShowError(ex); }
         }
+
+        private void OnConvertMarkdownToDocx(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Markdown file",
+                Filter = "Markdown (*.md;*.markdown)|*.md;*.markdown|All files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var dir = Path.GetDirectoryName(dlg.FileName);
+                var baseName = Path.GetFileNameWithoutExtension(dlg.FileName);
+                var outputPath = Path.Combine(dir, baseName + ".docx");
+                var result = new MarkdownToDocxConverter().Convert(dlg.FileName, outputPath);
+                AppendSpecText(
+                    "Converted " + Path.GetFileName(dlg.FileName) + " → " + Path.GetFileName(outputPath) +
+                    " (paragraphs: " + result.Paragraphs + ", images: " + result.Images + ", tables: " + result.Tables + ").");
+            }
+            catch (Exception ex) { ShowError(ex); }
+        }
+
         private async void OnRestorePackages(object sender, RoutedEventArgs e)
         {
             try
@@ -3761,6 +3871,7 @@ namespace RPAWriter2
             _settings.BaseUrl = BaseUrlBox.Text.Trim();
             _settings.ApiKey = ApiKeyBox.Password.Trim();
             _settings.Model = ModelBox.Text.Trim();
+            _settings.Temperature = Math.Round(TemperatureSlider.Value, 1);
             _settings.KnowledgeBasePath = KbPathBox.Text.Trim();
             _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();

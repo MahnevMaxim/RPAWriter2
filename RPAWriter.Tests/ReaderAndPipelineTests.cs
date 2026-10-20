@@ -4,7 +4,11 @@ using System.Text;
 using System.Threading.Tasks;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using A = DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Pic = DocumentFormat.OpenXml.Drawing.Pictures;
+using Wp = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using Xdr = DocumentFormat.OpenXml.Drawing.Spreadsheet;
 using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
 using NUnit.Framework;
@@ -243,6 +247,147 @@ namespace RPAWriter.Tests
                 workbook.Write(fs);
             }
             workbook.Close();
+        }
+
+        [Test]
+        public void OpenXmlDocumentReader_ExtractsWordImage()
+        {
+            var path = Path.Combine(_dir, "spec.docx");
+            var mediaDir = Path.Combine(_dir, "media");
+            Directory.CreateDirectory(_dir);
+            CreateDocxWithImage(path);
+
+            var spec = new OpenXmlDocumentReader().Read(path, mediaDir);
+
+            Assert.That(spec.MarkdownText, Does.Contain("![image](media/image1.png)"));
+            Assert.That(File.Exists(Path.Combine(mediaDir, "image1.png")), Is.True);
+        }
+
+        [Test]
+        public void OpenXmlDocumentReader_ExtractsExcelImage()
+        {
+            var path = Path.Combine(_dir, "spec.xlsx");
+            var mediaDir = Path.Combine(_dir, "media");
+            Directory.CreateDirectory(_dir);
+            CreateXlsxWithImage(path);
+
+            var spec = new OpenXmlDocumentReader().Read(path, mediaDir);
+
+            Assert.That(spec.MarkdownText, Does.Contain("![image](media/image1.png)"));
+            Assert.That(File.Exists(Path.Combine(mediaDir, "image1.png")), Is.True);
+        }
+
+        private static readonly byte[] PngBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
+
+        private static void CreateDocxWithImage(string path)
+        {
+            using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
+            {
+                var main = doc.AddMainDocumentPart();
+                main.Document = new Document(new Body());
+
+                var imagePart = main.AddImagePart(ImagePartType.Png);
+                using (var ms = new MemoryStream(PngBytes))
+                    imagePart.FeedData(ms);
+                var relId = main.GetIdOfPart(imagePart);
+
+                var inline = new Wp.Inline();
+                inline.Append(new Wp.Extent { Cx = 990000L, Cy = 990000L });
+                inline.Append(new Wp.DocProperties { Id = 1U, Name = "Picture 1" });
+
+                var nvPicPr = new Pic.NonVisualPictureProperties();
+                nvPicPr.Append(new Pic.NonVisualDrawingProperties { Id = 0U, Name = "Picture 1" });
+                nvPicPr.Append(new Pic.NonVisualPictureDrawingProperties());
+
+                var blipFill = new Pic.BlipFill();
+                blipFill.Append(new A.Blip { Embed = relId });
+                var stretch = new A.Stretch();
+                stretch.Append(new A.FillRectangle());
+                blipFill.Append(stretch);
+
+                var picture = new Pic.Picture();
+                picture.Append(nvPicPr);
+                picture.Append(blipFill);
+
+                var graphicData = new A.GraphicData(picture) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" };
+                var graphic = new A.Graphic(graphicData);
+                inline.Append(graphic);
+
+                var drawing = new DocumentFormat.OpenXml.Wordprocessing.Drawing(inline);
+                main.Document.Body.AppendChild(new Paragraph(new Run(drawing)));
+                main.Document.Save();
+            }
+        }
+
+        private static void CreateXlsxWithImage(string path)
+        {
+            using (var doc = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook))
+            {
+                var workbookPart = doc.AddWorkbookPart();
+                workbookPart.Workbook = new DocumentFormat.OpenXml.Spreadsheet.Workbook();
+                var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+                var worksheet = new DocumentFormat.OpenXml.Spreadsheet.Worksheet();
+                var sheetData = new DocumentFormat.OpenXml.Spreadsheet.SheetData();
+                worksheet.Append(sheetData);
+                worksheetPart.Worksheet = worksheet;
+
+                var drawingsPart = worksheetPart.AddNewPart<DrawingsPart>();
+                drawingsPart.WorksheetDrawing = new Xdr.WorksheetDrawing();
+
+                var imagePart = drawingsPart.AddImagePart(ImagePartType.Png);
+                using (var ms = new MemoryStream(PngBytes))
+                    imagePart.FeedData(ms);
+                var relId = drawingsPart.GetIdOfPart(imagePart);
+
+                var fromMarker = new Xdr.FromMarker();
+                fromMarker.Append(new Xdr.ColumnId("0"));
+                fromMarker.Append(new Xdr.ColumnOffset("0"));
+                fromMarker.Append(new Xdr.RowId("0"));
+                fromMarker.Append(new Xdr.RowOffset("0"));
+
+                var toMarker = new Xdr.ToMarker();
+                toMarker.Append(new Xdr.ColumnId("1"));
+                toMarker.Append(new Xdr.ColumnOffset("0"));
+                toMarker.Append(new Xdr.RowId("1"));
+                toMarker.Append(new Xdr.RowOffset("0"));
+
+                var nvPicPr = new Xdr.NonVisualPictureProperties();
+                nvPicPr.Append(new Xdr.NonVisualDrawingProperties { Id = 0U, Name = "Picture 1" });
+                nvPicPr.Append(new Xdr.NonVisualPictureDrawingProperties());
+
+                var blipFill = new Xdr.BlipFill();
+                blipFill.Append(new A.Blip { Embed = relId });
+                var stretch = new A.Stretch();
+                stretch.Append(new A.FillRectangle());
+                blipFill.Append(stretch);
+
+                var picture = new Xdr.Picture();
+                picture.Append(nvPicPr);
+                picture.Append(blipFill);
+
+                var anchor = new Xdr.TwoCellAnchor();
+                anchor.Append(fromMarker);
+                anchor.Append(toMarker);
+                anchor.Append(picture);
+                anchor.Append(new Xdr.ClientData());
+
+                drawingsPart.WorksheetDrawing.Append(anchor);
+                drawingsPart.WorksheetDrawing.Save();
+
+                worksheet.Append(new DocumentFormat.OpenXml.Spreadsheet.Drawing { Id = worksheetPart.GetIdOfPart(drawingsPart) });
+
+                var sheets = workbookPart.Workbook.AppendChild(new DocumentFormat.OpenXml.Spreadsheet.Sheets());
+                var sheet = new DocumentFormat.OpenXml.Spreadsheet.Sheet { Id = workbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name = "Sheet1" };
+                sheets.Append(sheet);
+
+                var row = new DocumentFormat.OpenXml.Spreadsheet.Row();
+                row.Append(new DocumentFormat.OpenXml.Spreadsheet.Cell { CellValue = new DocumentFormat.OpenXml.Spreadsheet.CellValue("Open browser"), DataType = DocumentFormat.OpenXml.Spreadsheet.CellValues.String });
+                sheetData.Append(row);
+
+                worksheet.Save();
+                workbookPart.Workbook.Save();
+            }
         }
     }
 }

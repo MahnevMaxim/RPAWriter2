@@ -36,6 +36,23 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Optional capability: generates a step-by-step algorithm from a technical specification
+    /// and reconciles several independently generated drafts into a final algorithm plus a
+    /// list of clarification questions. Not all providers support this capability.
+    /// </summary>
+    public interface IAlgorithmGenerator
+    {
+        /// <summary>Generates one independent algorithm draft (Markdown) from the spec Markdown.</summary>
+        Task<string> GenerateAlgorithmDraftAsync(string specMarkdown, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Reconciles the spec and the generated drafts: returns the final algorithm Markdown
+        /// and the list of questions about the spec, as separate Markdown strings.
+        /// </summary>
+        Task<AlgorithmConsolidation> ConsolidateAlgorithmAsync(string specMarkdown, IReadOnlyList<string> drafts, CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
     /// Optional capability: streams the model's response (reasoning and content) as
     /// incremental deltas instead of returning only the completed response.
     /// Providers that cannot stream fall back to
@@ -110,7 +127,12 @@ namespace RPAWriter.Core.Contracts
     /// </summary>
     public interface IDocumentReader
     {
-        SpecModel Read(string path);
+        /// <summary>
+        /// Reads a specification into a <see cref="SpecModel"/>. When <paramref name="mediaOutputDir"/>
+        /// is provided, embedded images are extracted into that directory and referenced in
+        /// <see cref="SpecModel.MarkdownText"/> using the directory's own name (e.g. <c>media/image1.png</c>).
+        /// </summary>
+        SpecModel Read(string path, string mediaOutputDir = null);
     }
 
     /// <summary>
