@@ -58,6 +58,14 @@ namespace RPAWriter2.Markdown
         private static readonly SolidColorBrush TableOddBackground = Freeze("#252526");
         private static readonly SolidColorBrush CheckedBrush = Freeze("#4CAF50");
 
+        /// <summary>
+        /// Optional handler invoked when the user clicks a relative (non-http/https/mailto)
+        /// markdown link. Set it before calling <see cref="Render"/>; the rendered hyperlinks
+        /// capture the delegate, so it can be cleared immediately afterwards. Used by the
+        /// built-in documentation viewer to navigate between shipped .md files.
+        /// </summary>
+        public static Func<string, bool>? RelativeLinkNavigator { get; set; }
+
         /// <summary>Renders Markdown into a <see cref="StackPanel"/> of block elements.</summary>
         public static FrameworkElement Render(string markdown)
         {
@@ -132,7 +140,7 @@ namespace RPAWriter2.Markdown
         private static FrameworkElement RenderCodeBlock(CodeBlock code, string info)
         {
             string language = FirstWord(info);
-            string text = code.CodeBlockLines?.ToString() ?? string.Empty;
+            string text = MarkdownCodeBlockText.GetText(code);
             text = text.TrimEnd('\r', '\n');
 
             IReadOnlyList<CodeToken> tokens = IsCSharp(language)
@@ -443,6 +451,40 @@ namespace RPAWriter2.Markdown
             var url = link.Url ?? string.Empty;
             if (!TryCreateNavigableUri(url, out var uri))
             {
+                var navigator = RelativeLinkNavigator;
+                if (!string.IsNullOrWhiteSpace(url) && navigator != null)
+                {
+                    Uri? relativeUri;
+                    try
+                    {
+                        relativeUri = new Uri(url, UriKind.RelativeOrAbsolute);
+                    }
+                    catch
+                    {
+                        relativeUri = null;
+                    }
+
+                    if (relativeUri != null)
+                    {
+                        var relative = new Hyperlink
+                        {
+                            NavigateUri = relativeUri,
+                            Foreground = LinkBrush,
+                            TextDecorations = TextDecorations.Underline,
+                            ToolTip = string.IsNullOrWhiteSpace(link.Title) ? url : link.Title
+                        };
+                        foreach (var child in link)
+                            AppendInline(child, relative.Inlines);
+                        relative.RequestNavigate += (s, e) =>
+                        {
+                            e.Handled = true;
+                            navigator(url);
+                        };
+                        target.Add(relative);
+                        return;
+                    }
+                }
+
                 var span = new Span();
                 foreach (var child in link)
                     AppendInline(child, span.Inlines);

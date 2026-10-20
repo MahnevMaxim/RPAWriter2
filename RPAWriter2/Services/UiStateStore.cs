@@ -113,7 +113,7 @@ namespace RPAWriter2.Services
             if (state.LastConversationId == null)
                 state.LastConversationId = "";
 
-            if (state.AgentMode != AgentMode.Plan && state.AgentMode != AgentMode.Act)
+            if (state.AgentMode != AgentMode.Plan && state.AgentMode != AgentMode.Act && state.AgentMode != AgentMode.Help)
                 state.AgentMode = AgentMode.Plan;
 
             if (!Enum.IsDefined(typeof(MainTab), state.ActiveTab))

@@ -114,6 +114,21 @@ namespace RPAWriter2.Services
         /// <summary>Directory scanned for third-party IProdLogProvider DLLs; empty uses %AppData%\RPAWriter2\Providers.</summary>
         public string LogProvidersPath { get; set; } = "";
 
+        /// <summary>Speech recognition provider: "Auto", "OpenAiWhisper" or "Vosk".</summary>
+        public string SpeechToTextProvider { get; set; } = "Auto";
+
+        /// <summary>Whisper model used for speech-to-text (default "whisper-1").</summary>
+        public string SpeechToTextModel { get; set; } = "whisper-1";
+
+        /// <summary>Language code for speech recognition (e.g. "ru").</summary>
+        public string SpeechToTextLanguage { get; set; } = "ru";
+
+        /// <summary>Directory containing the Vosk model (offline fallback).</summary>
+        public string VoskModelPath { get; set; } = "";
+
+        /// <summary>Automatically send recognized speech instead of inserting it into the input box.</summary>
+        public bool SpeechAutoSend { get; set; } = false;
+
         /// <summary>Recently used production robot names (most recent first).</summary>
         public List<string> RobotNameHistory { get; set; } = new List<string>();
     }
@@ -193,6 +208,15 @@ namespace RPAWriter2.Services
                  !string.Equals(settings.MemoryBankMode, "Tool", StringComparison.OrdinalIgnoreCase) &&
                  !string.Equals(settings.MemoryBankMode, "Convention", StringComparison.OrdinalIgnoreCase)))
                 settings.MemoryBankMode = "Disabled";
+            if (string.IsNullOrWhiteSpace(settings.SpeechToTextProvider) ||
+                (!string.Equals(settings.SpeechToTextProvider, "Auto", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.SpeechToTextProvider, "OpenAiWhisper", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.SpeechToTextProvider, "Vosk", StringComparison.OrdinalIgnoreCase)))
+                settings.SpeechToTextProvider = "Auto";
+            if (string.IsNullOrWhiteSpace(settings.SpeechToTextModel))
+                settings.SpeechToTextModel = "whisper-1";
+            if (string.IsNullOrWhiteSpace(settings.SpeechToTextLanguage))
+                settings.SpeechToTextLanguage = "ru";
             if (settings.RobotNameHistory == null)
                 settings.RobotNameHistory = new List<string>();
         }

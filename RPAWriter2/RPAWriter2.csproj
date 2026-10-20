@@ -22,6 +22,8 @@
     <PackageReference Include="Material.Icons" Version="3.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="NLog" Version="4.6.8" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Vosk" Version="0.3.38" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="19.8.0" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
   </ItemGroup>
@@ -29,6 +31,7 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.Design" />
@@ -54,6 +57,20 @@
     <VSIXSourceItem Include="$(OutputPath)System.Numerics.Vectors.dll" />
     <VSIXSourceItem Include="$(OutputPath)System.Threading.Tasks.Extensions.dll" />
     <VSIXSourceItem Include="$(OutputPath)System.ValueTuple.dll" />
+    <!-- Speech-to-text runtime dependencies: NAudio (microphone capture) and Vosk (offline STT). -->
+    <VSIXSourceItem Include="$(OutputPath)NAudio.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Core.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.WinMM.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Wasapi.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Midi.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Asio.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.WinForms.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Vosk.dll" />
+    <!-- Native Vosk binaries (win-x64) and their MinGW runtime dependencies. -->
+    <VSIXSourceItem Include="$(OutputPath)libvosk.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libgcc_s_seh-1.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libstdc++-6.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libwinpthread-1.dll" />
   </ItemGroup>
   <ItemGroup>
     <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
@@ -76,6 +93,15 @@
   <ItemGroup>
     <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->
     <Content Include="Prompts\**\*">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Ship the user documentation (index + per-tab docs) inside the VSIX under "Docs"
+         so the Help chat mode can load it into the context pipeline. -->
+    <Content Include="..\documentation\**\*">
+      <Link>Docs\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <IncludeInVSIX>true</IncludeInVSIX>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

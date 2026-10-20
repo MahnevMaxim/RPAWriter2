@@ -32,6 +32,9 @@
         <SolidColorBrush x:Key="Chat.LastActBorder" Color="#4CAF50"/>
         <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#4DFF8C00"/>
         <SolidColorBrush x:Key="Chat.LastPlanBorder" Color="#FF8C00"/>
+        <SolidColorBrush x:Key="Mode.PlanBrush" Color="#64B5F6"/>
+        <SolidColorBrush x:Key="Mode.ActBrush" Color="#4CAF50"/>
+        <SolidColorBrush x:Key="Mode.HelpBrush" Color="#F44336"/>
         <SolidColorBrush x:Key="Deploy.WarningBackground" Color="#E65100"/>
         <SolidColorBrush x:Key="Deploy.SuccessBackground" Color="#B32E7D32"/>
 
@@ -746,6 +749,9 @@
                     <controls:NotificationBanner x:Name="DeployToast" Margin="0,0,0,6" Visibility="Collapsed"
                                                   CloseRequested="OnDeployToastClose"
                                                   SendToChatRequested="OnNotificationSendToChat"/>
+                    <controls:NotificationBanner x:Name="VoiceErrorToast" Margin="0,0,0,6" Visibility="Collapsed"
+                                                  CloseRequested="OnVoiceErrorClose"
+                                                  SendToChatRequested="OnNotificationSendToChat"/>
                     <WrapPanel Margin="0,5,0,6" TextElement.FontSize="14">
                         <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
@@ -960,10 +966,10 @@
                                       Width="14" Height="14"/>
                             </Button>
                             <Button Grid.Column="3" x:Name="MicButton" Width="28" Height="28"
-                                    Margin="8,0,0,5" VerticalAlignment="Bottom"
+                                    Margin="8,0,0,5" VerticalAlignment="Bottom" Click="OnMicClick"
                                     Style="{StaticResource IconButtonStyle}"
-                                    ToolTip="Microphone">
-                                <Path Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14">
+                                    ToolTip="Start voice input">
+                                <Path x:Name="MicIcon" Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14">
                                     <Path.Data>
                                         <GeometryGroup FillRule="Nonzero">
                                             <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
@@ -983,12 +989,14 @@
                     </Grid>
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
-                        <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
-                                     IsChecked="True" Checked="OnModeChanged"
-                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <RadioButton x:Name="ActModeButton" Content="Act" GroupName="AgentMode"
-                                     Checked="OnModeChanged"
-                                     Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                        <controls:SegmentedToggle x:Name="ModeToggle" VerticalAlignment="Center"
+                                                  SelectedValue="Plan" ValueChanged="OnModeChanged">
+                            <controls:SegmentedToggle.Items>
+                                <controls:SegmentedToggleItem Label="Plan" Value="Plan" Accent="{StaticResource Mode.PlanBrush}"/>
+                                <controls:SegmentedToggleItem Label="Act" Value="Act" Accent="{StaticResource Mode.ActBrush}"/>
+                                <controls:SegmentedToggleItem Label="Help" Value="Help" Accent="{StaticResource Mode.HelpBrush}"/>
+                            </controls:SegmentedToggle.Items>
+                        </controls:SegmentedToggle>
                         <Button x:Name="CompactNowButton" Content="Compact now" Click="OnCompactNow"
                                 Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Summarize the conversation to free context space"/>
@@ -998,6 +1006,9 @@
                         <Button x:Name="PermissionsButton" Content="Permissions" Click="OnPermissionsClick"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Configure agent permissions (read files, edit files, execute commands, web fetch, MCP)"/>
+                        <Button x:Name="DocsButton" Content="Docs" Click="OnDocsClick"
+                                Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Open the documentation"/>
                         <Button x:Name="DoItButton" Content="Do it!!!" Click="OnDoItClick"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Send 'Do it!!!' to the agent"/>
@@ -1038,6 +1049,42 @@
                         </StackPanel>
                     </Border>
                 </Grid>
+
+                <Border x:Name="DocsOverlay" Grid.Row="0" Grid.RowSpan="6"
+                        Background="{StaticResource Dark.Window}"
+                        BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                        CornerRadius="2" Padding="12,10" Visibility="Collapsed">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="DocsTitleText" Grid.Column="0" Text="Documentation"
+                                       FontWeight="Bold" FontSize="16"
+                                       Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <Button Grid.Column="1" Content="Home" Click="OnDocsHome" Padding="8,2"
+                                    Margin="8,0,0,0" VerticalAlignment="Center"
+                                    ToolTip="Back to the documentation index"/>
+                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                    Margin="8,0,0,0" VerticalAlignment="Center"
+                                    ToolTip="Close" Click="OnDocsClose">
+                                <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                            </Button>
+                        </Grid>
+                        <ScrollViewer Grid.Row="1" x:Name="DocsScroll"
+                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ContentControl x:Name="DocsContent" Margin="4"
+                                            HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch"/>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
 
                 <Grid x:Name="HistoryViewPanel" Grid.Row="0" Grid.RowSpan="6"
                       Background="{StaticResource Dark.Window}" Visibility="Collapsed">
@@ -1306,6 +1353,11 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1428,7 +1480,27 @@
                 <CheckBox Grid.Row="34" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox"
                           Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <StackPanel Grid.Row="35" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Grid.Row="35" Grid.Column="0" Text="Speech recognition" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="35" Grid.Column="1" x:Name="SpeechToTextProviderCombo" SelectedIndex="0"
+                          VerticalAlignment="Center" Margin="0,0,0,4">
+                    <ComboBoxItem Content="Auto (Whisper, fallback Vosk)"/>
+                    <ComboBoxItem Content="OpenAI Whisper"/>
+                    <ComboBoxItem Content="Vosk (offline)"/>
+                </ComboBox>
+
+                <TextBlock Grid.Row="36" Grid.Column="0" Text="Whisper STT model" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="36" Grid.Column="1" x:Name="SpeechToTextModelBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="37" Grid.Column="0" Text="Speech language" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="37" Grid.Column="1" x:Name="SpeechToTextLanguageBox" Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="38" Grid.Column="0" Text="Vosk model directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBox Grid.Row="38" Grid.Column="1" x:Name="VoskModelPathBox" Margin="0,0,0,4"/>
+
+                <CheckBox Grid.Row="39" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox"
+                          Content="Auto-send voice input" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                <StackPanel Grid.Row="40" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>
@@ -1507,11 +1579,29 @@
                     </DockPanel>
                 </TabItem>
                 <TabItem Header="Chat">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel Margin="8">
-                            <ItemsControl x:Name="ControlsChatList" ItemTemplate="{StaticResource ChatMessageTemplate}"/>
-                        </StackPanel>
-                    </ScrollViewer>
+                    <ListBox x:Name="ControlsChatList"
+                             Background="{StaticResource Dark.Panel}"
+                             BorderThickness="0"
+                             Margin="8"
+                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.CacheLength="2,2"
+                             VirtualizingPanel.CacheLengthUnit="Page"
+                             ItemTemplate="{StaticResource ChatMessageTemplate}">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
                 </TabItem>
                 <TabItem Header="SVG">
                     <DockPanel Margin="8">
@@ -1521,11 +1611,16 @@
                         <ListBox x:Name="ControlsSvgList"
                                  Background="{StaticResource Dark.Panel}"
                                  BorderThickness="0"
+                                 ScrollViewer.CanContentScroll="True"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 VirtualizingPanel.CacheLength="2,2"
+                                 VirtualizingPanel.CacheLengthUnit="Page">
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
+                                    <controls:VirtualizingWrapPanel ChildSize="112,108"/>
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                             <ListBox.ItemContainerStyle>
@@ -1547,8 +1642,8 @@
                                                   Fill="{StaticResource Dark.Text}"
                                                   Data="{Binding Kind, Converter={StaticResource MaterialIconToGeometry}}"/>
                                             <TextBlock Text="{Binding Identifier}" Margin="0,6,0,0" TextAlignment="Center"
-                                                       TextWrapping="Wrap" FontSize="10"
-                                                       Foreground="{StaticResource Dark.Text}"/>
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Identifier}"
+                                                       FontSize="10" Foreground="{StaticResource Dark.Text}"/>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
                                                 <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
                                                         Margin="0,0,4,0" ToolTip="Copy identifier"
@@ -1569,6 +1664,38 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </DockPanel>
+                </TabItem>
+                <TabItem Header="Palette">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="ControlsPaletteList" Margin="8">
+                            <ItemsControl.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="0,8,0,4" Foreground="#C8C8C8"/>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ItemsControl.GroupStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="48" Height="22" Background="{Binding Brush}"
+                                                BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   Foreground="{StaticResource Dark.Text}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Hex}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   FontFamily="Consolas" Foreground="#C8C8C8"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </TabItem>
             </TabControl>
         </TabItem>

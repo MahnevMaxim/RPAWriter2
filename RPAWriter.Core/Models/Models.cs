@@ -24,7 +24,9 @@ namespace RPAWriter.Core.Models
         /// <summary>Agent reads, analyzes and plans only; mutating tools are not exposed.</summary>
         Plan,
         /// <summary>Agent can perform real changes (write files, create robots, run builds).</summary>
-        Act
+        Act,
+        /// <summary>Support agent that answers from the bundled user documentation.</summary>
+        Help
     }
 
     /// <summary>

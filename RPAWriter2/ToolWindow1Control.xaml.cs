@@ -15,6 +15,7 @@ using RPAWriter.Core.Services;
 using RPAWriter2.Services;
 using RPAWriter2.Services.AgentTools;
 using RPAWriter2.Controls;
+using RPAWriter2.Markdown;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.PlatformUI;
@@ -67,6 +68,10 @@ namespace RPAWriter2
         private DTE2? _dte;
         private IReadOnlyList<IProdLogProvider>? _logProviders;
         private IProdLogProvider? _selectedLogProvider;
+        private MicrophoneRecorder _mic;
+        private ISpeechToTextService _stt;
+        private bool _isRecording;
+        private bool _isTranscribing;
         private List<string> _robotNameHistory = new List<string>();
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
@@ -120,7 +125,7 @@ namespace RPAWriter2
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         private bool _loadingHistory;
         private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
-        // Starts true so XAML load events (e.g. PlanModeButton Checked) don't
+        // Starts true so XAML load events (e.g. ModeToggle ValueChanged) don't
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage;
@@ -154,6 +159,9 @@ namespace RPAWriter2
             PopulateControlsGallery();
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
+            _mic = new MicrophoneRecorder();
+            _mic.LevelChanged += OnMicLevelChanged;
+            _stt = SpeechToTextFactory.Create(_settings);
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
             _outputWindow = new OutputWindowService();
@@ -203,6 +211,11 @@ namespace RPAWriter2
             LoadRobotNameHistory();
             ShowControlsCheckBox.IsChecked = _settings.ShowControls;
             ApplyControlsVisibility();
+            SpeechToTextProviderCombo.SelectedIndex = SpeechToTextProviderToIndex(_settings.SpeechToTextProvider);
+            SpeechToTextModelBox.Text = _settings.SpeechToTextModel ?? "whisper-1";
+            SpeechToTextLanguageBox.Text = _settings.SpeechToTextLanguage ?? "ru";
+            VoskModelPathBox.Text = _settings.VoskModelPath ?? "";
+            SpeechAutoSendCheckBox.IsChecked = _settings.SpeechAutoSend;
         }
 
         private void RecreateAiProvider()
@@ -822,6 +835,126 @@ namespace RPAWriter2
         {
             InputBox.Clear();
             InputBox.Focus();
+        }
+
+        private async void OnMicClick(object sender, RoutedEventArgs e)
+        {
+            if (_isTranscribing) return;
+
+            if (!_isRecording)
+            {
+                try
+                {
+                    _mic.Start();
+                }
+                catch (Exception ex)
+                {
+                    ShowVoiceError("Microphone unavailable: " + ex.Message);
+                    return;
+                }
+                _isRecording = true;
+                SetMicState(recording: true);
+            }
+            else
+            {
+                byte[] audio;
+                try
+                {
+                    audio = _mic.Stop();
+                }
+                catch (Exception ex)
+                {
+                    _isRecording = false;
+                    SetMicState(recording: false);
+                    ShowVoiceError("Failed to stop recording: " + ex.Message);
+                    return;
+                }
+
+                _isRecording = false;
+                SetMicState(recording: false);
+
+                if (audio == null || audio.Length == 0)
+                {
+                    AppendSystemMessage("No speech detected.");
+                    return;
+                }
+
+                _isTranscribing = true;
+                SetMicState(recording: false, transcribing: true);
+                try
+                {
+                    var language = (_settings.SpeechToTextLanguage ?? "ru").Trim();
+                    var text = await _stt.TranscribeAsync(audio, language, CancellationToken.None);
+
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        if (_settings.SpeechAutoSend && string.IsNullOrWhiteSpace(InputBox.Text))
+                        {
+                            InputBox.Text = text;
+                            await SendMessageAsync();
+                        }
+                        else
+                        {
+                            AppendSelectionToInput(text);
+                        }
+                    }
+                    else
+                    {
+                        AppendSystemMessage("No speech recognized.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShowVoiceError("Speech recognition failed: " + ex.Message);
+                }
+                finally
+                {
+                    _isTranscribing = false;
+                    SetMicState(recording: false);
+                }
+            }
+        }
+
+        private void OnMicLevelChanged(object sender, double level)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnMicLevelChanged(sender, level)));
+                return;
+            }
+
+            if (_isRecording)
+                MicButton.Opacity = 0.6 + level * 0.4;
+            else
+                MicButton.Opacity = 1.0;
+        }
+
+        private void SetMicState(bool recording, bool transcribing = false)
+        {
+            MicButton.ToolTip = transcribing ? "Transcribing…" : (recording ? "Stop recording" : "Start voice input");
+            MicButton.Opacity = 1.0;
+            MicIcon.Fill = transcribing
+                ? Brushes.Orange
+                : recording
+                    ? Brushes.Red
+                    : (Brush)FindResource("Dark.Text");
+        }
+
+        private static int SpeechToTextProviderToIndex(string value)
+        {
+            if (string.Equals(value, "OpenAiWhisper", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (string.Equals(value, "Vosk", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 0;
+        }
+
+        private static string SpeechToTextProviderIndexToName(int index)
+        {
+            switch (index)
+            {
+                case 1: return "OpenAiWhisper";
+                case 2: return "Vosk";
+                default: return "Auto";
+            }
         }
 
         private void OnAttach(object sender, RoutedEventArgs e)
@@ -2504,7 +2637,7 @@ namespace RPAWriter2
                 {
                     var finalMessage = new ChatMessage
                     {
-                        Kind = _mode == AgentMode.Plan ? ChatMessageKind.ResultAnswerPlan : ChatMessageKind.ResultAnswerAct,
+                        Kind = _mode == AgentMode.Act ? ChatMessageKind.ResultAnswerAct : ChatMessageKind.ResultAnswerPlan,
                         Mode = modeName,
                         Text = result.FinalText
                     };
@@ -2810,6 +2943,92 @@ namespace RPAWriter2
             PermissionsOverlay.Visibility = Visibility.Collapsed;
         }
 
+        private void OnDocsClick(object sender, RoutedEventArgs e)
+        {
+            ShowDocsIndex();
+            DocsOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void OnDocsHome(object sender, RoutedEventArgs e)
+        {
+            ShowDocsIndex();
+        }
+
+        private void OnDocsClose(object sender, RoutedEventArgs e)
+        {
+            DocsOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void ShowDocsIndex()
+        {
+            RenderDocsFile(Path.Combine(HelpDocumentation.ResolveDocsDirectory(), "00-index.md"), "Documentation");
+        }
+
+        /// <summary>
+        /// Renders a shipped documentation markdown file into the built-in Docs viewer.
+        /// Relative links are routed back through <see cref="HandleDocsLink"/>.
+        /// </summary>
+        private void RenderDocsFile(string path, string title)
+        {
+            DocsTitleText.Text = title;
+            if (!File.Exists(path))
+            {
+                DocsContent.Content = new TextBlock
+                {
+                    Text = "Documentation file not found: " + path,
+                    Foreground = (Brush)FindResource("Dark.Text"),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                return;
+            }
+
+            MarkdownRenderer.RelativeLinkNavigator = HandleDocsLink;
+            try
+            {
+                DocsContent.Content = MarkdownRenderer.Render(File.ReadAllText(path));
+            }
+            finally
+            {
+                MarkdownRenderer.RelativeLinkNavigator = null;
+            }
+        }
+
+        /// <summary>
+        /// Resolves a relative markdown link against the shipped Docs directory and renders
+        /// the target file in the viewer. Returns false when the link cannot be resolved.
+        /// </summary>
+        private bool HandleDocsLink(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+
+            // Only relative, local links are supported in the viewer; absolute URLs are
+            // already handled by the renderer (http/https/mailto open in the browser).
+            if (Uri.TryCreate(url, UriKind.Absolute, out _))
+                return false;
+
+            var dir = HelpDocumentation.ResolveDocsDirectory();
+            string target;
+            try
+            {
+                target = Path.GetFullPath(Path.Combine(dir, url));
+            }
+            catch
+            {
+                return false;
+            }
+
+            var root = Path.GetFullPath(dir);
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!File.Exists(target))
+                return false;
+
+            RenderDocsFile(target, Path.GetFileName(target));
+            return true;
+        }
+
         private void OnPermissionChanged(object sender, RoutedEventArgs e)
         {
             _settings.AllowReadFiles = AllowReadFilesCheckBox?.IsChecked ?? true;
@@ -2923,10 +3142,10 @@ namespace RPAWriter2
                 var state = UiStateStore.Load();
 
                 _mode = state.AgentMode;
-                if (_mode == AgentMode.Act)
-                    ActModeButton.IsChecked = true;
-                else
-                    PlanModeButton.IsChecked = true;
+                ModeToggle.SelectedValue = _mode == AgentMode.Act ? "Act"
+                    : _mode == AgentMode.Help ? "Help"
+                    : "Plan";
+                ApplyModeBrush();
 
                 SelectTabByHeader(state.ActiveTab);
 
@@ -3382,11 +3601,25 @@ namespace RPAWriter2
 
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
-            _mode = ActModeButton?.IsChecked == true ? AgentMode.Act : AgentMode.Plan;
+            var selected = ModeToggle?.SelectedValue?.ToString();
+            _mode = selected == "Act" ? AgentMode.Act
+                  : selected == "Help" ? AgentMode.Help
+                  : AgentMode.Plan;
+            ApplyModeBrush();
             if (_restoringUiState)
                 return;
             AppendModeSwitch("Mode: " + _mode);
             PersistUiState();
+        }
+
+        private void ApplyModeBrush()
+        {
+            if (InputBox == null)
+                return;
+            var key = _mode == AgentMode.Act ? "Mode.ActBrush"
+                    : _mode == AgentMode.Help ? "Mode.HelpBrush"
+                    : "Mode.PlanBrush";
+            InputBox.BorderBrush = (Brush)FindResource(key);
         }
 
         private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
@@ -3492,6 +3725,25 @@ namespace RPAWriter2
             HideDeployToast();
         }
 
+        private void ShowVoiceError(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowVoiceError(text)));
+                return;
+            }
+
+            VoiceErrorToast.Kind = NotificationKind.Error;
+            VoiceErrorToast.Message = text ?? "";
+            VoiceErrorToast.Visibility = Visibility.Visible;
+            // No auto-hide: the error banner stays until the user closes it.
+        }
+
+        private void OnVoiceErrorClose(object sender, RoutedEventArgs e)
+        {
+            VoiceErrorToast.Visibility = Visibility.Collapsed;
+        }
+
         private void SlideDeployToast(double from, double to, Action? onCompleted = null)
         {
             DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
@@ -3543,9 +3795,15 @@ namespace RPAWriter2
             _settings.ShowControls = ShowControlsCheckBox?.IsChecked ?? false;
             _settings.SubagentMaxIterations = ParsePositiveInt(SubagentMaxIterationsBox?.Text, 4);
             _settings.SubagentMaxDepth = ParsePositiveInt(SubagentMaxDepthBox?.Text, 2);
+            _settings.SpeechToTextProvider = SpeechToTextProviderIndexToName(SpeechToTextProviderCombo?.SelectedIndex ?? 0);
+            _settings.SpeechToTextModel = (SpeechToTextModelBox?.Text ?? "").Trim();
+            _settings.SpeechToTextLanguage = (SpeechToTextLanguageBox?.Text ?? "").Trim();
+            _settings.VoskModelPath = (VoskModelPathBox?.Text ?? "").Trim();
+            _settings.SpeechAutoSend = SpeechAutoSendCheckBox?.IsChecked ?? false;
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
+            _stt = SpeechToTextFactory.Create(_settings);
             RebuildAgentTools();
             ApplyControlsVisibility();
             ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
@@ -3570,6 +3828,10 @@ namespace RPAWriter2
             _svgView = CollectionViewSource.GetDefaultView(CreateSvgSamples());
             _svgView.Filter = FilterSvgIcon;
             ControlsSvgList.ItemsSource = _svgView;
+
+            var palettes = new ListCollectionView(CreatePaletteSamples());
+            palettes.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PaletteSample.Group)));
+            ControlsPaletteList.ItemsSource = palettes;
         }
 
         /// <summary>Rebuilds the notification gallery samples with the given auto-hide duration and resets the countdown.</summary>
@@ -3652,6 +3914,43 @@ namespace RPAWriter2
             foreach (MaterialIconKind kind in Enum.GetValues(typeof(MaterialIconKind)))
                 samples.Add(new SvgIconSample { Kind = kind });
             return samples;
+        }
+
+        private static List<PaletteSample> CreatePaletteSamples()
+        {
+            return new List<PaletteSample>
+            {
+                new PaletteSample { Group = "Mode", Name = "Plan", Hex = "#64B5F6", Brush = Rgb(0x64, 0xB5, 0xF6) },
+                new PaletteSample { Group = "Mode", Name = "Act", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
+                new PaletteSample { Group = "Mode", Name = "Help", Hex = "#F44336", Brush = Rgb(0xF4, 0x43, 0x36) },
+
+                new PaletteSample { Group = "Buttons", Name = "Button background", Hex = "#333337", Brush = Rgb(0x33, 0x33, 0x37) },
+                new PaletteSample { Group = "Buttons", Name = "Button border", Hex = "#3F3F46", Brush = Rgb(0x3F, 0x3F, 0x46) },
+                new PaletteSample { Group = "Buttons", Name = "Button hover", Hex = "#3E3E42", Brush = Rgb(0x3E, 0x3E, 0x42) },
+                new PaletteSample { Group = "Buttons", Name = "Button pressed", Hex = "#264F78", Brush = Rgb(0x26, 0x4F, 0x78) },
+                new PaletteSample { Group = "Buttons", Name = "Primary / accent", Hex = "#264F78", Brush = Rgb(0x26, 0x4F, 0x78) },
+                new PaletteSample { Group = "Buttons", Name = "Icon button", Hex = "Transparent", Brush = Brushes.Transparent },
+
+                new PaletteSample { Group = "Theme", Name = "Window", Hex = "#2D2D30", Brush = Rgb(0x2D, 0x2D, 0x30) },
+                new PaletteSample { Group = "Theme", Name = "Panel", Hex = "#252526", Brush = Rgb(0x25, 0x25, 0x26) },
+                new PaletteSample { Group = "Theme", Name = "Control", Hex = "#333337", Brush = Rgb(0x33, 0x33, 0x37) },
+                new PaletteSample { Group = "Theme", Name = "Border", Hex = "#3F3F46", Brush = Rgb(0x3F, 0x3F, 0x46) },
+                new PaletteSample { Group = "Theme", Name = "Text", Hex = "#F1F1F1", Brush = Rgb(0xF1, 0xF1, 0xF1) },
+                new PaletteSample { Group = "Theme", Name = "Error text", Hex = "#F48771", Brush = Rgb(0xF4, 0x87, 0x71) },
+
+                new PaletteSample { Group = "Chat", Name = "User border", Hex = "#CC64B5F6", Brush = Argb(0xCC, 0x64, 0xB5, 0xF6) },
+                new PaletteSample { Group = "Chat", Name = "User background", Hex = "#3364B5F6", Brush = Argb(0x33, 0x64, 0xB5, 0xF6) },
+                new PaletteSample { Group = "Chat", Name = "Last act border", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
+                new PaletteSample { Group = "Chat", Name = "Last act background", Hex = "#334CAF50", Brush = Argb(0x33, 0x4C, 0xAF, 0x50) },
+                new PaletteSample { Group = "Chat", Name = "Last plan border", Hex = "#FF8C00", Brush = Rgb(0xFF, 0x8C, 0x00) },
+                new PaletteSample { Group = "Chat", Name = "Last plan background", Hex = "#4DFF8C00", Brush = Argb(0x4D, 0xFF, 0x8C, 0x00) },
+
+                new PaletteSample { Group = "Notifications", Name = "Trace", Hex = "#FFFFFF", Brush = Brushes.White },
+                new PaletteSample { Group = "Notifications", Name = "Info", Hex = "#64B5F6", Brush = Rgb(0x64, 0xB5, 0xF6) },
+                new PaletteSample { Group = "Notifications", Name = "Success", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
+                new PaletteSample { Group = "Notifications", Name = "Warning", Hex = "#FF8C00", Brush = Rgb(0xFF, 0x8C, 0x00) },
+                new PaletteSample { Group = "Notifications", Name = "Error", Hex = "#F44336", Brush = Rgb(0xF4, 0x43, 0x36) },
+            };
         }
 
         private bool FilterSvgIcon(object item)
@@ -3906,6 +4205,11 @@ namespace RPAWriter2
         {
             return new SolidColorBrush(Color.FromRgb(r, g, b));
         }
+
+        private static SolidColorBrush Argb(byte a, byte r, byte g, byte b)
+        {
+            return new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        }
     }
     /// <summary>Demo item for the Controls -> Notifications gallery.</summary>
     public sealed class MessageSample
@@ -3931,5 +4235,14 @@ namespace RPAWriter2
         public MaterialIconKind Kind { get; set; }
 
         public string Identifier => Kind.ToString();
+    }
+
+    /// <summary>Demo item for the Controls -> palette gallery.</summary>
+    public sealed class PaletteSample
+    {
+        public string Group { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Hex { get; set; } = "";
+        public Brush Brush { get; set; } = Brushes.Transparent;
     }
 }

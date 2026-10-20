@@ -13,6 +13,8 @@ reproduced in this file as required by the respective licenses.
 | Markdig | 1.4.2 | BSD-2-Clause | © Alexandre Mutel |
 | Material.Icons | 3.0.2 | MIT | © SKProCH |
 | NLog | 4.6.8 | BSD-3-Clause | © NLog Project |
+| NAudio | 2.2.1 | MIT | © Mark Heath and contributors |
+| Vosk | 0.3.38 | Apache License 2.0 | © Alpha Cephei Inc |
 | System.Data.SQLite.Core | 1.0.119 | Public Domain | SQLite / Hipp, Wyrick & Company |
 | Oracle.ManagedDataAccess | 19.8.0 | Oracle Technology Network License Agreement (OTN) | © Oracle Corporation |
 
@@ -40,7 +42,7 @@ reproduced in this file as required by the respective licenses.
 ## MIT License
 
 The following components are distributed under the MIT License:
-Newtonsoft.Json, DocumentFormat.OpenXml, Material.Icons.
+Newtonsoft.Json, DocumentFormat.OpenXml, Material.Icons, NAudio.
 
 ```
 MIT License
@@ -122,7 +124,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## Apache License 2.0 (NPOI)
+## Apache License 2.0 (NPOI, Vosk)
 
 ```
 Apache License

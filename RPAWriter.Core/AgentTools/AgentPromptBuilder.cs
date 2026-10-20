@@ -26,6 +26,9 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Builds the prompt for a mode, protocol and allowed permission set.</summary>
         public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed)
         {
+            if (mode == AgentMode.Help)
+                return BuildHelpSupportPrompt();
+
             if (toolCallingMode == ToolCallingMode.Native)
             {
                 return mode == AgentMode.Act
@@ -77,6 +80,20 @@ namespace RPAWriter.Core.AgentTools
                 prompt = prompt + "\n\n" + PromptDefaults.MemoryBankConventionInstructions;
 
             return prompt;
+        }
+
+        /// <summary>Builds the Help-mode support prompt: the support persona plus the bundled user documentation.</summary>
+        private static string BuildHelpSupportPrompt()
+        {
+            const string preamble = "Ты очень нежный и внимательный агент поддержки, вот твоя документация - ";
+            var docs = HelpDocumentation.ReadAll();
+            var body = string.IsNullOrWhiteSpace(docs)
+                ? "Документация временно недоступна. Вежливо объясни пользователю, как пользоваться расширением RPA Writer, на основе общих знаний."
+                : docs;
+
+            return preamble + "\n\n" + body + "\n\n" +
+                "Отвечай на вопросы пользователя по этой документации на русском языке. " +
+                "Будь вежливым, терпеливым и внимательным. Если в документации нет ответа, честно скажи об этом.";
         }
     }
 }
