@@ -35,6 +35,8 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
         <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
+        <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>
+        <conv:MaterialIconToGeometryConverter x:Key="MaterialIconToGeometry"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
             <EventSetter Event="PreviewMouseWheel" Handler="OnCodeScrollPreviewMouseWheel"/>
@@ -651,6 +653,11 @@
                             <TextBlock Text="{Binding Payload.Item.Error}" Foreground="{StaticResource Dark.ErrorText}" TextWrapping="Wrap" Margin="0,6,0,0"
                                        Visibility="{Binding Payload.Item.HasError, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
+                        <StackPanel x:Name="MarkdownPanel" Visibility="Collapsed">
+                            <TextBlock Text="{Binding Label, Mode=OneWay}" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Dark.Text}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                            <ContentControl Content="{Binding Text, Mode=OneWay, Converter={StaticResource MarkdownToElement}}"/>
+                        </StackPanel>
                         <ItemsControl x:Name="BlocksPanel" ItemsSource="{Binding Blocks, Mode=OneWay}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -676,7 +683,47 @@
                     <Setter TargetName="SubagentPanel" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerPlan">
+                    <Setter TargetName="MarkdownPanel" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerAct">
+                    <Setter TargetName="MarkdownPanel" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="BlocksPanel" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
             </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="MessageSampleTemplate">
+            <StackPanel Margin="0,0,0,10">
+                <Border Background="Transparent" BorderBrush="{Binding Accent}" BorderThickness="{Binding BorderThickness}" CornerRadius="2" Padding="10,8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Text}" Foreground="{Binding Foreground}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="22" Height="22" Margin="8,-3,0,-3"
+                                VerticalAlignment="Center" ToolTip="Copy" Click="OnCopyMessageSample"
+                                Visibility="{Binding ShowCopy, Converter={StaticResource BoolToVis}}">
+                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                  Fill="{Binding Foreground}" Stretch="Uniform" Width="14" Height="14"/>
+                        </Button>
+                        <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="22" Height="22" Margin="8,-3,0,-3"
+                                VerticalAlignment="Center" ToolTip="Send to chat" Click="OnSendMessageSample">
+                            <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
+                                  Fill="{Binding Foreground}" Stretch="Uniform" Width="14" Height="14"/>
+                        </Button>
+                        <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="22" Height="22" Margin="8,-3,0,-3"
+                                VerticalAlignment="Center" ToolTip="Close"
+                                Visibility="{Binding ShowClose, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="✕" FontSize="12" Foreground="{Binding Foreground}"/>
+                        </Button>
+                    </Grid>
+                </Border>
+            </StackPanel>
         </DataTemplate>
     </UserControl.Resources>
     <TabControl x:Name="MainTabs" Margin="8">
@@ -904,7 +951,7 @@
                     <Grid Grid.Row="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <ItemsControl Grid.Row="0" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
                             <ItemsControl.ItemsPanel>
@@ -935,7 +982,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" x:Name="InputBox"
-                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
+                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="17"
                                      VerticalScrollBarVisibility="Auto"
                                      PreviewKeyDown="OnInputKeyDown"/>
                             <Button Grid.Column="1" x:Name="AttachButton" Width="28" Height="28"
@@ -969,7 +1016,7 @@
                             </Button>
                         </Grid>
                     </Grid>
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5" TextElement.FontSize="14">
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
                         <RadioButton x:Name="PlanModeButton" Content="Plan" GroupName="AgentMode"
                                      IsChecked="True" Checked="OnModeChanged"
@@ -1500,47 +1547,9 @@
         </TabItem>
         <TabItem x:Name="ControlsTab" Header="Controls" Visibility="Collapsed">
             <TabControl Margin="4">
-                <TabItem Header="Messages">
+                <TabItem Header="Notifications">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel Margin="8">
-                            <TextBlock Text="Green notice with close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
-                            <Border Background="{StaticResource Commit.SuccessBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Settings saved. Provider: OpenAI-compatible." Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White" ToolTip="Close">
-                                        <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <TextBlock Text="Green notice without close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
-                            <Border Background="{StaticResource Commit.SuccessBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
-                                <TextBlock Text="Robot created successfully." Foreground="White" TextWrapping="Wrap"/>
-                            </Border>
-
-                            <TextBlock Text="Orange warning with close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
-                            <Border Background="{StaticResource Deploy.WarningBackground}" CornerRadius="2" Padding="10,8" Margin="0,0,0,12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Could not apply a required Visual Studio option." Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White" ToolTip="Close">
-                                        <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <TextBlock Text="Orange warning without close button" FontWeight="Bold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
-                            <Border Background="#4DFF8C00" CornerRadius="2" Padding="10,6" Margin="0,0,0,8">
-                                <TextBlock Text="No open solution. Open a solution and retry." Foreground="#FFE3B3" TextWrapping="Wrap"/>
-                            </Border>
-                        </StackPanel>
+                        <ItemsControl x:Name="ControlsMessagesList" ItemTemplate="{StaticResource MessageSampleTemplate}" Margin="8"/>
                     </ScrollViewer>
                 </TabItem>
                 <TabItem Header="Chat">
@@ -1549,6 +1558,49 @@
                             <ItemsControl x:Name="ControlsChatList" ItemTemplate="{StaticResource ChatMessageTemplate}"/>
                         </StackPanel>
                     </ScrollViewer>
+                </TabItem>
+                <TabItem Header="svg">
+                    <DockPanel Margin="8">
+                        <TextBox x:Name="SvgSearchBox" DockPanel.Dock="Top" Margin="0,0,0,6"
+                                 TextChanged="OnSvgSearchTextChanged"
+                                 ToolTip="Search icons by identifier"/>
+                        <ListBox x:Name="ControlsSvgList"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Path Grid.Column="0" Width="24" Height="24" Stretch="Uniform"
+                                              Fill="{StaticResource Dark.Text}"
+                                              Data="{Binding Kind, Converter={StaticResource MaterialIconToGeometry}}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Identifier}" Margin="8,0,0,0"
+                                                   VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}"/>
+                                        <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
+                                                Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Copy identifier"
+                                                Click="OnCopySvgIdentifier">
+                                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                        </Button>
+                                        <Button Grid.Column="4" Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
+                                                Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Send to chat"
+                                                Click="OnSendSvgIdentifier">
+                                            <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
+                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </TabItem>
             </TabControl>
         </TabItem>

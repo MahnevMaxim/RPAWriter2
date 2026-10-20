@@ -30,6 +30,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using RPAWriter.Core.Models;
+using Material.Icons;
 
 namespace RPAWriter2
 {
@@ -122,6 +123,7 @@ namespace RPAWriter2
         private ChatMessage? _pinnedMessage;
         private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
+        private ICollectionView? _svgView;
         private bool _pinnedExpanded;
         private bool _chatAutoScroll = true;
         private const double ChatAutoScrollThreshold = 1.0;
@@ -143,6 +145,7 @@ namespace RPAWriter2
             _packagesView.Filter = FilterPackages;
             PackagesList.ItemsSource = _packagesView;
             LoadSettings();
+            MaterialIconDataProvider.InitializeGeometryParser(s => Geometry.Parse(s));
             PopulateControlsGallery();
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
@@ -380,6 +383,21 @@ namespace RPAWriter2
                 try { Clipboard.SetText(FormatMessageForCopy(message)); }
                 catch { /* clipboard busy — ignore */ }
             }
+        }
+
+        private void OnCopyMessageSample(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrEmpty(sample.Text))
+            {
+                try { Clipboard.SetText(sample.Text); }
+                catch { /* clipboard busy — ignore */ }
+            }
+        }
+
+        private async void OnSendMessageSample(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrWhiteSpace(sample.Text))
+                await SendChatTextAsync(sample.Text);
         }
 
         /// <summary>
@@ -3526,10 +3544,53 @@ namespace RPAWriter2
                 : Visibility.Collapsed;
         }
 
-        /// <summary>Fills the hidden "Controls" gallery tab with sample data for every chat message type.</summary>
+        /// <summary>Fills the hidden "Controls" gallery tab with sample data for every chat message type and svg icon.</summary>
         private void PopulateControlsGallery()
         {
             ControlsChatList.ItemsSource = CreateSampleChatMessages();
+            ControlsMessagesList.ItemsSource = CreateMessageSamples();
+
+            _svgView = CollectionViewSource.GetDefaultView(CreateSvgSamples());
+            _svgView.Filter = FilterSvgIcon;
+            ControlsSvgList.ItemsSource = _svgView;
+        }
+
+        private static List<SvgIconSample> CreateSvgSamples()
+        {
+            var samples = new List<SvgIconSample>();
+            foreach (MaterialIconKind kind in Enum.GetValues(typeof(MaterialIconKind)))
+                samples.Add(new SvgIconSample { Kind = kind });
+            return samples;
+        }
+
+        private bool FilterSvgIcon(object item)
+        {
+            var query = (SvgSearchBox?.Text ?? string.Empty).Trim();
+            if (query.Length == 0)
+                return true;
+
+            return item is SvgIconSample sample &&
+                   sample.Identifier.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void OnSvgSearchTextChanged(object sender, TextChangedEventArgs e)
+        {
+            _svgView?.Refresh();
+        }
+
+        private void OnCopySvgIdentifier(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: SvgIconSample sample })
+            {
+                try { Clipboard.SetText(sample.Identifier); }
+                catch { /* clipboard busy — ignore */ }
+            }
+        }
+
+        private async void OnSendSvgIdentifier(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: SvgIconSample sample })
+                await SendChatTextAsync(sample.Identifier);
         }
 
         private static List<ChatMessage> CreateSampleChatMessages()
@@ -3572,6 +3633,23 @@ namespace RPAWriter2
                             Result = "Reconstructed 5 tasks."
                         }
                     }
+                },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.ResultAnswerPlan,
+                    Mode = "Plan",
+                    Text = "## Plan\n\n- Read the specification\n- Design the workflow\n- Generate the XAML and C# helpers\n\n```csharp\nvar robot = new Robot();\n```"
+                },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.ResultAnswerAct,
+                    Mode = "Act",
+                    Text = "## Done\n\nCreated the robot project and generated the XAML files."
+                },
+                new ChatMessage
+                {
+                    Kind = ChatMessageKind.DiffEdit,
+                    Text = "--- a/Robot.xaml\n+++ b/Robot.xaml\n@@ -1,3 +1,3 @@\n- <Sequence>\n+ <Sequence DisplayName=\"Main\">"
                 }
             };
         }
@@ -3710,5 +3788,49 @@ namespace RPAWriter2
                 return value;
             return fallback;
         }
+        private static List<MessageSample> CreateMessageSamples()
+        {
+            var blue = Rgb(0x64, 0xB5, 0xF6);
+            var green = Rgb(0x4C, 0xAF, 0x50);
+            var orange = Rgb(0xFF, 0x8C, 0x00);
+            var red = Rgb(0xF4, 0x43, 0x36);
+            var samples = new List<MessageSample>();
+            AddMessageSamples(samples, "blue", blue, blue, new Thickness(1));
+            AddMessageSamples(samples, "green", green, green, new Thickness(1));
+            AddMessageSamples(samples, "orange", orange, orange, new Thickness(1));
+            AddMessageSamples(samples, "red", red, red, new Thickness(1));
+            AddMessageSamples(samples, "white", Brushes.White, Brushes.White, new Thickness(0, 0, 0, 1));
+            return samples;
+        }
+
+        private static void AddMessageSamples(List<MessageSample> samples, string colorName, Brush accent, Brush foreground, Thickness borderThickness)
+        {
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowClose = true });
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowClose = false });
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowClose = true });
+            samples.Add(new MessageSample { Text = "notification-" + colorName, Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowClose = false });
+        }
+        private static SolidColorBrush Rgb(byte r, byte g, byte b)
+        {
+            return new SolidColorBrush(Color.FromRgb(r, g, b));
+        }
+    }
+    /// <summary>Demo item for the Controls -> Notifications gallery.</summary>
+    public sealed class MessageSample
+    {
+        public string Text { get; set; }
+        public Brush Accent { get; set; }
+        public Brush Foreground { get; set; }
+        public Thickness BorderThickness { get; set; } = new Thickness(1);
+        public bool ShowClose { get; set; }
+        public bool ShowCopy { get; set; }
+    }
+
+    /// <summary>Demo item for the Controls -> svg gallery.</summary>
+    public sealed class SvgIconSample
+    {
+        public MaterialIconKind Kind { get; set; }
+
+        public string Identifier => Kind.ToString();
     }
 }

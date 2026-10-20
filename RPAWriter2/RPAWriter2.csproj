@@ -18,6 +18,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
+    <PackageReference Include="Markdig" Version="1.4.2" />
+    <PackageReference Include="Material.Icons" Version="3.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="NLog" Version="4.6.8" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="19.8.0" />
@@ -41,6 +43,8 @@
          because RPAWriter.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
     <VSIXSourceItem Include="$(OutputPath)Newtonsoft.Json.dll" />
     <VSIXSourceItem Include="$(OutputPath)NLog.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Markdig.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Material.Icons.dll" />
   </ItemGroup>
   <ItemGroup>
     <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
