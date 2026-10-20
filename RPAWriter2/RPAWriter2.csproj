@@ -45,6 +45,15 @@
     <VSIXSourceItem Include="$(OutputPath)NLog.dll" />
     <VSIXSourceItem Include="$(OutputPath)Markdig.dll" />
     <VSIXSourceItem Include="$(OutputPath)Material.Icons.dll" />
+    <!-- Markdig's transitive dependencies are not auto-packaged by VSSDK for SDK-style
+         projects. Ship them explicitly, otherwise Markdig fails at runtime with
+         "Could not load file or assembly 'System.Memory, Version=4.0.5.0'". -->
+    <VSIXSourceItem Include="$(OutputPath)System.Memory.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Buffers.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Numerics.Vectors.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Threading.Tasks.Extensions.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.ValueTuple.dll" />
   </ItemGroup>
   <ItemGroup>
     <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
