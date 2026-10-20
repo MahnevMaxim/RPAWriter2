@@ -14,6 +14,7 @@ using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 using RPAWriter2.Services;
 using RPAWriter2.Services.AgentTools;
+using RPAWriter2.Controls;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.PlatformUI;
@@ -72,6 +73,7 @@ namespace RPAWriter2
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
+        private readonly ObservableCollection<MessageSample> _messageSamples = new ObservableCollection<MessageSample>();
 
         private CancellationTokenSource? _chatCts;
         private TaskCompletionSource<string>? _questionTcs;
@@ -81,6 +83,7 @@ namespace RPAWriter2
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
@@ -133,7 +136,9 @@ namespace RPAWriter2
             this.InitializeComponent();
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
+            _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
+            ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
             ChatScroll.ScrollChanged += OnChatScrollChanged;
             _chatListView = CollectionViewSource.GetDefaultView(_messages);
             _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
@@ -394,10 +399,10 @@ namespace RPAWriter2
             }
         }
 
-        private async void OnSendMessageSample(object sender, RoutedEventArgs e)
+        private void OnSendMessageSample(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrWhiteSpace(sample.Text))
-                await SendChatTextAsync(sample.Text);
+                AppendSelectionToInput(sample.Text);
         }
 
         /// <summary>
@@ -694,15 +699,21 @@ namespace RPAWriter2
             SetOutput(ex.ToString());
         }
 
-        private void ShowNotice(string message)
+        private void ShowNotice(string message, NotificationKind kind = NotificationKind.Info)
         {
-            NoticeText.Text = message;
+            NoticeBar.Kind = kind;
+            NoticeBar.Message = message;
             NoticeBar.Visibility = Visibility.Visible;
         }
 
         private void HideNotice()
         {
             NoticeBar.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnNoticeClose(object sender, RoutedEventArgs e)
+        {
+            HideNotice();
         }
 
         private void HookSolutionEvents()
@@ -946,7 +957,7 @@ namespace RPAWriter2
             var solutionDir = GetOpenSolutionDirectory();
             if (solutionDir == null)
             {
-                ShowNotice("Spec import is only available when a solution is open.");
+                ShowNotice("Spec import is only available when a solution is open.", NotificationKind.Warning);
                 return;
             }
 
@@ -959,7 +970,7 @@ namespace RPAWriter2
 
             if (FileLockDetector.IsFileLocked(dlg.FileName))
             {
-                ShowNotice(SpecLockedMessage);
+                ShowNotice(SpecLockedMessage, NotificationKind.Error);
                 return;
             }
 
@@ -1007,7 +1018,7 @@ namespace RPAWriter2
             }
             catch (Exception ex) when (FileLockDetector.IsFileLocked(ex))
             {
-                ShowNotice(SpecLockedMessage);
+                ShowNotice(SpecLockedMessage, NotificationKind.Error);
             }
             catch (Exception ex)
             {
@@ -1252,7 +1263,7 @@ namespace RPAWriter2
                 var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
                 if (dte == null || dte.Solution == null || !dte.Solution.IsOpen)
                 {
-                    ShowNotice("No open solution. Open a solution and retry.");
+                    ShowNotice("No open solution. Open a solution and retry.", NotificationKind.Warning);
                     return;
                 }
 
@@ -2218,7 +2229,8 @@ namespace RPAWriter2
             CommitControlHost.Visibility = Visibility.Visible;
             CommitWarningBar.Visibility = Visibility.Visible;
             CommitEditorPanel.Visibility = Visibility.Collapsed;
-            CommitWarningText.Text = message;
+            CommitWarningBar.Kind = NotificationKind.Warning;
+            CommitWarningBar.Message = message;
         }
 
         private void ShowCommitEditor()
@@ -2269,8 +2281,8 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowCommitResult(message, success)));
                 return;
             }
-            CommitResultText.Text = message;
-            CommitResultBar.Background = (Brush)FindResource(success ? "Commit.SuccessBackground" : "Commit.ErrorBackground");
+            CommitResultBar.Kind = success ? NotificationKind.Success : NotificationKind.Error;
+            CommitResultBar.Message = message;
             CommitResultBar.Visibility = Visibility.Visible;
         }
 
@@ -2282,7 +2294,7 @@ namespace RPAWriter2
                 return;
             }
             CommitResultBar.Visibility = Visibility.Collapsed;
-            CommitResultText.Text = "";
+            CommitResultBar.Message = "";
         }
 
         private void OnCloseCommitResult(object sender, RoutedEventArgs e)
@@ -2290,13 +2302,10 @@ namespace RPAWriter2
             HideCommitResult();
         }
 
-        private void OnCopyCommitResult(object sender, RoutedEventArgs e)
+        private async void OnNotificationSendToChat(object sender, RoutedEventArgs e)
         {
-            var text = CommitResultText.Text;
-            if (string.IsNullOrEmpty(text))
-                return;
-            try { Clipboard.SetText(text); }
-            catch { /* clipboard busy — ignore */ }
+            if (sender is NotificationBanner banner && !string.IsNullOrWhiteSpace(banner.Message))
+                await SubmitErrorToChatAsync(banner.Message);
         }
 
         private async Task SendMessageAsync()
@@ -3396,7 +3405,8 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text)));
                 return;
             }
-            SettingsToastText.Text = text ?? "";
+            SettingsToast.Kind = NotificationKind.Success;
+            SettingsToast.Message = text ?? "";
             SettingsToast.Visibility = Visibility.Visible;
             _settingsToastTimer.Stop();
             _settingsToastTimer.Start();
@@ -3446,8 +3456,8 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowDeployToast(text, success)));
                 return;
             }
-            DeployToastText.Text = text ?? "";
-            DeployToast.Background = (Brush)FindResource(success ? "Deploy.SuccessBackground" : "Deploy.WarningBackground");
+            DeployToast.Kind = success ? NotificationKind.Success : NotificationKind.Warning;
+            DeployToast.Message = text ?? "";
             DeployToast.Visibility = Visibility.Visible;
             _deployToastTimer.Stop();
             _deployToastTimer.Start();
@@ -3548,11 +3558,86 @@ namespace RPAWriter2
         private void PopulateControlsGallery()
         {
             ControlsChatList.ItemsSource = CreateSampleChatMessages();
-            ControlsMessagesList.ItemsSource = CreateMessageSamples();
+            ControlsMessagesList.ItemsSource = _messageSamples;
+            RebuildMessageSamples(ParseNotificationAutoHideSeconds());
 
             _svgView = CollectionViewSource.GetDefaultView(CreateSvgSamples());
             _svgView.Filter = FilterSvgIcon;
             ControlsSvgList.ItemsSource = _svgView;
+        }
+
+        /// <summary>Rebuilds the notification gallery samples with the given auto-hide duration and resets the countdown.</summary>
+        private void RebuildMessageSamples(int autoHideSeconds)
+        {
+            _notificationAutoHideTimer.Stop();
+            _messageSamples.Clear();
+            foreach (var sample in CreateMessageSamples(autoHideSeconds))
+                _messageSamples.Add(sample);
+        }
+
+        /// <summary>Restarts the gallery auto-hide demo; starts the timer only when at least one sample has a positive duration.</summary>
+        private void StartNotificationAutoHideDemo()
+        {
+            _notificationAutoHideTimer.Stop();
+            if (_messageSamples.Any(s => s.AutoHideSeconds > 0))
+                _notificationAutoHideTimer.Start();
+        }
+
+        private int ParseNotificationAutoHideSeconds()
+        {
+            if (int.TryParse((NotificationAutoHideBox?.Text ?? string.Empty).Trim(), out var value) && value >= 0)
+                return value;
+            return 5;
+        }
+
+        private void ReplayNotificationSamples()
+        {
+            RebuildMessageSamples(ParseNotificationAutoHideSeconds());
+            StartNotificationAutoHideDemo();
+        }
+
+        private void OnReplayNotifications(object sender, RoutedEventArgs e)
+        {
+            ReplayNotificationSamples();
+        }
+
+        private void OnNotificationAutoHideTick(object? sender, EventArgs e)
+        {
+            bool anyPending = false;
+            for (int i = _messageSamples.Count - 1; i >= 0; i--)
+            {
+                var sample = _messageSamples[i];
+                if (sample.AutoHideSeconds <= 0)
+                    continue;
+
+                sample.RemainingSeconds--;
+                if (sample.RemainingSeconds <= 0)
+                    _messageSamples.RemoveAt(i);
+                else
+                    anyPending = true;
+            }
+
+            if (!anyPending)
+                _notificationAutoHideTimer.Stop();
+        }
+
+        private void OnControlsInnerTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Only replay when the user is actually looking at the Controls -> Notifications
+            // gallery, so the countdown does not start while the tab is hidden at startup.
+            if (IsNotificationGalleryVisible())
+                ReplayNotificationSamples();
+        }
+
+        private bool IsNotificationGalleryVisible()
+        {
+            return ControlsTab != null
+                && ControlsTab.Visibility == Visibility.Visible
+                && MainTabs != null
+                && ReferenceEquals(MainTabs.SelectedItem, ControlsTab)
+                && ControlsInnerTabs != null
+                && NotificationsTab != null
+                && ReferenceEquals(ControlsInnerTabs.SelectedItem, NotificationsTab);
         }
 
         private static List<SvgIconSample> CreateSvgSamples()
@@ -3587,10 +3672,10 @@ namespace RPAWriter2
             }
         }
 
-        private async void OnSendSvgIdentifier(object sender, RoutedEventArgs e)
+        private void OnSendSvgIdentifier(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement { DataContext: SvgIconSample sample })
-                await SendChatTextAsync(sample.Identifier);
+                AppendSelectionToInput(sample.Identifier);
         }
 
         private static List<ChatMessage> CreateSampleChatMessages()
@@ -3665,10 +3750,11 @@ namespace RPAWriter2
 
         private void ShowOptionsWarning(string message)
         {
-            if (OptionsWarningText == null || OptionsWarningToast == null)
+            if (OptionsWarningToast == null)
                 return;
 
-            OptionsWarningText.Text = message ?? string.Empty;
+            OptionsWarningToast.Kind = NotificationKind.Warning;
+            OptionsWarningToast.Message = message ?? string.Empty;
             OptionsWarningToast.Visibility = Visibility.Visible;
         }
 
@@ -3788,27 +3874,27 @@ namespace RPAWriter2
                 return value;
             return fallback;
         }
-        private static List<MessageSample> CreateMessageSamples()
+        private static List<MessageSample> CreateMessageSamples(int autoHideSeconds)
         {
             var blue = Rgb(0x64, 0xB5, 0xF6);
             var green = Rgb(0x4C, 0xAF, 0x50);
             var orange = Rgb(0xFF, 0x8C, 0x00);
             var red = Rgb(0xF4, 0x43, 0x36);
             var samples = new List<MessageSample>();
-            AddMessageSamples(samples, "blue", blue, blue, new Thickness(1));
-            AddMessageSamples(samples, "green", green, green, new Thickness(1));
-            AddMessageSamples(samples, "orange", orange, orange, new Thickness(1));
-            AddMessageSamples(samples, "red", red, red, new Thickness(1));
-            AddMessageSamples(samples, "white", Brushes.White, Brushes.White, new Thickness(1));
+            AddMessageSamples(samples, "trace", Brushes.White, Brushes.White, new Thickness(1), autoHideSeconds, showSend: false);
+            AddMessageSamples(samples, "info", blue, blue, new Thickness(1), autoHideSeconds, showSend: false);
+            AddMessageSamples(samples, "success", green, green, new Thickness(1), autoHideSeconds, showSend: false);
+            AddMessageSamples(samples, "warning", orange, orange, new Thickness(1), autoHideSeconds, showSend: true);
+            AddMessageSamples(samples, "error", red, red, new Thickness(1), autoHideSeconds, showSend: true);
             return samples;
         }
 
-        private static void AddMessageSamples(List<MessageSample> samples, string colorName, Brush accent, Brush foreground, Thickness borderThickness)
+        private static void AddMessageSamples(List<MessageSample> samples, string colorName, Brush accent, Brush foreground, Thickness borderThickness, int autoHideSeconds, bool showSend)
         {
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowClose = true });
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowClose = false });
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowClose = true });
-            samples.Add(new MessageSample { Text = "notification-" + colorName, Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowClose = false });
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowSend = showSend, ShowClose = true, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowSend = showSend, ShowClose = false, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
+            samples.Add(new MessageSample { Text = "notification-" + colorName + "-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowSend = showSend, ShowClose = true, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
+            samples.Add(new MessageSample { Text = "notification-" + colorName, Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowSend = showSend, ShowClose = false, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
         }
         private static SolidColorBrush Rgb(byte r, byte g, byte b)
         {
@@ -3824,6 +3910,13 @@ namespace RPAWriter2
         public Thickness BorderThickness { get; set; } = new Thickness(1);
         public bool ShowClose { get; set; }
         public bool ShowCopy { get; set; }
+        public bool ShowSend { get; set; }
+
+        /// <summary>Seconds after which the demo notification disappears; 0 means it never disappears.</summary>
+        public int AutoHideSeconds { get; set; }
+
+        /// <summary>Internal countdown for the auto-hide demo (not bound to UI).</summary>
+        public int RemainingSeconds { get; set; }
     }
 
     /// <summary>Demo item for the Controls -> svg gallery.</summary>

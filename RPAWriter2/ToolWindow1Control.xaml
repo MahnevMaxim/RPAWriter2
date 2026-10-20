@@ -6,6 +6,7 @@
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:core="clr-namespace:RPAWriter.Core.Services;assembly=RPAWriter.Core"
              xmlns:conv="clr-namespace:RPAWriter2.Converters"
+             xmlns:controls="clr-namespace:RPAWriter2.Controls"
              Background="#2D2D30"
              Foreground="#F1F1F1"
              mc:Ignorable="d"
@@ -712,7 +713,8 @@
                                   Fill="{Binding Foreground}" Stretch="Uniform" Width="14" Height="14"/>
                         </Button>
                         <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="22" Height="22" Margin="8,-3,0,-3"
-                                VerticalAlignment="Center" ToolTip="Send to chat" Click="OnSendMessageSample">
+                                VerticalAlignment="Center" ToolTip="Add to chat input" Click="OnSendMessageSample"
+                                Visibility="{Binding ShowSend, Converter={StaticResource BoolToVis}}">
                             <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
                                   Fill="{Binding Foreground}" Stretch="Uniform" Width="14" Height="14"/>
                         </Button>
@@ -739,23 +741,9 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel x:Name="ChatToolbarPanel" Grid.Row="0" Margin="0,0,0,6">
-                    <Border x:Name="DeployToast" Margin="0,0,0,6"
-                            Background="{StaticResource Deploy.WarningBackground}"
-                            CornerRadius="2" Padding="10,8" Visibility="Collapsed">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="DeployToastText" Grid.Column="0" Text=""
-                                       Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                    Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
-                                    ToolTip="Close" Click="OnDeployToastClose">
-                                <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                            </Button>
-                        </Grid>
-                    </Border>
+                    <controls:NotificationBanner x:Name="DeployToast" Margin="0,0,0,6" Visibility="Collapsed"
+                                                  CloseRequested="OnDeployToastClose"
+                                                  SendToChatRequested="OnNotificationSendToChat"/>
                     <WrapPanel Margin="0,5,0,6" TextElement.FontSize="14">
                         <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
@@ -766,44 +754,12 @@
                         <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
                         <Button Content="copy" Click="OnCopyConversation" Margin="0,0,8,4"/>
                     </WrapPanel>
-                    <Border x:Name="OptionsWarningToast" Background="{StaticResource Deploy.WarningBackground}"
-                            CornerRadius="2" Padding="10,8" Margin="0,0,0,6" Visibility="Collapsed">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="OptionsWarningText" Grid.Column="0" Text=""
-                                       Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                    Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
-                                    ToolTip="Close" Click="OnOptionsWarningClose">
-                                <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                            </Button>
-                        </Grid>
-                    </Border>
-                    <Border x:Name="CommitResultBar" Margin="0,0,0,6" CornerRadius="2" Padding="10,6"
-                            Visibility="Collapsed">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="CommitResultText" Grid.Column="0" TextWrapping="Wrap"
-                                       Foreground="White" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0"
-                                    Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
-                                    ToolTip="Copy message" Click="OnCopyCommitResult">
-                                <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
-                            </Button>
-                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                    Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Close" Click="OnCloseCommitResult">
-                                <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                            </Button>
-                        </Grid>
-                    </Border>
+                    <controls:NotificationBanner x:Name="OptionsWarningToast" Margin="0,0,0,6" Visibility="Collapsed"
+                                                  CloseRequested="OnOptionsWarningClose"
+                                                  SendToChatRequested="OnNotificationSendToChat"/>
+                    <controls:NotificationBanner x:Name="CommitResultBar" Margin="0,0,0,6" Visibility="Collapsed"
+                                                  CloseRequested="OnCloseCommitResult"
+                                                  SendToChatRequested="OnNotificationSendToChat"/>
                     <Border x:Name="CreateRobotPanel" Margin="0,0,0,6"
                             Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                             BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
@@ -820,10 +776,9 @@
                         Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                         BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
                     <StackPanel>
-                        <Border x:Name="CommitWarningBar" Background="#4DFF8C00" CornerRadius="2" Padding="10,6"
-                                Visibility="Collapsed">
-                            <TextBlock x:Name="CommitWarningText" Foreground="#FFE3B3" TextWrapping="Wrap"/>
-                        </Border>
+                        <controls:NotificationBanner x:Name="CommitWarningBar" Visibility="Collapsed"
+                                                      CloseRequested="OnCommitClose"
+                                                      SendToChatRequested="OnNotificationSendToChat"/>
                         <Grid x:Name="CommitEditorPanel" Visibility="Collapsed">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -1196,11 +1151,9 @@
                     <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
                     <Button Content="UiPath → WF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
                 </WrapPanel>
-                <Border x:Name="NoticeBar" DockPanel.Dock="Top" Background="#4DFF8C00"
-                        CornerRadius="2" Padding="10,6" Margin="0,0,0,8"
-                        Visibility="Collapsed">
-                    <TextBlock x:Name="NoticeText" Foreground="#FFE3B3" TextWrapping="Wrap"/>
-                </Border>
+                <controls:NotificationBanner x:Name="NoticeBar" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
+                                              CloseRequested="OnNoticeClose"
+                                              SendToChatRequested="OnNotificationSendToChat"/>
                 <Border x:Name="ImportProgressPanel" DockPanel.Dock="Top" Background="{StaticResource Dark.Panel}"
                         BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
                         Padding="10,6" Margin="0,0,0,8" Visibility="Collapsed">
@@ -1297,25 +1250,9 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Border x:Name="SettingsToast" Grid.Row="0"
-                        Background="{StaticResource Commit.SuccessBackground}"
-                        CornerRadius="2" Padding="10,8" Margin="8,8,8,4"
-                        Visibility="Collapsed">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="SettingsToastText" Grid.Column="0" Text=""
-                                   Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                        <Button x:Name="SettingsToastCloseButton" Grid.Column="1"
-                                Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                Margin="8,0,0,0" VerticalAlignment="Center" Foreground="White"
-                                ToolTip="Close" Click="OnSettingsToastClose">
-                            <TextBlock Text="✕" FontSize="11" Foreground="White"/>
-                        </Button>
-                    </Grid>
-                </Border>
+                <controls:NotificationBanner x:Name="SettingsToast" Grid.Row="0" Margin="8,8,8,4" Visibility="Collapsed"
+                                              CloseRequested="OnSettingsToastClose"
+                                              SendToChatRequested="OnNotificationSendToChat"/>
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid Margin="8" VerticalAlignment="Top">
                 <Grid.ColumnDefinitions>
@@ -1546,11 +1483,18 @@
             </Grid>
         </TabItem>
         <TabItem x:Name="ControlsTab" Header="Controls" Visibility="Collapsed">
-            <TabControl Margin="4">
-                <TabItem Header="Notifications">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="ControlsMessagesList" ItemTemplate="{StaticResource MessageSampleTemplate}" Margin="8"/>
-                    </ScrollViewer>
+            <TabControl x:Name="ControlsInnerTabs" Margin="4">
+                <TabItem x:Name="NotificationsTab" Header="Notifications">
+                    <DockPanel Margin="8">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="Auto-hide (s) — 0 = never" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBox x:Name="NotificationAutoHideBox" Text="5" Width="60" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Button x:Name="ReplayNotificationsButton" Content="Replay" Click="OnReplayNotifications" VerticalAlignment="Center" Padding="8,2"/>
+                        </StackPanel>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="ControlsMessagesList" ItemTemplate="{StaticResource MessageSampleTemplate}" Margin="8"/>
+                        </ScrollViewer>
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="Chat">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -1603,7 +1547,7 @@
                                                           Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
                                                 </Button>
                                                 <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
-                                                        Margin="4,0,0,0" ToolTip="Send to chat"
+                                                        Margin="4,0,0,0" ToolTip="Add to chat input"
                                                         Click="OnSendSvgIdentifier">
                                                     <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
                                                           Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
