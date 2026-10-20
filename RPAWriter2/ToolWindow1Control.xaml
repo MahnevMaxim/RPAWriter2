@@ -1559,44 +1559,58 @@
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
-                <TabItem Header="svg">
+                <TabItem Header="SVG">
                     <DockPanel Margin="8">
                         <TextBox x:Name="SvgSearchBox" DockPanel.Dock="Top" Margin="0,0,0,6"
                                  TextChanged="OnSvgSearchTextChanged"
                                  ToolTip="Search icons by identifier"/>
                         <ListBox x:Name="ControlsSvgList"
-                                 VirtualizingPanel.IsVirtualizing="True"
-                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 Background="{StaticResource Dark.Panel}"
+                                 BorderThickness="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="4"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Path Grid.Column="0" Width="24" Height="24" Stretch="Uniform"
-                                              Fill="{StaticResource Dark.Text}"
-                                              Data="{Binding Kind, Converter={StaticResource MaterialIconToGeometry}}"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Identifier}" Margin="8,0,0,0"
-                                                   VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}"/>
-                                        <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
-                                                Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Copy identifier"
-                                                Click="OnCopySvgIdentifier">
-                                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
-                                        </Button>
-                                        <Button Grid.Column="4" Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
-                                                Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Send to chat"
-                                                Click="OnSendSvgIdentifier">
-                                            <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
-                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
-                                        </Button>
-                                    </Grid>
+                                    <Border Width="104" Background="{StaticResource Dark.Control}"
+                                            BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                                            CornerRadius="2" Padding="8">
+                                        <StackPanel>
+                                            <Path Width="32" Height="32" Stretch="Uniform" HorizontalAlignment="Center"
+                                                  Fill="{StaticResource Dark.Text}"
+                                                  Data="{Binding Kind, Converter={StaticResource MaterialIconToGeometry}}"/>
+                                            <TextBlock Text="{Binding Identifier}" Margin="0,6,0,0" TextAlignment="Center"
+                                                       TextWrapping="Wrap" FontSize="10"
+                                                       Foreground="{StaticResource Dark.Text}"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                                <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
+                                                        Margin="0,0,4,0" ToolTip="Copy identifier"
+                                                        Click="OnCopySvgIdentifier">
+                                                    <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                                          Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                                </Button>
+                                                <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
+                                                        Margin="4,0,0,0" ToolTip="Send to chat"
+                                                        Click="OnSendSvgIdentifier">
+                                                    <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
+                                                          Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>

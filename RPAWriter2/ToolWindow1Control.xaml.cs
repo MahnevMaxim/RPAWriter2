@@ -3799,7 +3799,7 @@ namespace RPAWriter2
             AddMessageSamples(samples, "green", green, green, new Thickness(1));
             AddMessageSamples(samples, "orange", orange, orange, new Thickness(1));
             AddMessageSamples(samples, "red", red, red, new Thickness(1));
-            AddMessageSamples(samples, "white", Brushes.White, Brushes.White, new Thickness(0, 0, 0, 1));
+            AddMessageSamples(samples, "white", Brushes.White, Brushes.White, new Thickness(1));
             return samples;
         }
 
