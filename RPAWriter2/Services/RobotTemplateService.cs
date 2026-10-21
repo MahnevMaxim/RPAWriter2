@@ -248,7 +248,8 @@ namespace RPAWriter2.Services
         /// Runs a command in the Package Manager Console (e.g. "Update-Package -Reinstall").
         /// The primary path is the canonical IPowerConsoleService (PMC window), which properly
         /// queues the command while the PowerShell host is still initializing. If the service
-        /// cannot be obtained — fallback to the previous dte.ExecuteCommand with an argument.
+        /// cannot be obtained, restore commands fall back to a child-process MSBuild restore
+        /// (never blocking the UI thread); other commands raise a descriptive error.
         /// </summary>
         public async Task RunPackageManagerCommandAsync(
             string command, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
@@ -277,23 +278,77 @@ namespace RPAWriter2.Services
                 return;
             }
 
-            // Fallback: previous working variant via dte.ExecuteCommand.
-            Report(progress, "IPowerConsoleService unavailable — using dte.ExecuteCommand (fallback).");
-
-            await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-
-            try
-            {
-                dte.ExecuteCommand("View.PackageManagerConsole", command);
-            }
-            catch (Exception ex)
+            // Fallback: restore packages via a child process so the UI thread is never
+            // blocked by the Package Manager Console PowerShell host ("Initializing PowerShell host…").
+            Report(progress, "IPowerConsoleService unavailable — restoring packages via child process (fallback).");
+            if (!IsRestoreCommand(command))
             {
                 throw new InvalidOperationException(
-                    "Failed to send the command to the Package Manager Console: " + ex.Message, ex);
+                    "The Package Manager Console host is unavailable. Run the command manually in " +
+                    "View → Package Manager Console: " + command);
             }
+            await RestorePackagesViaProcessAsync(progress, cancellationToken);
+            Report(progress, "Packages restored via child process (fallback).");
+        }
 
-            Report(progress, "Command sent via dte.ExecuteCommand (fallback) and executing: " + command);
+        private static bool IsRestoreCommand(string command)
+        {
+            var trimmed = (command ?? string.Empty).TrimStart();
+            return trimmed.StartsWith("Update-Package -Reinstall", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Restores packages of the open solution via MSBuild /t:Restore in a child process.
+        /// Unlike the Package Manager Console, this never blocks the UI thread and has a timeout.
+        /// </summary>
+        private async Task RestorePackagesViaProcessAsync(IProgress<string>? progress, CancellationToken cancellationToken)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2
+                ?? throw new InvalidOperationException("Could not access Visual Studio (DTE).");
+            string? solutionFile = null;
+            try { solutionFile = dte.Solution?.FullName; }
+            catch { solutionFile = null; }
+            if (string.IsNullOrWhiteSpace(solutionFile) || !File.Exists(solutionFile))
+                throw new InvalidOperationException("Could not determine the solution file for package restore.");
+            var msbuild = LocateMsBuild(dte);
+            if (msbuild == null)
+                throw new InvalidOperationException("Could not locate MSBuild.exe to restore packages.");
+            var args = "\"" + solutionFile + "\" /t:Restore /p:RestorePackagesConfig=true /nologo /v:minimal";
+            Report(progress, "Restoring packages via " + Path.GetFileName(msbuild) + "…");
+            var shell = new ShellCommandService();
+            var result = await shell.RunFileAsync(
+                msbuild,
+                args,
+                Path.GetDirectoryName(solutionFile) ?? string.Empty,
+                cancellationToken,
+                timeoutSeconds: 600);
+            if (!result.Success)
+                throw new InvalidOperationException("Package restore failed: " + result.Output);
+        }
+
+        /// <summary>Locates MSBuild.exe relative to the Visual Studio installation (devenv.exe).</summary>
+        private static string? LocateMsBuild(DTE2 dte)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var devenvDir = Path.GetDirectoryName(dte?.FullName ?? string.Empty);
+            if (string.IsNullOrEmpty(devenvDir))
+                return null;
+            // devenvDir = <VSInstall>\Common7\IDE → msbuild = <VSInstall>\MSBuild\Current\Bin\MSBuild.exe
+            var candidates = new[]
+            {
+                Path.Combine(devenvDir, "..", "..", "MSBuild", "Current", "Bin", "MSBuild.exe"),
+                Path.Combine(devenvDir, "..", "..", "MSBuild", "15.0", "Bin", "MSBuild.exe")
+            };
+            foreach (var candidate in candidates)
+            {
+                string full;
+                try { full = Path.GetFullPath(candidate); }
+                catch { continue; }
+                if (File.Exists(full))
+                    return full;
+            }
+            return null;
         }
 
         /// <summary>

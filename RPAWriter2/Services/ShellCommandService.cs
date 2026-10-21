@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -79,6 +80,76 @@ namespace RPAWriter2.Services
                     if (code != 0)
                         return new ShellCommandResult { ExitCode = code, Output = text, Success = false };
 
+                    return new ShellCommandResult
+                    {
+                        ExitCode = 0,
+                        Output = string.IsNullOrWhiteSpace(text) ? "(no output)" : text,
+                        Success = true
+                    };
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return ShellCommandResult.Failed("Command failed to run: " + ex.Message);
+            }
+        }
+
+        /// <summary>Runs an arbitrary executable with arguments and captures stdout/stderr.</summary>
+        public async Task<ShellCommandResult> RunFileAsync(
+            string fileName,
+            string arguments,
+            string workingDirectory,
+            CancellationToken cancellationToken = default,
+            int timeoutSeconds = 300)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("fileName is required.", nameof(fileName));
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments ?? string.Empty,
+                WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    : workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            try
+            {
+                using (var process = new Process { StartInfo = psi })
+                {
+                    process.OutputDataReceived += (s, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
+                    process.ErrorDataReceived += (s, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+                    if (!process.Start())
+                        return ShellCommandResult.Failed("Failed to start " + fileName + ".");
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+                    var exitTask = Task.Run(() => process.WaitForExit());
+                    var completed = await Task.WhenAny(exitTask, Task.Delay(TimeSpan.FromSeconds(timeoutSeconds), cancellationToken)).ConfigureAwait(false);
+                    if (completed != exitTask)
+                    {
+                        try { process.Kill(); } catch { }
+                        cancellationToken.ThrowIfCancellationRequested();
+                        return ShellCommandResult.Failed("Command timed out after " + timeoutSeconds + " seconds.");
+                    }
+                    var code = process.ExitCode;
+                    var combined = new StringBuilder();
+                    if (stdout.Length > 0) combined.AppendLine(stdout.ToString());
+                    if (stderr.Length > 0) combined.AppendLine(stderr.ToString());
+                    var text = Truncate(combined.ToString().TrimEnd());
+                    LogService.Info(Path.GetFileName(fileName) + " -> exit=" + code + ", output=" + text.Length + " chars");
+                    if (code != 0)
+                        return new ShellCommandResult { ExitCode = code, Output = text, Success = false };
                     return new ShellCommandResult
                     {
                         ExitCode = 0,
