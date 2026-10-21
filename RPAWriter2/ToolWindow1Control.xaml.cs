@@ -93,6 +93,7 @@ namespace RPAWriter2
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
+        private const string SkipAnswerText = "User skipped the question.";
         private const string CommitMessageSystemPrompt =
             "You are an expert at writing concise git commit messages. " +
             "Summarize the provided changes into a single-line commit message in the format \"type(scope): summary\". " +
@@ -354,11 +355,13 @@ namespace RPAWriter2
         private void OnQuestionSkip(object sender, RoutedEventArgs e)
         {
             if (_questionTcs == null) return;
-            const string skipped = "User skipped the question.";
             if (_activeQuestion?.Payload is QuestionPayload q)
-                q.Answer = skipped;
+            {
+                q.Answer = SkipAnswerText;
+                q.IsSkipped = true;
+            }
             ScheduleHistorySave();
-            _questionTcs.TrySetResult(skipped);
+            _questionTcs.TrySetResult(SkipAnswerText);
         }
 
         private void AppendExtensionError(Exception ex)
@@ -849,6 +852,7 @@ namespace RPAWriter2
             try
             {
                 var files = Directory.GetFiles(docsDir, "*", SearchOption.AllDirectories)
+                                     .Where(IsMarkdownFile)
                                      .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
                 foreach (var file in files)
                 {
@@ -3828,7 +3832,12 @@ namespace RPAWriter2
                 return new ChatMessage
                 {
                     Kind = m.Kind,
-                    Payload = new QuestionPayload { Question = m.Text ?? "", Answer = m.ToolName ?? "" }
+                    Payload = new QuestionPayload
+                    {
+                        Question = m.Text ?? "",
+                        Answer = m.ToolName ?? "",
+                        IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal)
+                    }
                 };
             }
 

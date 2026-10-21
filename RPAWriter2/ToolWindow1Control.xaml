@@ -38,12 +38,15 @@
         <SolidColorBrush x:Key="Deploy.WarningBackground" Color="#E65100"/>
         <SolidColorBrush x:Key="Deploy.SuccessBackground" Color="#B32E7D32"/>
         <SolidColorBrush x:Key="Material.Accent" Color="#64B5F6"/>
+        <SolidColorBrush x:Key="Question.OptionBorder" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="Question.AnswerBorder" Color="#4CAF50"/>
 
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
         <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
         <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>
         <conv:MaterialIconToGeometryConverter x:Key="MaterialIconToGeometry"/>
+        <conv:OptionEqualsAnswerConverter x:Key="OptionEqualsAnswerConverter"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
             <EventSetter Event="PreviewMouseWheel" Handler="OnCodeScrollPreviewMouseWheel"/>
@@ -512,13 +515,13 @@
                                                     <Grid Grid.Column="1" Margin="8,0,0,0">
                                                         <Path x:Name="ChevronRight"
                                                               Data="M 10,6 L 8.59,7.41 L 13.17,12 L 8.59,16.59 L 10,18 L 16,12 Z"
-                                                              Fill="{StaticResource Dark.Text}"
-                                                              Stretch="Uniform" Width="18" Height="18"
+                                                              Fill="White"
+                                                              Stretch="Uniform" Width="15" Height="15"
                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                         <Path x:Name="ChevronDown"
                                                               Data="M 7.41,8.59 L 12,13.17 L 16.59,8.59 L 18,10 L 12,16 L 6,10 Z"
-                                                              Fill="{StaticResource Material.Accent}"
-                                                              Stretch="Uniform" Width="18" Height="18"
+                                                              Fill="White"
+                                                              Stretch="Uniform" Width="15" Height="15"
                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
                                                               Visibility="Collapsed"/>
                                                     </Grid>
@@ -786,16 +789,47 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Content="{Binding}" Tag="{Binding}" Click="OnQuestionOptionClick"
-                                                    Margin="0,0,6,4" Padding="8,2"/>
+                                                    Margin="0,0,6,4">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
+                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                        <Setter Property="Padding" Value="10,4"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <MultiBinding Converter="{StaticResource OptionEqualsAnswerConverter}">
+                                                                        <Binding/>
+                                                                        <Binding Path="DataContext.Payload.Answer" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                                                                    </MultiBinding>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <Button Content="Skip" Click="OnQuestionSkip" HorizontalAlignment="Left"
-                                        Margin="0,4,0,0" Padding="8,2"/>
+                                        Margin="0,4,0,0">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
+                                            <Setter Property="BorderThickness" Value="1"/>
+                                            <Setter Property="Padding" Value="10,4"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Payload.IsSkipped}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                             </StackPanel>
-                            <TextBlock Text="{Binding Payload.Answer, StringFormat=Answer: {0}}"
-                                       Foreground="{StaticResource Dark.Accent}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                       Visibility="{Binding Payload.IsAnswered, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                         <StackPanel x:Name="SubagentPanel" Visibility="Collapsed">
                             <TextBlock Text="{Binding Payload.Item.Prompt}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>

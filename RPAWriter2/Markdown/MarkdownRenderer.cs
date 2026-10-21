@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using Markdig;
@@ -161,6 +162,7 @@ namespace RPAWriter2.Markdown
                 VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = textBlock
             };
+            scroll.PreviewMouseWheel += OnCodeScrollPreviewMouseWheel;
 
             return new Border
             {
@@ -172,6 +174,28 @@ namespace RPAWriter2.Markdown
                 Margin = new Thickness(0, 4, 0, 4),
                 Child = scroll
             };
+        }
+
+        /// <summary>
+        /// Forwards the mouse wheel from a horizontal-only code-block ScrollViewer to its parent,
+        /// so hovering over a code block still scrolls the chat vertically.
+        /// </summary>
+        private static void OnCodeScrollPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (e.Handled)
+                return;
+
+            e.Handled = true;
+
+            var parent = (sender as FrameworkElement)?.Parent as UIElement;
+            if (parent == null)
+                return;
+
+            parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source = parent
+            });
         }
 
         private static FrameworkElement RenderQuote(QuoteBlock quote, int depth)

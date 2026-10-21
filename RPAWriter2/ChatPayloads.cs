@@ -44,6 +44,7 @@ namespace RPAWriter2
     public sealed class QuestionPayload : ChatPayload, INotifyPropertyChanged
     {
         private string _answer = "";
+        private bool _isSkipped;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -70,6 +71,20 @@ namespace RPAWriter2
 
         /// <summary>True once the user answered (or skipped/cancelled) the question.</summary>
         public bool IsAnswered => !string.IsNullOrEmpty(Answer);
+
+        /// <summary>True when the user explicitly skipped the question.</summary>
+        public bool IsSkipped
+        {
+            get => _isSkipped;
+            set
+            {
+                if (_isSkipped != value)
+                {
+                    _isSkipped = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
 
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {

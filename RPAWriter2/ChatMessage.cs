@@ -169,7 +169,7 @@ namespace RPAWriter2
                 {
                     var q = Payload as QuestionPayload;
                     if (q == null) return Text ?? "";
-                    return string.IsNullOrEmpty(q.Answer) ? q.Question : q.Question + " → " + q.Answer;
+                    return q.Question;
                 }
 
                 if (Kind == ChatMessageKind.Subagent)
