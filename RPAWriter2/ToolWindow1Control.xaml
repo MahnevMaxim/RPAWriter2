@@ -37,6 +37,7 @@
         <SolidColorBrush x:Key="Mode.HelpBrush" Color="#F44336"/>
         <SolidColorBrush x:Key="Deploy.WarningBackground" Color="#E65100"/>
         <SolidColorBrush x:Key="Deploy.SuccessBackground" Color="#B32E7D32"/>
+        <SolidColorBrush x:Key="Material.Accent" Color="#64B5F6"/>
 
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
@@ -462,6 +463,156 @@
             </Setter>
         </Style>
 
+        <Style x:Key="MaterialExpanderStyle" TargetType="Expander">
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <DockPanel>
+                                <ToggleButton x:Name="HeaderSite"
+                                              DockPanel.Dock="Top"
+                                              Content="{TemplateBinding Header}"
+                                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Padding="12,7"
+                                              Cursor="Hand"
+                                              HorizontalContentAlignment="Stretch"
+                                              VerticalContentAlignment="Center"
+                                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border x:Name="HeaderBd"
+                                                    Background="{TemplateBinding Background}"
+                                                    CornerRadius="3"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ContentPresenter Grid.Column="0"
+                                                                      ContentSource="Content"
+                                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                      VerticalAlignment="Center"
+                                                                      RecognizesAccessKey="True"
+                                                                      TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                                    <Grid Grid.Column="1" Margin="8,0,0,0">
+                                                        <Path x:Name="ChevronRight"
+                                                              Data="M 10,6 L 8.59,7.41 L 13.17,12 L 8.59,16.59 L 10,18 L 16,12 Z"
+                                                              Fill="{StaticResource Dark.Text}"
+                                                              Stretch="Uniform" Width="18" Height="18"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        <Path x:Name="ChevronDown"
+                                                              Data="M 7.41,8.59 L 12,13.17 L 16.59,8.59 L 18,10 L 12,16 L 6,10 Z"
+                                                              Fill="{StaticResource Material.Accent}"
+                                                              Stretch="Uniform" Width="18" Height="18"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              Visibility="Collapsed"/>
+                                                    </Grid>
+
+                                                </Grid>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="HeaderBd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="HeaderBd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="HeaderBd" Property="CornerRadius" Value="3,3,0,0"/>
+                                                    <Setter TargetName="ChevronRight" Property="Visibility" Value="Collapsed"/>
+                                                    <Setter TargetName="ChevronDown" Property="Visibility" Value="Visible"/>
+                                                </Trigger>
+                                                <Trigger Property="IsEnabled" Value="False">
+                                                    <Setter TargetName="HeaderBd" Property="Opacity" Value="0.5"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <ContentPresenter x:Name="ContentSite"
+                                                  DockPanel.Dock="Top"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  Visibility="Collapsed"/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DocFileLinkStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="2,2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock x:Name="LinkText"
+                                   Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="LinkText" Property="Foreground" Value="{StaticResource Material.Accent}"/>
+                                <Setter TargetName="LinkText" Property="TextDecorations" Value="Underline"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="LinkText" Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMarkdown}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DocFileTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#9A9A9A"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMarkdown}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="SpecDocsFileTemplate">
+            <Grid Margin="2,1">
+                <TextBlock Text="{Binding Name}" Style="{StaticResource DocFileTextStyle}" TextTrimming="CharacterEllipsis"/>
+                <Button Content="{Binding Name}" Tag="{Binding FullPath}" Click="OnDocsFileClick" Style="{StaticResource DocFileLinkStyle}"/>
+            </Grid>
+        </DataTemplate>
+
         <Style TargetType="GridSplitter">
             <Setter Property="Background" Value="{StaticResource Dark.Border}"/>
             <Setter Property="Template">
@@ -757,7 +908,6 @@
                         <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
                         <Button Content="commit" Click="OnCommit" Margin="0,0,8,4"/>
                         <Button Content="deploy" Click="OnDeploy" Margin="0,0,8,4"/>
-                        <Button Content="generate robot" Click="OnGenerateRobot" Margin="0,0,8,4"/>
                         <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,4"/>
                         <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
                         <Button Content="copy" Click="OnCopyConversation" Margin="0,0,8,4"/>
@@ -1206,10 +1356,24 @@
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Button Content="Import spec" Click="OnImportSpec" Margin="0,5,8,0"/>
                     <Button Content="Generate algorithm" Click="OnGenerateAlgorithm" Margin="0,5,8,0"/>
+                    <Button Content="Generate robot" Click="OnGenerateRobot" Margin="0,5,8,0"/>
                     <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
                     <Button Content="UiPath → WF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
                     <Button Content="Convert md to docx" Click="OnConvertMarkdownToDocx" Margin="0,5,8,0"/>
+                    <Button Content="Clear" Click="OnClearSpec" Margin="0,5,8,0"/>
                 </WrapPanel>
+                <Expander x:Name="DocsExpander" DockPanel.Dock="Top" Margin="0,0,0,8"
+                          Style="{StaticResource MaterialExpanderStyle}"
+                          Header="docs"
+                          IsExpanded="False"
+                          Expanded="OnDocsExpanderExpanded">
+                    <StackPanel>
+                        <TextBlock x:Name="DocsFilesEmptyText" Text="The docs folder is empty." Foreground="#9A9A9A"
+                                   TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <ItemsControl x:Name="DocsFilesList" ItemTemplate="{StaticResource SpecDocsFileTemplate}"
+                                      HorizontalContentAlignment="Stretch"/>
+                    </StackPanel>
+                </Expander>
                 <controls:NotificationBanner x:Name="NoticeBar" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
                                               CloseRequested="OnNoticeClose"
                                               SendToChatRequested="OnNotificationSendToChat"/>

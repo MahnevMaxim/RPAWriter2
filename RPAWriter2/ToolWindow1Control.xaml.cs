@@ -75,6 +75,7 @@ namespace RPAWriter2
         private List<string> _robotNameHistory = new List<string>();
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
+        private readonly ObservableCollection<SpecDocsFile> _docsFiles = new ObservableCollection<SpecDocsFile>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
@@ -150,6 +151,7 @@ namespace RPAWriter2
             ChatList.ItemsSource = _chatListView;
             AttachmentsList.ItemsSource = _attachments;
             SpecList.ItemsSource = _specMessages;
+            DocsFilesList.ItemsSource = _docsFiles;
             HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
             _packagesView.Filter = FilterPackages;
@@ -822,6 +824,93 @@ namespace RPAWriter2
             File.Copy(sourcePath, Path.Combine(docsDir, Path.GetFileName(sourcePath)), overwrite: true);
         }
 
+        /// <summary>Rebuilds the list of files shown in the Spec tab's docs expander.</summary>
+        private void RefreshDocsFiles()
+        {
+            _docsFiles.Clear();
+            DocsFilesEmptyText.Visibility = Visibility.Collapsed;
+
+            var solutionDir = GetOpenSolutionDirectory();
+            if (solutionDir == null)
+            {
+                DocsFilesEmptyText.Text = "No solution open.";
+                DocsFilesEmptyText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            var docsDir = Path.Combine(solutionDir, "docs");
+            if (!Directory.Exists(docsDir))
+            {
+                DocsFilesEmptyText.Text = "The docs folder does not exist yet.";
+                DocsFilesEmptyText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            try
+            {
+                var files = Directory.GetFiles(docsDir, "*", SearchOption.AllDirectories)
+                                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
+                foreach (var file in files)
+                {
+                    var relative = file.Length > docsDir.Length
+                        ? file.Substring(docsDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        : Path.GetFileName(file);
+
+                    _docsFiles.Add(new SpecDocsFile
+                    {
+                        FullPath = file,
+                        Name = relative,
+                        IsMarkdown = IsMarkdownFile(file)
+                    });
+                }
+
+                if (_docsFiles.Count == 0)
+                {
+                    DocsFilesEmptyText.Text = "The docs folder is empty.";
+                    DocsFilesEmptyText.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception ex)
+            {
+                DocsFilesEmptyText.Text = "Failed to list docs: " + ex.Message;
+                DocsFilesEmptyText.Visibility = Visibility.Visible;
+            }
+        }
+
+        private static bool IsMarkdownFile(string path)
+        {
+            var ext = Path.GetExtension(path);
+            return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void OnDocsExpanderExpanded(object sender, RoutedEventArgs e)
+        {
+            RefreshDocsFiles();
+        }
+
+        private async void OnDocsFileClick(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button button) || !(button.Tag is string path) || !File.Exists(path))
+                return;
+
+            var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
+            if (dte == null)
+            {
+                ShowNotice("Visual Studio is not available.", NotificationKind.Warning);
+                return;
+            }
+
+            try
+            {
+                await VsDocumentService.OpenOrActivateAsync(dte, path);
+            }
+            catch (Exception ex)
+            {
+                ShowNotice("Failed to open file: " + ex.Message, NotificationKind.Error);
+            }
+        }
+
 #pragma warning disable VSTHRD100 // WPF event handlers are async void
         private async void OnSend(object sender, RoutedEventArgs e)
         {
@@ -1180,6 +1269,57 @@ namespace RPAWriter2
             finally
             {
                 HideImportProgress();
+                RefreshDocsFiles();
+            }
+        }
+
+        /// <summary>Deletes all files and subfolders inside the solution's docs folder after confirmation.</summary>
+        private void OnClearSpec(object sender, RoutedEventArgs e)
+        {
+            var solutionDir = GetOpenSolutionDirectory();
+            if (solutionDir == null)
+            {
+                ShowNotice("Clear docs is only available when a solution is open.", NotificationKind.Warning);
+                return;
+            }
+
+            var docsDir = Path.Combine(solutionDir, "docs");
+            if (!Directory.Exists(docsDir))
+            {
+                ShowNotice("No docs folder to clear.", NotificationKind.Info);
+                return;
+            }
+
+            var result = MessageDialog.Show(
+                "Clear docs",
+                "Delete all files and folders in the docs folder?\n\n" + docsDir + "\n\nThis cannot be undone.",
+                MessageDialogCommandSet.YesNo);
+            if (result != MessageDialogCommand.Yes)
+                return;
+
+            try
+            {
+                var removed = 0;
+                foreach (var file in Directory.GetFiles(docsDir, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                    File.Delete(file);
+                    removed++;
+                }
+
+                foreach (var dir in Directory.GetDirectories(docsDir, "*", SearchOption.AllDirectories)
+                                             .OrderByDescending(d => d.Length))
+                {
+                    Directory.Delete(dir);
+                }
+
+                _currentSpec = null;
+                ShowNotice("Cleared " + removed + " file(s) from docs.", NotificationKind.Success);
+                RefreshDocsFiles();
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to clear docs folder: " + ex.Message);
             }
         }
 
@@ -1244,6 +1384,7 @@ namespace RPAWriter2
             finally
             {
                 HideImportProgress();
+                RefreshDocsFiles();
             }
         }
 
@@ -3346,6 +3487,9 @@ namespace RPAWriter2
             if (_restoringUiState)
                 return;
             PersistUiState();
+
+            if ((MainTabs.SelectedItem as TabItem)?.Header as string == "Spec")
+                RefreshDocsFiles();
         }
 
         /// <summary>Writes the current chat/tab state so the next session can restore it.</summary>
