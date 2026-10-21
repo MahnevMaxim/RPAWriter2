@@ -192,6 +192,41 @@ namespace RPAWriter.Tests
             Assert.That(spec.RawText, Does.Contain("1. item 1\n2. item 2\n3. item 3"));
         }
 
+        [Test]
+        public void OpenXmlDocumentReader_MarksWordPageBreaks()
+        {
+            var path = Path.Combine(_dir, "paged.docx");
+            Directory.CreateDirectory(_dir);
+            CreateDocxWithPageBreak(path);
+
+            var spec = new OpenXmlDocumentReader().Read(path);
+
+            Assert.That(spec.MarkdownText, Does.Contain("> **[Page 1]**"));
+            Assert.That(spec.MarkdownText, Does.Contain("> **[Page 2]**"));
+            Assert.That(spec.MarkdownText, Does.Contain("> **[Page 3]**"));
+            Assert.That(spec.MarkdownText, Does.Contain("First page"));
+            Assert.That(spec.MarkdownText, Does.Contain("Second page"));
+            Assert.That(spec.MarkdownText, Does.Contain("Third page"));
+        }
+
+        private static void CreateDocxWithPageBreak(string path)
+        {
+            using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
+            {
+                var main = doc.AddMainDocumentPart();
+                main.Document = new Document(new Body(
+                    new Paragraph(new Run(new Text("First page"))),
+                    new Paragraph(
+                        new Run(new LastRenderedPageBreak()),
+                        new Run(new Text("Second page"))),
+                    new Paragraph(
+                        new Run(new Text("End of second page")),
+                        new Run(new Break { Type = BreakValues.Page })),
+                    new Paragraph(new Run(new Text("Third page")))));
+                main.Document.Save();
+            }
+        }
+
         private static void CreateDocxStructured(string path)
         {
             using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
@@ -312,7 +347,7 @@ namespace RPAWriter.Tests
 
             var spec = new OpenXmlDocumentReader().Read(path, mediaDir);
 
-            Assert.That(spec.MarkdownText, Does.Contain("![image](media/image1.png)"));
+            Assert.That(spec.MarkdownText, Does.Contain("![image](media/image1.png){width=104 height=104}"));
             Assert.That(File.Exists(Path.Combine(mediaDir, "image1.png")), Is.True);
         }
 

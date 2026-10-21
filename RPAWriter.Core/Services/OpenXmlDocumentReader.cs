@@ -132,22 +132,83 @@ namespace RPAWriter.Core.Services
                 var body = mainPart?.Document?.Body;
                 if (body == null) return "";
                 var tracker = new ListMarkerTracker(mainPart?.NumberingDefinitionsPart?.Numbering);
+                var currentPage = 1;
+                AppendPageMarker(sb, currentPage);
                 foreach (var element in body.ChildElements)
                 {
                     if (element is Paragraph p)
                     {
+                        EmitLeadingPageBreaks(sb, p, ref currentPage);
                         ReadParagraphImages(p, mainPart, extractor, sb);
                         ReadParagraphMarkdown(p, tracker, sb);
+                        EmitTrailingPageBreaks(sb, p, ref currentPage);
                     }
                     else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
                     {
+                        EmitLeadingPageBreaks(sb, table, ref currentPage);
                         ReadTableImages(table, mainPart, extractor, sb);
                         ReadTableMarkdown(table, tracker, sb);
+                        EmitTrailingPageBreaks(sb, table, ref currentPage);
                         sb.AppendLine();
                     }
                 }
             }
             return sb.ToString();
+        }
+
+        /// <summary>Appends a visible page marker (blockquote) to the generated Markdown.</summary>
+        private static void AppendPageMarker(StringBuilder sb, int page)
+        {
+            sb.AppendLine();
+            sb.AppendLine("> **[Page " + page + "]**");
+            sb.AppendLine();
+        }
+
+        private static bool HasText(DocumentFormat.OpenXml.Wordprocessing.Run run)
+        {
+            return run != null && run.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>()
+                .Any(t => !string.IsNullOrEmpty(t.Text));
+        }
+
+        private static bool HasPageBreak(DocumentFormat.OpenXml.Wordprocessing.Run run)
+        {
+            if (run == null) return false;
+            if (run.Descendants<DocumentFormat.OpenXml.Wordprocessing.LastRenderedPageBreak>().Any()) return true;
+            return run.Descendants<DocumentFormat.OpenXml.Wordprocessing.Break>()
+                .Any(b => b.Type != null && b.Type.Value == DocumentFormat.OpenXml.Wordprocessing.BreakValues.Page);
+        }
+
+        /// <summary>Emits page markers for page breaks that precede an element's visible text.</summary>
+        private static void EmitLeadingPageBreaks(StringBuilder sb, DocumentFormat.OpenXml.OpenXmlElement element, ref int currentPage)
+        {
+            foreach (var run in element.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>())
+            {
+                if (HasText(run)) break;
+                if (HasPageBreak(run))
+                {
+                    currentPage++;
+                    AppendPageMarker(sb, currentPage);
+                }
+            }
+        }
+
+        /// <summary>Emits page markers for explicit page breaks that follow an element's visible text.</summary>
+        private static void EmitTrailingPageBreaks(StringBuilder sb, DocumentFormat.OpenXml.OpenXmlElement element, ref int currentPage)
+        {
+            var seenText = false;
+            foreach (var run in element.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>())
+            {
+                if (HasText(run))
+                {
+                    seenText = true;
+                    continue;
+                }
+                if (seenText && HasPageBreak(run))
+                {
+                    currentPage++;
+                    AppendPageMarker(sb, currentPage);
+                }
+            }
         }
 
         /// <summary>Generates structured Markdown for Excel (.xlsx): sheet → heading + table.</summary>
@@ -262,7 +323,37 @@ namespace RPAWriter.Core.Services
             var relative = extractor.Extract(imagePart);
             if (relative == null) return; // unsupported content type (EMF/WMF, etc.)
 
-            sb.AppendLine("![" + ImageAltText + "](" + relative + ")");
+            var (cx, cy) = GetDisplayExtent(blip);
+            if (cx.HasValue && cy.HasValue && cx.Value > 0 && cy.Value > 0)
+            {
+                var widthPx = (int)Math.Round(cx.Value / EmuPerPixel);
+                var heightPx = (int)Math.Round(cy.Value / EmuPerPixel);
+                sb.AppendLine("![" + ImageAltText + "](" + relative + "){width=" + widthPx + " height=" + heightPx + "}");
+            }
+            else
+            {
+                sb.AppendLine("![" + ImageAltText + "](" + relative + ")");
+            }
+        }
+
+        private const double EmuPerPixel = 9525.0;
+
+        /// <summary>
+        /// Returns the size at which an image was displayed in Word (the <c>wp:extent</c> of its
+        /// inline/anchor container), expressed in EMU. Returns nulls when the size is unavailable
+        /// (e.g. Excel images anchored to cells).
+        /// </summary>
+        private static (long? Cx, long? Cy) GetDisplayExtent(Blip blip)
+        {
+            var inline = blip.Ancestors<DocumentFormat.OpenXml.Drawing.Wordprocessing.Inline>().FirstOrDefault();
+            if (inline?.Extent != null)
+                return (inline.Extent.Cx?.Value, inline.Extent.Cy?.Value);
+
+            var anchor = blip.Ancestors<DocumentFormat.OpenXml.Drawing.Wordprocessing.Anchor>().FirstOrDefault();
+            if (anchor?.Extent != null)
+                return (anchor.Extent.Cx?.Value, anchor.Extent.Cy?.Value);
+
+            return (null, null);
         }
 
         private const string ImageAltText = "image";

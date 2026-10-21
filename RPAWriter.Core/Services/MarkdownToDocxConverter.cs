@@ -5,6 +5,7 @@ using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Markdig;
+using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -33,6 +34,7 @@ namespace RPAWriter.Core.Services
     {
         private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
             .UsePipeTables()
+            .UseGenericAttributes()
             .Build();
 
         private W.Body _body;
@@ -282,7 +284,7 @@ namespace RPAWriter.Core.Services
                     break;
 
                 case LinkInline link when link.IsImage:
-                    AppendImage(paragraph, link.Url, baseDirectory);
+                    AppendImage(paragraph, link, baseDirectory);
                     break;
 
                 case LinkInline link:
@@ -305,9 +307,9 @@ namespace RPAWriter.Core.Services
             }
         }
 
-        private void AppendImage(W.Paragraph paragraph, string url, string baseDirectory)
+        private void AppendImage(W.Paragraph paragraph, LinkInline link, string baseDirectory)
         {
-            var imagePath = ResolveImagePath(url, baseDirectory);
+            var imagePath = ResolveImagePath(link.Url, baseDirectory);
             if (imagePath == null) return;
 
             var partType = ImagePartTypeFor(imagePath);
@@ -327,11 +329,59 @@ namespace RPAWriter.Core.Services
 
             var relationId = _mainPart.GetIdOfPart(part);
             var index = _result.Images + 1;
-            var widthEmu = 5486400L;  // 6 inches
-            var heightEmu = 3657600L; // 4 inches
+            var size = ResolveImageSize(link, imagePath);
 
-            paragraph.AppendChild(new W.Run(BuildInlineDrawing(relationId, index, widthEmu, heightEmu)));
+            paragraph.AppendChild(new W.Run(BuildInlineDrawing(relationId, index, size.WidthEmu, size.HeightEmu)));
             _result.Images++;
+        }
+
+        private const long EmuPerInch = 914400L;
+        private const double EmuPerPixel = 9525.0;
+        private const long MaxNaturalWidthEmu = 5943600L; // 6.5 inches (fits within page margins)
+
+        private static (long WidthEmu, long HeightEmu) ResolveImageSize(LinkInline link, string imagePath)
+        {
+            // 1. Explicit size from Markdown attributes, e.g. ![alt](url){width=104 height=104}.
+            var attributes = link.GetAttributes();
+            double? width = attributes?.Properties == null ? null : TryGetNumber(attributes, "width");
+            double? height = attributes?.Properties == null ? null : TryGetNumber(attributes, "height");
+            if (width.HasValue && height.HasValue && width.Value > 0 && height.Value > 0)
+                return (PixelsToEmu(width.Value), PixelsToEmu(height.Value));
+
+            // 2. Natural size of the image file, capped to the printable width.
+            var natural = ImageDimensions.Read(imagePath);
+            if (natural.Width > 0 && natural.Height > 0)
+            {
+                var w = PixelsToEmu(natural.Width);
+                var h = PixelsToEmu(natural.Height);
+                if (w > MaxNaturalWidthEmu)
+                {
+                    h = (long)Math.Round(h * (double)MaxNaturalWidthEmu / w);
+                    w = MaxNaturalWidthEmu;
+                }
+                return (w, h);
+            }
+
+            // 3. Default 6x4 inches when the size cannot be determined.
+            return (6 * EmuPerInch, 4 * EmuPerInch);
+        }
+
+        private static double? TryGetNumber(HtmlAttributes attributes, string key)
+        {
+            foreach (var property in attributes.Properties)
+            {
+                if (string.Equals(property.Key, key, StringComparison.OrdinalIgnoreCase)
+                    && double.TryParse(property.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
+                {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        private static long PixelsToEmu(double pixels)
+        {
+            return (long)Math.Round(pixels * EmuPerPixel);
         }
 
         private static W.Drawing BuildInlineDrawing(string relationId, int index, long widthEmu, long heightEmu)
