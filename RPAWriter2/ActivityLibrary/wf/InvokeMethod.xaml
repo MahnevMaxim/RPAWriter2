@@ -1,0 +1,3 @@
+<InvokeMethod DisplayName="{{DisplayName}}" MethodName="{{MethodName}}" TargetType="{x:Type local:{{ClassName}}}">
+{{Arguments}}
+</InvokeMethod>

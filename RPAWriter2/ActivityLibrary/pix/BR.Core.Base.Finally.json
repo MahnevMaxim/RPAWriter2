@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.Finally",
+  "wfSnippet": null,
+  "defaultDisplayName": "Finally",
+  "role": "finally",
+  "parent": "BR.Core.Base.TryCatch",
+  "parameters": [],
+  "warnings": []
+}

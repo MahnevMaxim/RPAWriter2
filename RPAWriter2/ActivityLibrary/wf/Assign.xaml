@@ -1,0 +1,8 @@
+<Assign DisplayName="{{DisplayName}}">
+  <Assign.To>
+    <OutArgument x:TypeArguments="x:String">{{To}}</OutArgument>
+  </Assign.To>
+  <Assign.Value>
+    <InArgument x:TypeArguments="x:String">{{Value}}</InArgument>
+  </Assign.Value>
+</Assign>

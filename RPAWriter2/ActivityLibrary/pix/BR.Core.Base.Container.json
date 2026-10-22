@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.Container",
+  "wfSnippet": "Sequence",
+  "defaultDisplayName": "Container",
+  "role": "container",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

@@ -1,0 +1,12 @@
+{
+  "activityFullName": "BR.Core.Base.Assign",
+  "wfSnippet": "Assign",
+  "defaultDisplayName": "Assign",
+  "role": "statement",
+  "parent": null,
+  "parameters": [
+    { "pix": "To", "target": "Variable" },
+    { "pix": "Value", "target": "Expression" }
+  ],
+  "warnings": []
+}

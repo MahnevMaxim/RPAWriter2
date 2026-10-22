@@ -30,8 +30,9 @@ namespace RPAWriter.Tests
             var md = MarkdownContent.TasksToMarkdown(spec);
 
             Assert.That(md, Does.Contain("# Задачи — Test"));
-            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия |"));
-            Assert.That(md, Does.Contain("| open | site | OpenBrowser | browser |  |  |"));
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия | Оценка (часы) |"));
+            Assert.That(md, Does.Contain("| 1 | open | site | OpenBrowser | browser |  |  |  |"));
+            Assert.That(md, Does.Contain("**Итого: 0 ч**"));
         }
 
         [Test]
@@ -136,8 +137,31 @@ namespace RPAWriter.Tests
 
             var md = MarkdownContent.TasksToMarkdown(spec);
 
-            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия |"));
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия | Оценка (часы) |"));
             Assert.That(md, Does.Contain("| VA01 | настройка |"));
+        }
+
+        [Test]
+        public void TasksToMarkdown_RendersEstimatedHoursAndTotal()
+        {
+            var spec = new SpecModel
+            {
+                Name = "Timed",
+                Tasks = new List<TaskDescriptor>
+                {
+                    new TaskDescriptor { Action = "open", Target = "site", ActivityType = "OpenBrowser", EstimatedHours = 2 },
+                    new TaskDescriptor { Action = "fill", Target = "form", ActivityType = "FillField", EstimatedHours = 0.5 },
+                    new TaskDescriptor { Action = "save", Target = "file", ActivityType = "WriteExcel" }
+                }
+            };
+
+            var md = MarkdownContent.TasksToMarkdown(spec);
+
+            Assert.That(md, Does.Contain("| # | Действие | Объект | Тип активности | Ключевые слова | Транзакция SAP | Вид действия | Оценка (часы) |"));
+            Assert.That(md, Does.Contain("| 1 | open | site | OpenBrowser |  |  |  | 2 |"));
+            Assert.That(md, Does.Contain("| 2 | fill | form | FillField |  |  |  | 0.5 |"));
+            Assert.That(md, Does.Contain("| 3 | save | file | WriteExcel |  |  |  |  |"));
+            Assert.That(md, Does.Contain("**Итого: 2.5 ч**"));
         }
 
         [Test]

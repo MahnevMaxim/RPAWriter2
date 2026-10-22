@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.DateTimeToString",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Date time to string",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

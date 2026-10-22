@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.ChangeDateTime",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Change date time",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

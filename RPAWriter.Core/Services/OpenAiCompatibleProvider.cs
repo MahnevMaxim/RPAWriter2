@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -310,8 +311,20 @@ namespace RPAWriter.Core.Services
                 Description = t.Value<string>("description"),
                 ActivityType = t.Value<string>("activityType"),
                 SapTransactionCode = t.Value<string>("sapTransactionCode"),
-                SapActionKind = ParseSapActionKind(t.Value<string>("sapActionKind"))
+                SapActionKind = ParseSapActionKind(t.Value<string>("sapActionKind")),
+                EstimatedHours = ParseEstimatedHours(t["estimatedHours"])
             };
+        }
+
+        private static double? ParseEstimatedHours(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null) return null;
+            if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
+                return token.Value<double?>();
+            if (token.Type == JTokenType.String &&
+                double.TryParse(token.Value<string>(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+                return value;
+            return null;
         }
 
         private static SapActionKind? ParseSapActionKind(string value)

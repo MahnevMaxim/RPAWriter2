@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.GetDateTime",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Get date time",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

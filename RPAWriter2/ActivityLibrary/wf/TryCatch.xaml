@@ -1,0 +1,14 @@
+<TryCatch DisplayName="{{DisplayName}}">
+  <TryCatch.Try>{{Try}}</TryCatch.Try>
+  <TryCatch.Catches>
+    <Catch x:TypeArguments="s:Exception">
+      <ActivityAction x:TypeArguments="s:Exception">
+        <ActivityAction.Argument>
+          <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+        </ActivityAction.Argument>
+        {{Catches}}
+      </ActivityAction>
+    </Catch>
+  </TryCatch.Catches>
+  <TryCatch.Finally>{{Finally}}</TryCatch.Finally>
+</TryCatch>

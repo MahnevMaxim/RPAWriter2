@@ -1062,16 +1062,7 @@
                     </Grid>
                 </Border>
 
-                <Grid x:Name="ChatListContainer" Grid.Row="3" Margin="0,0,0,4">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <ScrollViewer Grid.Row="1" x:Name="ChatScroll"
-                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="ChatList" ItemTemplate="{StaticResource ChatMessageTemplate}"/>
-                    </ScrollViewer>
-                </Grid>
+                <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="3" Margin="0,0,0,4"/>
 
                 <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
                               VerticalAlignment="Center" ResizeDirection="Rows"
@@ -1392,7 +1383,7 @@
                     <Button Content="Generate algorithm" Click="OnGenerateAlgorithm" Margin="0,5,8,0"/>
                     <Button Content="Generate robot" Click="OnGenerateRobot" Margin="0,5,8,0"/>
                     <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
-                    <Button Content="UiPath → WF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
+                    <Button Content="Robot security audit" Click="OnRobotSecurityAudit" Margin="0,5,8,0"/>
                     <Button Content="Convert md to docx" Click="OnConvertMarkdownToDocx" Margin="0,5,8,0"/>
                     <Button Content="Clear" Click="OnClearSpec" Margin="0,5,8,0"/>
                 </WrapPanel>
@@ -1420,6 +1411,35 @@
                                      Foreground="{StaticResource Dark.Accent}"/>
                     </StackPanel>
                 </Border>
+                <Expander x:Name="SecurityAuditExpander" DockPanel.Dock="Top" Margin="0,0,0,8"
+                          Style="{StaticResource MaterialExpanderStyle}"
+                          Header="Security audit"
+                          IsExpanded="False">
+                    <Border Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+                            BorderThickness="1" CornerRadius="2" Padding="8,6">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" x:Name="SecurityAuditStatusText" Foreground="#C8C8C8"
+                                       TextWrapping="Wrap" Text="No solutions scanned."/>
+                            <ProgressBar Grid.Row="1" x:Name="SecurityAuditProgress" Height="6" Margin="0,4,0,0"
+                                         Minimum="0" Maximum="100" Value="0"
+                                         Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
+                            <TextBlock Grid.Row="2" Text="Found solutions:" Foreground="#C8C8C8" Margin="0,6,0,2"/>
+                            <ListBox Grid.Row="3" x:Name="SecurityAuditSolutionsList" Height="120"
+                                     BorderThickness="0" Background="Transparent"
+                                     HorizontalContentAlignment="Stretch"/>
+                            <TextBox Grid.Row="4" x:Name="SecurityAuditMessagesBox" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="Wrap" Height="100" Margin="0,6,0,0"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                        </Grid>
+                    </Border>
+                </Expander>
                 <Grid Margin="0,0,0,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1437,6 +1457,31 @@
                         <ItemsControl x:Name="SpecList" ItemTemplate="{StaticResource MessageTemplate}">
                         </ItemsControl>
                     </ScrollViewer>
+                </Grid>
+            </DockPanel>
+        </TabItem>
+
+        <TabItem Header="Converter">
+            <DockPanel>
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Button Content="UiPath → MWF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
+                    <Button Content="Convert PIX to MWF" Click="OnConvertPix" Margin="0,5,8,0"/>
+                    <Button Content="Get All Activities From PIX" Click="OnGetAllActivitiesFromPix" Margin="0,5,8,0"/>
+                    <Button Content="Clear" Click="OnClearConverter" Margin="0,5,8,0"/>
+                </WrapPanel>
+                <Grid Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Button x:Name="CopyConverterAllButton" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,0,0,4"
+                            Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                            ToolTip="Copy all" Click="OnCopyConverterOutput" Visibility="Collapsed">
+                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
+                    </Button>
+                    <controls:ChatMessagesControl x:Name="ConverterMessages" Grid.Row="1"/>
                 </Grid>
             </DockPanel>
         </TabItem>
@@ -1517,6 +1562,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -1711,7 +1757,14 @@
                 <CheckBox Grid.Row="40" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox"
                           Content="Auto-send voice input" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                <StackPanel Grid.Row="41" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Grid.Row="41" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <ComboBox Grid.Row="41" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="0"
+                          VerticalAlignment="Center" Margin="0,0,0,4">
+                    <ComboBoxItem Content="Full (all areas)"/>
+                    <ComboBoxItem Content="Passwords &amp; logins only"/>
+                </ComboBox>
+
+                <StackPanel Grid.Row="42" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>

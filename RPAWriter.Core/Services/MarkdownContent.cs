@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using RPAWriter.Core.Models;
@@ -59,7 +60,7 @@ namespace RPAWriter.Core.Services
 
             var rows = new List<IReadOnlyList<string>>
             {
-                new List<string> { "#", "Действие", "Объект", "Тип активности", "Ключевые слова", "Транзакция SAP", "Вид действия" }
+                new List<string> { "#", "Действие", "Объект", "Тип активности", "Ключевые слова", "Транзакция SAP", "Вид действия", "Оценка (часы)" }
             };
 
             var tasks = spec?.Tasks ?? new List<TaskDescriptor>();
@@ -74,12 +75,27 @@ namespace RPAWriter.Core.Services
                     t?.ActivityType ?? "",
                     string.Join(", ", t?.Keywords ?? new List<string>()),
                     t?.SapTransactionCode ?? "",
-                    SapActionKindLabel(t?.SapActionKind)
+                    SapActionKindLabel(t?.SapActionKind),
+                    FormatHours(t?.EstimatedHours)
                 });
             }
 
             sb.Append(Table(rows));
+
+            if (tasks.Count > 0)
+            {
+                var total = tasks.Sum(t => t?.EstimatedHours ?? 0);
+                sb.AppendLine();
+                sb.AppendLine("**Итого: " + FormatHours(total) + " ч**");
+            }
+
             return sb.ToString();
+        }
+
+        private static string FormatHours(double? hours)
+        {
+            if (hours == null) return "";
+            return hours.Value.ToString("0.##", CultureInfo.InvariantCulture);
         }
 
         /// <summary>Formats an absolute timestamp for human-readable headers (ISO-like UTC).</summary>

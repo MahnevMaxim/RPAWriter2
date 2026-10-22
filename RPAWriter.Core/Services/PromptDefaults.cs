@@ -33,8 +33,9 @@ namespace RPAWriter.Core.Services
 
         public const string DecomposeTasks =
             "Decompose the document into small atomic tasks. Return a JSON array: " +
-            "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\",\"sapTransactionCode\":\"...\",\"sapActionKind\":\"...\"}]. " +
-            "Write the action, target and description of each task in Russian.\n\n" +
+            "[{\"action\":\"...\",\"target\":\"...\",\"description\":\"...\",\"activityType\":\"...\",\"sapTransactionCode\":\"...\",\"sapActionKind\":\"...\",\"estimatedHours\":0.5}]. " +
+            "Write the action, target and description of each task in Russian.\n" +
+            "Set \"estimatedHours\" for every task: the estimated effort in hours as a number (fractions allowed, e.g. 0.5).\n\n" +
             "For SAP transaction tasks, split the work per transaction and set the SAP fields:\n" +
             "- \"sapTransactionCode\": the SAP transaction name/code (e.g. \"VA01\", \"SE16N\").\n" +
             "- \"sapActionKind\": one of \"setup\" (настройка и запуск транзакции), \"work\" (работа с транзакцией), \"gettable\" (получение таблицы/данных из транзакции).\n" +

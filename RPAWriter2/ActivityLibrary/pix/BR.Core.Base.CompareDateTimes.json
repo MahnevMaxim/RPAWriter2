@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.CompareDateTimes",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Compare date times",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

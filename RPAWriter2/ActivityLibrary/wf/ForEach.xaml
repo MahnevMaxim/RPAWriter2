@@ -1,0 +1,8 @@
+<ForEach x:TypeArguments="x:String" DisplayName="{{DisplayName}}" Values="[{{Values}}]">
+  <ActivityAction x:TypeArguments="x:String">
+    <ActivityAction.Argument>
+      <DelegateInArgument x:TypeArguments="x:String" Name="item" />
+    </ActivityAction.Argument>
+    {{Children}}
+  </ActivityAction>
+</ForEach>

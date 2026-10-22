@@ -1,0 +1,9 @@
+{
+  "activityFullName": "Activities.BaseCollections.List.Remove",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "List remove",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

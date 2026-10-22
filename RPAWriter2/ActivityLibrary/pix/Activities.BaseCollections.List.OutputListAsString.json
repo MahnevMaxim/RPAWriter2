@@ -1,0 +1,9 @@
+{
+  "activityFullName": "Activities.BaseCollections.List.OutputListAsString",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "List to string",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

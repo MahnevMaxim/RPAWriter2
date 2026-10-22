@@ -284,6 +284,26 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task DecomposeTasksAsync_ParsesEstimatedHours()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => Completion(
+                    "[{\"action\":\"open\",\"estimatedHours\":2}," +
+                    "{\"action\":\"fill\",\"estimatedHours\":\"0.5\"}," +
+                    "{\"action\":\"save\"}]")
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+
+            var tasks = await provider.DecomposeTasksAsync("Open browser");
+
+            Assert.That(tasks.Count, Is.EqualTo(3));
+            Assert.That(tasks[0].EstimatedHours, Is.EqualTo(2.0).Within(0.0001));
+            Assert.That(tasks[1].EstimatedHours, Is.EqualTo(0.5).Within(0.0001));
+            Assert.That(tasks[2].EstimatedHours, Is.Null);
+        }
+
+        [Test]
         public async Task AnalyzeSpecAsync_ParsesSapTransactionFields()
         {
             var handler = new FakeHttpHandler

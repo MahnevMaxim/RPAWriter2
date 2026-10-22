@@ -1,0 +1,9 @@
+{
+  "activityFullName": "Activities.VBS.ExecuteVBS",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Execute VBS",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": [ "VBScript is not portable to Workflow Foundation; mapped to InvokeMethod RpaActions.ExecuteVBS." ]
+}

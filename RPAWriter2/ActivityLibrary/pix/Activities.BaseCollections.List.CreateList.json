@@ -1,0 +1,9 @@
+{
+  "activityFullName": "Activities.BaseCollections.List.CreateList",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "List create",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

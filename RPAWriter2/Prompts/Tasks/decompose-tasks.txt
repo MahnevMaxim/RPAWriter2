@@ -1,4 +1,5 @@
-Decompose the document into small atomic tasks. Return a JSON array: [{"action":"...","target":"...","description":"...","activityType":"...","sapTransactionCode":"...","sapActionKind":"..."}]. Write the action, target and description of each task in Russian.
+Decompose the document into small atomic tasks. Return a JSON array: [{"action":"...","target":"...","description":"...","activityType":"...","sapTransactionCode":"...","sapActionKind":"...","estimatedHours":0.5}]. Write the action, target and description of each task in Russian.
+Set "estimatedHours" for every task: the estimated effort in hours as a number (fractions allowed, e.g. 0.5).
 
 For SAP transaction tasks, split the work per transaction and set the SAP fields:
 - "sapTransactionCode": the SAP transaction name/code (e.g. "VA01", "SE16N").

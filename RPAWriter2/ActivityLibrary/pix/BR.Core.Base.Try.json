@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.Try",
+  "wfSnippet": null,
+  "defaultDisplayName": "Try",
+  "role": "try",
+  "parent": "BR.Core.Base.TryCatch",
+  "parameters": [],
+  "warnings": []
+}

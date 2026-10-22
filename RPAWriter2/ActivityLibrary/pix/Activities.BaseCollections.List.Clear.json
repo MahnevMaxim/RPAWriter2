@@ -1,0 +1,9 @@
+{
+  "activityFullName": "Activities.BaseCollections.List.Clear",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "List clear",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": []
+}

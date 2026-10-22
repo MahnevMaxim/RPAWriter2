@@ -74,6 +74,9 @@ namespace RPAWriter2.Services
         /// <summary>How the agent uses the project memory bank: "Disabled", "Tool" or "Convention".</summary>
         public string MemoryBankMode { get; set; } = "Disabled";
 
+        /// <summary>Security audit scope: "Full" (all areas) or "CredentialsOnly" (passwords &amp; logins).</summary>
+        public string SecurityAuditMode { get; set; } = "Full";
+
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
 
@@ -213,6 +216,10 @@ namespace RPAWriter2.Services
                  !string.Equals(settings.MemoryBankMode, "Tool", StringComparison.OrdinalIgnoreCase) &&
                  !string.Equals(settings.MemoryBankMode, "Convention", StringComparison.OrdinalIgnoreCase)))
                 settings.MemoryBankMode = "Disabled";
+            if (string.IsNullOrWhiteSpace(settings.SecurityAuditMode) ||
+                (!string.Equals(settings.SecurityAuditMode, "Full", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(settings.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase)))
+                settings.SecurityAuditMode = "Full";
             if (string.IsNullOrWhiteSpace(settings.SpeechToTextProvider) ||
                 (!string.Equals(settings.SpeechToTextProvider, "Auto", StringComparison.OrdinalIgnoreCase) &&
                  !string.Equals(settings.SpeechToTextProvider, "OpenAiWhisper", StringComparison.OrdinalIgnoreCase) &&

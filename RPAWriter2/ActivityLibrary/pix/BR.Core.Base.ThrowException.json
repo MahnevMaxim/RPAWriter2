@@ -1,0 +1,11 @@
+{
+  "activityFullName": "BR.Core.Base.ThrowException",
+  "wfSnippet": "Throw",
+  "defaultDisplayName": "Throw exception",
+  "role": "statement",
+  "parent": null,
+  "parameters": [
+    { "pix": "Exception", "target": "Expression" }
+  ],
+  "warnings": []
+}

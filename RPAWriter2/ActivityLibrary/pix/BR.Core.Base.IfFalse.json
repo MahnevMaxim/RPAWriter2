@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.IfFalse",
+  "wfSnippet": null,
+  "defaultDisplayName": "Else",
+  "role": "else",
+  "parent": "BR.Core.Base.If",
+  "parameters": [],
+  "warnings": []
+}

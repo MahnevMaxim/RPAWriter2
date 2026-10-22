@@ -1,0 +1,11 @@
+{
+  "activityFullName": "BR.Core.Base.Sleep",
+  "wfSnippet": "Delay",
+  "defaultDisplayName": "Sleep",
+  "role": "statement",
+  "parent": null,
+  "parameters": [
+    { "pix": "Duration", "target": "Expression" }
+  ],
+  "warnings": []
+}

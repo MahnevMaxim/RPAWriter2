@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.Core.Base.Return",
+  "wfSnippet": "Return",
+  "defaultDisplayName": "Return",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": [ "Return terminates the workflow; result value is not carried over." ]
+}

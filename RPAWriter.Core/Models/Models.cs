@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -25,7 +25,7 @@ namespace RPAWriter.Core.Models
         Plan,
         /// <summary>Agent can perform real changes (write files, create robots, run builds).</summary>
         Act,
-        /// <summary>Support agent that answers from the bundled user documentation.</summary>
+        /// <summary>Help mode: agent answers questions and explains features without touching the project.</summary>
         Help
     }
 
@@ -82,9 +82,9 @@ namespace RPAWriter.Core.Models
         User,
         /// <summary>The agent's final answer (markdown).</summary>
         AgentText,
-        /// <summary>The final answer of the agent in Plan mode (read-only); rendered as the highlighted result window.</summary>
+        /// <summary>The agent's final answer in Plan mode (read-only planning).</summary>
         ResultAnswerPlan,
-        /// <summary>The final answer of the agent in Act mode (action); rendered as the highlighted result window.</summary>
+        /// <summary>The agent's final answer in Act mode (changes were made).</summary>
         ResultAnswerAct,
         /// <summary>A tool invocation that was executed.</summary>
         ToolCall,
@@ -188,6 +188,9 @@ namespace RPAWriter.Core.Models
         [JsonConverter(typeof(StringEnumConverter))]
         public SapActionKind? SapActionKind { get; set; }
 
+        /// <summary>Estimated effort for the task in hours (AI-provided); null when unknown.</summary>
+        public double? EstimatedHours { get; set; }
+
         /// <summary>True when this task is a typed SAP transaction task.</summary>
         [JsonIgnore]
         public bool IsSapTransactionTask => !string.IsNullOrWhiteSpace(SapTransactionCode);
@@ -215,16 +218,10 @@ namespace RPAWriter.Core.Models
         public List<SimilarTaskMatch> ReusedSolutions { get; set; } = new List<SimilarTaskMatch>();
     }
 
-    /// <summary>
-    /// Result of reconciling several algorithm drafts: the final algorithm and the list of
-    /// clarifying questions about the spec, kept as separate Markdown documents.
-    /// </summary>
+    /// <summary>Result of reconciling several algorithm drafts: final algorithm + clarification questions.</summary>
     public class AlgorithmConsolidation
     {
-        /// <summary>Final algorithm Markdown (step-by-step text, Mermaid diagram, tree structure).</summary>
         public string AlgorithmMarkdown { get; set; }
-
-        /// <summary>Markdown list of questions about the technical specification.</summary>
         public string QuestionsMarkdown { get; set; }
     }
 
@@ -238,7 +235,10 @@ namespace RPAWriter.Core.Models
         Assign,
         InvokeMethod,
         WriteLine,
-        Delay
+        Delay,
+        TryCatch,
+        Throw,
+        Return
     }
 
     /// <summary>Argument for InvokeMethod.</summary>
@@ -259,6 +259,15 @@ namespace RPAWriter.Core.Models
         public string Variable { get; set; }
         public string Expression { get; set; }
         public List<ActivityNode> Children { get; set; } = new List<ActivityNode>();
+
+        /// <summary>Body of the "Else" branch for an <see cref="ActivityNodeKind.If"/> node.</summary>
+        public List<ActivityNode> ElseChildren { get; set; } = new List<ActivityNode>();
+
+        /// <summary>Body of the catch handlers for a <see cref="ActivityNodeKind.TryCatch"/> node.</summary>
+        public List<ActivityNode> CatchChildren { get; set; } = new List<ActivityNode>();
+
+        /// <summary>Body of the finally handler for a <see cref="ActivityNodeKind.TryCatch"/> node.</summary>
+        public List<ActivityNode> FinallyChildren { get; set; } = new List<ActivityNode>();
     }
 
     /// <summary>Robot plan — a tree of WF activities.</summary>
@@ -266,6 +275,50 @@ namespace RPAWriter.Core.Models
     {
         public string Name { get; set; }
         public ActivityNode Root { get; set; }
+    }
+
+    /// <summary>Binding of one PIX activity property to a field of <see cref="ActivityNode"/>.</summary>
+    public class PixActivityParameter
+    {
+        /// <summary>PIX property name inside <c>PropertyValues</c>.</summary>
+        public string Pix { get; set; }
+
+        /// <summary>Target field on the generated activity node: Expression | Variable | Argument.</summary>
+        public string Target { get; set; }
+    }
+
+    /// <summary>Describes how one PIX activity maps to a Workflow Foundation snippet.</summary>
+    public class PixActivityDescriptor
+    {
+        /// <summary>Full PIX activity name (the value of <c>_activityFullName</c>).</summary>
+        public string ActivityFullName { get; set; }
+
+        /// <summary>Name of the WF snippet file to use, or null for structural branch roles.</summary>
+        public string WfSnippet { get; set; }
+
+        /// <summary>Human-readable display name used when the PIX step has no text.</summary>
+        public string DefaultDisplayName { get; set; }
+
+        /// <summary>Structural role: container | if | then | elseIf | else | tryCatch | try | catch | finally | statement.</summary>
+        public string Role { get; set; }
+
+        /// <summary>Parent activity that owns this branch role (e.g. BR.Core.Base.If).</summary>
+        public string Parent { get; set; }
+
+        /// <summary>Property-to-field bindings applied while building the activity node.</summary>
+        public List<PixActivityParameter> Parameters { get; set; } = new List<PixActivityParameter>();
+
+        /// <summary>Static warnings emitted whenever this activity is converted.</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
+    }
+
+    /// <summary>Result of converting a PIX robot into plain Workflow Foundation.</summary>
+    public class PixConversionResult
+    {
+        public RobotPlan Plan { get; set; }
+        public string Xaml { get; set; }
+        public string CSharpCode { get; set; }
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 
     /// <summary>Knowledge-base record: task + solution (XAML/C#) + source robot + documentation.</summary>
@@ -311,6 +364,19 @@ namespace RPAWriter.Core.Models
         public int SpecFilesWritten { get; set; }
         public int TaskFilesWritten { get; set; }
         public int TasksAdded { get; set; }
+        public List<string> Warnings { get; set; } = new List<string>();
+    }
+
+    /// <summary>Result of a read-only security audit over a set of robot solutions.</summary>
+    public class RobotSecurityAuditResult
+    {
+        /// <summary>Number of solutions that were processed (audited or attempted).</summary>
+        public int SolutionsAudited { get; set; }
+
+        /// <summary>Number of solutions whose audit failed.</summary>
+        public int SolutionsFailed { get; set; }
+
+        /// <summary>Non-fatal issues encountered during the audit (missing files, per-solution failures).</summary>
         public List<string> Warnings { get; set; } = new List<string>();
     }
 

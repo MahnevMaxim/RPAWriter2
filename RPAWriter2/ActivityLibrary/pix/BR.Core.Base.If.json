@@ -1,0 +1,11 @@
+{
+  "activityFullName": "BR.Core.Base.If",
+  "wfSnippet": "If",
+  "defaultDisplayName": "If",
+  "role": "if",
+  "parent": null,
+  "parameters": [
+    { "pix": "Condition", "target": "Expression" }
+  ],
+  "warnings": []
+}

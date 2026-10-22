@@ -222,6 +222,15 @@ namespace RPAWriter.Core.Contracts
     }
 
     /// <summary>
+    /// Converts a PIX robot (.pix XML) into plain Workflow Foundation using the
+    /// activity library (WF snippets + PIX descriptors).
+    /// </summary>
+    public interface IPixConverter
+    {
+        PixConversionResult Convert(string pixXml);
+    }
+
+    /// <summary>
     /// Raised by providers instead of a bare transport exception, so the agent
     /// loop can react to the failure class (e.g. compact and retry on context overflow).
     /// </summary>

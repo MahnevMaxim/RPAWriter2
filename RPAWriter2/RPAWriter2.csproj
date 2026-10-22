@@ -109,6 +109,13 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <!-- Ship the activity library (empty WF activity snippets + PIX activity descriptors) inside the VSIX. -->
+    <Content Include="ActivityLibrary\**\*">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <!-- Ship the user documentation (index + per-tab docs) inside the VSIX under "Docs"
          so the Help chat mode can load it into the context pipeline. -->
     <Content Include="..\documentation\**\*">

@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.BaseActivities.GoToStep",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Go to step",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": [ "GoToStep has no direct WF equivalent; mapped to InvokeMethod RpaActions.GoToStep." ]
+}

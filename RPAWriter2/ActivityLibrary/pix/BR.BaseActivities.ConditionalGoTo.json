@@ -1,0 +1,9 @@
+{
+  "activityFullName": "BR.BaseActivities.ConditionalGoTo",
+  "wfSnippet": "InvokeMethod",
+  "defaultDisplayName": "Conditional go to",
+  "role": "statement",
+  "parent": null,
+  "parameters": [],
+  "warnings": [ "ConditionalGoTo has no direct WF equivalent; mapped to InvokeMethod RpaActions.ConditionalGoTo." ]
+}

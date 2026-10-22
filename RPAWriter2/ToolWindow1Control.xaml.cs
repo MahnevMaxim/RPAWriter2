@@ -31,6 +31,7 @@ using Microsoft.Win32;
 using System.IO;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Xml.Linq;
 using RPAWriter.Core.Models;
 using Material.Icons;
 
@@ -75,6 +76,7 @@ namespace RPAWriter2
         private List<string> _robotNameHistory = new List<string>();
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
+        private readonly ObservableCollection<ChatMessage> _converterMessages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<SpecDocsFile> _docsFiles = new ObservableCollection<SpecDocsFile>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
@@ -86,6 +88,8 @@ namespace RPAWriter2
         private ChatMessage? _activeQuestion;
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
+        private CancellationTokenSource? _securityAuditCts;
+        private readonly List<string> _securityAuditSolutions = new List<string>();
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -131,12 +135,9 @@ namespace RPAWriter2
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage;
-        private ICollectionView? _chatListView;
         private ICollectionView? _packagesView;
         private ICollectionView? _svgView;
         private bool _pinnedExpanded;
-        private bool _chatAutoScroll = true;
-        private const double ChatAutoScrollThreshold = 1.0;
 
         public ToolWindow1Control()
         {
@@ -146,12 +147,15 @@ namespace RPAWriter2
             _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
-            ChatScroll.ScrollChanged += OnChatScrollChanged;
-            _chatListView = CollectionViewSource.GetDefaultView(_messages);
-            _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
-            ChatList.ItemsSource = _chatListView;
+            ChatMessages.Messages = _messages;
+            ChatMessages.Filter = message => !ReferenceEquals(message, _pinnedMessage);
+            ChatMessages.CopyMessageRequested += OnChatMessageCopyRequested;
+            ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
+            ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
             AttachmentsList.ItemsSource = _attachments;
             SpecList.ItemsSource = _specMessages;
+            ConverterMessages.Messages = _converterMessages;
+            ConverterMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             DocsFilesList.ItemsSource = _docsFiles;
             HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
@@ -197,6 +201,7 @@ namespace RPAWriter2
             UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
             ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             MemoryBankModeCombo.SelectedIndex = MemoryBankModeToIndex(_settings.MemoryBankMode);
+            SecurityAuditModeCombo.SelectedIndex = string.Equals(_settings.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             LogFilePathBox.Text = _settings.LogFilePath ?? "";
             ChatLogFilePathBox.Text = _settings.ChatLogFilePath ?? "";
             LogProvidersPathBox.Text = _settings.LogProvidersPath ?? "";
@@ -364,6 +369,26 @@ namespace RPAWriter2
             _questionTcs.TrySetResult(SkipAnswerText);
         }
 
+        private void OnChatMessageCopyRequested(object? sender, ChatMessage message)
+        {
+            try { Clipboard.SetText(FormatMessageForCopy(message)); }
+            catch { /* clipboard busy — ignore */ }
+        }
+
+        private void OnChatMessageQuestionAnswered(object? sender, ChatMessage message)
+        {
+            if (_questionTcs == null) return;
+            ScheduleHistorySave();
+            _questionTcs.TrySetResult((message.Payload as QuestionPayload)?.Answer ?? "");
+        }
+
+        private void OnChatMessageQuestionSkipped(object? sender, ChatMessage message)
+        {
+            if (_questionTcs == null) return;
+            ScheduleHistorySave();
+            _questionTcs.TrySetResult((message.Payload as QuestionPayload)?.Answer ?? ChatMessagesControl.SkipAnswerText);
+        }
+
         private void AppendExtensionError(Exception ex)
         {
             if (ex == null) return;
@@ -379,11 +404,9 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => AppendChatMessage(message)));
                 return;
             }
-            _messages.Add(message);
+            ChatMessages.Append(message);
             if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
                 RefreshPinnedMessage();
-            if (_chatAutoScroll)
-                ChatScroll.ScrollToEnd();
             if (!_loadingHistory)
                 ScheduleHistorySave();
         }
@@ -403,6 +426,46 @@ namespace RPAWriter2
         private void AppendSpecText(string text)
         {
             AppendSpecMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = text });
+        }
+
+        private void AppendConverterMessage(ChatMessage message)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendConverterMessage(message)));
+                return;
+            }
+            ConverterMessages.Append(message);
+            CopyConverterAllButton.Visibility = Visibility.Visible;
+        }
+
+        private void AppendConverterText(string text)
+        {
+            AppendConverterMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = text });
+        }
+
+        private void SetConverterOutput(string text)
+        {
+            AppendConverterText(text);
+        }
+
+        private void OnCopyConverterOutput(object sender, RoutedEventArgs e)
+        {
+            var sb = new StringBuilder();
+            foreach (var m in _converterMessages)
+            {
+                if (sb.Length > 0) sb.AppendLine().AppendLine();
+                sb.Append(FormatMessageForCopy(m));
+            }
+            if (sb.Length == 0) return;
+            try { Clipboard.SetText(sb.ToString()); }
+            catch { /* clipboard busy — ignore */ }
+        }
+
+        private void OnClearConverter(object sender, RoutedEventArgs e)
+        {
+            _converterMessages.Clear();
+            CopyConverterAllButton.Visibility = Visibility.Collapsed;
         }
 
         private ChatMessage AppendSpecStreaming()
@@ -456,25 +519,6 @@ namespace RPAWriter2
                 RoutedEvent = MouseWheelEvent,
                 Source = parent
             });
-        }
-
-        /// <summary>
-        /// Disables chat auto-scroll as soon as the user scrolls away from the bottom
-        /// and re-enables it when they scroll back to the bottom.
-        /// Content/viewport size changes are ignored so that growing content doesn't
-        /// spuriously disable auto-scroll while the user is still at the bottom.
-        /// </summary>
-        private void OnChatScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-            bool atBottom = ChatScroll.VerticalOffset >= ChatScroll.ScrollableHeight - ChatAutoScrollThreshold;
-            if (atBottom)
-            {
-                _chatAutoScroll = true;
-            }
-            else if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
-            {
-                _chatAutoScroll = false;
-            }
         }
 
         private void OnCopyConversation(object sender, RoutedEventArgs e)
@@ -1509,6 +1553,163 @@ namespace RPAWriter2
             catch (Exception ex) { ShowError(ex); }
         }
 
+        /// <summary>
+        /// Runs a read-only security audit over every robot solution (RPA-&lt;number&gt;.sln/.slnx)
+        /// located in the same directory as the currently open solution. Shows the discovered
+        /// solutions on the Spec tab, audits each one with the AI provider, writes the combined
+        /// report to the current solution's docs folder and opens it in Visual Studio.
+        /// </summary>
+        private async void OnRobotSecurityAudit(object sender, RoutedEventArgs e)
+        {
+            if (_securityAuditCts != null)
+            {
+                ShowNotice("Security audit is already running.", NotificationKind.Warning);
+                return;
+            }
+
+            if (_ai == null)
+            {
+                ShowNotice("The AI provider is not available. Configure it in the Settings tab first.", NotificationKind.Warning);
+                return;
+            }
+
+            var baseDirectory = GetOpenSolutionDirectory();
+            if (string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                baseDirectory = PickSecurityAuditDirectory();
+                if (baseDirectory == null) return;
+            }
+
+            var solutions = RobotSecurityAuditService.FindRobotSolutions(baseDirectory);
+            if (solutions.Count == 0)
+            {
+                ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + ". Select the directory that contains them.", NotificationKind.Warning);
+                var picked = PickSecurityAuditDirectory();
+                if (picked == null) return;
+                baseDirectory = picked;
+                solutions = RobotSecurityAuditService.FindRobotSolutions(baseDirectory);
+                if (solutions.Count == 0)
+                {
+                    ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + ".", NotificationKind.Error);
+                    return;
+                }
+            }
+
+            _securityAuditSolutions.Clear();
+            _securityAuditSolutions.AddRange(solutions);
+            SecurityAuditSolutionsList.ItemsSource = _securityAuditSolutions;
+            SecurityAuditMessagesBox.Clear();
+            SecurityAuditExpander.IsExpanded = true;
+
+            var targetDirectory = GetOpenSolutionDirectory() ?? baseDirectory;
+            var docsDirectory = Path.Combine(targetDirectory, "docs");
+            var reportPath = Path.Combine(docsDirectory, "security_audit.md");
+
+            _securityAuditCts = new CancellationTokenSource();
+            SetSecurityAuditStatus("Auditing " + _securityAuditSolutions.Count + " robot solution(s)...");
+            SecurityAuditProgress.Value = 0;
+            SecurityAuditProgress.Visibility = Visibility.Visible;
+
+            var mode = string.Equals(_settings?.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase)
+                ? SecurityAuditMode.CredentialsOnly
+                : SecurityAuditMode.Full;
+
+            var service = new RobotSecurityAuditService(_ai);
+            service.MessageReported += OnSecurityAuditMessage;
+            try
+            {
+                var progress = new Progress<string>(SetSecurityAuditStatus);
+                var progressValue = new Progress<double>(SetSecurityAuditProgress);
+                var result = await service.AuditAsync(_securityAuditSolutions, reportPath, progress, progressValue, _securityAuditCts.Token, mode);
+
+                AppendSecurityAuditMessage("Security audit completed: " + result.SolutionsAudited + " solution(s), " + result.SolutionsFailed + " failed.");
+                SetSecurityAuditStatus("Security audit completed: " + result.SolutionsAudited + " solution(s), " + result.SolutionsFailed + " failed.");
+                ShowNotice("Security audit completed. Report: " + reportPath, NotificationKind.Success);
+
+                var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
+                if (dte != null && File.Exists(reportPath))
+                {
+                    try { await VsDocumentService.OpenOrActivateAsync(dte, reportPath); }
+                    catch (Exception ex) { LogService.Error(ex, "Failed to open the security audit report."); }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                AppendSecurityAuditMessage("Security audit stopped by user.");
+                SetSecurityAuditStatus("Security audit stopped.");
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Security audit failed.");
+                ShowError(ex);
+                AppendSecurityAuditMessage("Security audit failed.\n\n" + ex);
+                SetSecurityAuditStatus("Security audit failed.");
+            }
+            finally
+            {
+                service.MessageReported -= OnSecurityAuditMessage;
+                SecurityAuditProgress.Visibility = Visibility.Collapsed;
+                _securityAuditCts.Dispose();
+                _securityAuditCts = null;
+            }
+        }
+
+        private string? PickSecurityAuditDirectory()
+        {
+            using (var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Select the directory that contains robot solutions (RPA-<number>.sln/.slnx).",
+                ShowNewFolderButton = true
+            })
+            {
+                var configured = (RobotsRootPathBox?.Text ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
+                    dialog.SelectedPath = configured;
+
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    return dialog.SelectedPath;
+            }
+            return null;
+        }
+
+        private void OnSecurityAuditMessage(object? sender, string message)
+        {
+            LogService.Info("Security audit: " + message);
+            AppendSecurityAuditMessage(message);
+        }
+
+        private void AppendSecurityAuditMessage(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendSecurityAuditMessage(text)));
+                return;
+            }
+            SecurityAuditMessagesBox.AppendText(text + Environment.NewLine);
+            SecurityAuditMessagesBox.ScrollToEnd();
+        }
+
+        private void SetSecurityAuditStatus(string status)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetSecurityAuditStatus(status)));
+                return;
+            }
+            SecurityAuditStatusText.Text = status;
+        }
+
+        private void SetSecurityAuditProgress(double value)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => SetSecurityAuditProgress(value)));
+                return;
+            }
+            SecurityAuditProgress.Value = value;
+            SecurityAuditProgress.Visibility = Visibility.Visible;
+        }
+
         private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
         {
             await RunKnowledgeBaseImport(GetKnowledgeBaseFormationMode());
@@ -1943,10 +2144,260 @@ namespace RPAWriter2
                 var baseName = Path.GetFileNameWithoutExtension(dlg.FileName);
                 File.WriteAllText(Path.Combine(dir, baseName + ".wf.xaml"), result.Xaml);
                 File.WriteAllText(Path.Combine(dir, baseName + ".wf.cs"), result.CSharpCode);
-                SetOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
-                AppendSpecText("Conversion completed. Warnings: " + result.Warnings.Count);
+                SetConverterOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
+                AppendConverterText("Conversion completed. Warnings: " + result.Warnings.Count);
             }
             catch (Exception ex) { ShowError(ex); }
+        }
+
+        private void OnConvertPix(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "PIX robot",
+                Filter = "PIX robot (*.pix)|*.pix|All files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var pix = File.ReadAllText(dlg.FileName);
+                var result = new PixToWfConverter().Convert(pix);
+
+                var solutionDir = GetOpenSolutionDirectory();
+                var outDir = solutionDir != null
+                    ? Path.Combine(solutionDir, "temp")
+                    : Path.GetDirectoryName(dlg.FileName);
+                Directory.CreateDirectory(outDir);
+
+                var baseName = Path.GetFileNameWithoutExtension(dlg.FileName);
+                var xamlPath = Path.Combine(outDir, baseName + ".wf.xaml");
+                var csPath = Path.Combine(outDir, baseName + ".wf.cs");
+                var reportPath = Path.Combine(outDir, baseName + ".wf.txt");
+
+                File.WriteAllText(xamlPath, result.Xaml);
+                File.WriteAllText(csPath, result.CSharpCode);
+
+                var sb = new StringBuilder();
+                sb.AppendLine("PIX to WF conversion report");
+                sb.AppendLine("Source: " + dlg.FileName);
+                sb.AppendLine("Output XAML: " + xamlPath);
+                sb.AppendLine("Output C#: " + csPath);
+                sb.AppendLine("Warnings (" + result.Warnings.Count + "):");
+                foreach (var w in result.Warnings)
+                    sb.AppendLine("- " + w);
+                File.WriteAllText(reportPath, sb.ToString());
+
+                SetConverterOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
+                AppendConverterText("Conversion completed → " + outDir + ". Warnings: " + result.Warnings.Count);
+            }
+            catch (Exception ex) { ShowError(ex); }
+        }
+
+        private async void OnGetAllActivitiesFromPix(object sender, RoutedEventArgs e)
+        {
+            var folder = PickPixRobotsFolder();
+            if (folder == null) return;
+
+            var solutionDir = GetOpenSolutionDirectory();
+
+            try
+            {
+                AppendConverterText("Started scanning PIX robots folder: " + folder);
+
+                var result = await Task.Run(() => ScanPixRobots(folder));
+
+                AppendConverterText("Finished scanning. Robot files: " + result.FileCount +
+                                    ", distinct activities: " + result.Occurrences.Count +
+                                    ", parse errors: " + result.ParseErrors.Count + ".");
+
+                var known = new PixActivityLibrary().GetKnownActivityNames();
+                var missing = result.Occurrences
+                    .Where(kv => !known.Contains(kv.Key))
+                    .OrderByDescending(kv => kv.Value)
+                    .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                AppendConverterText(BuildPixScanSummaryText(folder, result, missing));
+
+                foreach (var m in missing)
+                    LogService.Warn("Missing PIX activity: " + m.Key + " (occurrences: " + m.Value + ")");
+                LogService.Info("PIX activity scan completed: " + result.FileCount + " files, " +
+                                result.Occurrences.Count + " distinct activities, " + missing.Count + " missing.");
+
+                var reportPath = WritePixScanReport(solutionDir, folder, BuildPixScanReportMarkdown(folder, result, missing));
+                if (reportPath != null)
+                {
+                    AppendConverterText("Report written to: " + reportPath);
+                    LogService.Info("PIX activities report written to: " + reportPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private string? PickPixRobotsFolder()
+        {
+            var owner = GetHostWindowHandle();
+            var configured = (RobotsRootPathBox?.Text ?? "").Trim();
+            var initial = !string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)
+                ? configured
+                : string.Empty;
+
+            return FolderPicker.PickFolder("Select the folder that contains PIX robots", initial, owner);
+        }
+
+        private IntPtr GetHostWindowHandle()
+        {
+            try
+            {
+                var window = System.Windows.Window.GetWindow(this);
+                if (window != null)
+                    return new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            }
+            catch
+            {
+                // Fall through to IntPtr.Zero (no owner).
+            }
+            return IntPtr.Zero;
+        }
+
+        private PixScanResult ScanPixRobots(string folder)
+        {
+            var result = new PixScanResult();
+            var files = SafeEnumeratePixFiles(folder).ToList();
+            result.FileCount = files.Count;
+
+            foreach (var file in files)
+            {
+                var fileName = Path.GetFileName(file);
+                AppendConverterText("Parsing " + fileName + " ...");
+                try
+                {
+                    var doc = XDocument.Load(file);
+                    var count = 0;
+                    foreach (var element in doc.Descendants())
+                    {
+                        if (element.Name.LocalName != "_activityFullName") continue;
+                        var value = element.Value.Trim();
+                        if (value.Length == 0) continue;
+                        result.Occurrences[value] = result.Occurrences.TryGetValue(value, out var c) ? c + 1 : 1;
+                        count++;
+                    }
+                    AppendConverterText("Parsed " + fileName + " — " + count + " activities.");
+                }
+                catch (Exception ex)
+                {
+                    result.ParseErrors.Add(fileName + ": " + ex.Message);
+                    AppendConverterText("Failed to parse " + fileName + ".");
+                    LogService.Warn("Failed to parse PIX robot file " + file + ": " + ex.Message);
+                }
+            }
+
+            return result;
+        }
+
+        private static IEnumerable<string> SafeEnumeratePixFiles(string root)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                yield break;
+
+            var stack = new Stack<string>();
+            stack.Push(root);
+            while (stack.Count > 0)
+            {
+                var dir = stack.Pop();
+
+                string[] files;
+                try { files = Directory.GetFiles(dir, "*.pix"); }
+                catch { files = new string[0]; }
+                foreach (var f in files) yield return f;
+
+                string[] subdirs;
+                try { subdirs = Directory.GetDirectories(dir); }
+                catch { subdirs = new string[0]; }
+                foreach (var s in subdirs) stack.Push(s);
+            }
+        }
+
+        private static string BuildPixScanSummaryText(string folder, PixScanResult result, List<KeyValuePair<string, int>> missing)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("PIX activity scan complete.");
+            sb.AppendLine("Folder: " + folder);
+            sb.AppendLine("Robot files scanned: " + result.FileCount);
+            sb.AppendLine("Distinct activities found: " + result.Occurrences.Count);
+            sb.AppendLine("Missing activities: " + missing.Count);
+            if (missing.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Missing activities (rating = occurrences across all robots):");
+                foreach (var m in missing)
+                    sb.AppendLine("- " + m.Key + " — " + m.Value);
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string BuildPixScanReportMarkdown(string folder, PixScanResult result, List<KeyValuePair<string, int>> missing)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("# PIX activities missing from the converter library");
+            sb.AppendLine();
+            sb.AppendLine("- Scanned folder: " + folder);
+            sb.AppendLine("- Robot files scanned: " + result.FileCount);
+            sb.AppendLine("- Distinct activities found: " + result.Occurrences.Count);
+            sb.AppendLine("- Missing activities: " + missing.Count);
+            if (result.ParseErrors.Count > 0)
+            {
+                sb.AppendLine("- Parse errors: " + result.ParseErrors.Count);
+                foreach (var err in result.ParseErrors)
+                    sb.AppendLine("  - " + err);
+            }
+            sb.AppendLine();
+            if (missing.Count == 0)
+            {
+                sb.AppendLine("All activities are already present in the PIX-MWF converter library.");
+                return sb.ToString();
+            }
+
+            sb.AppendLine("## Missing activities");
+            sb.AppendLine();
+            sb.AppendLine("Rating = total number of occurrences across all PIX robots.");
+            sb.AppendLine();
+            sb.AppendLine("| Activity | Rating |");
+            sb.AppendLine("| --- | ---: |");
+            foreach (var m in missing)
+                sb.AppendLine("| " + m.Key + " | " + m.Value + " |");
+            return sb.ToString();
+        }
+
+        private static string? WritePixScanReport(string? solutionDir, string robotsFolder, string report)
+        {
+            var outDir = !string.IsNullOrWhiteSpace(solutionDir)
+                ? Path.Combine(solutionDir, "temp")
+                : Path.Combine(robotsFolder, "temp");
+
+            try
+            {
+                Directory.CreateDirectory(outDir);
+                var path = Path.Combine(outDir, "PixMissingActivities.md");
+                File.WriteAllText(path, report, Encoding.UTF8);
+                return path;
+            }
+            catch (Exception ex)
+            {
+                LogService.Error(ex, "Failed to write PIX activities report.");
+                return null;
+            }
+        }
+
+        private sealed class PixScanResult
+        {
+            public int FileCount;
+            public readonly Dictionary<string, int> Occurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            public readonly List<string> ParseErrors = new List<string>();
         }
 
         private void OnConvertMarkdownToDocx(object sender, RoutedEventArgs e)
@@ -3616,8 +4067,7 @@ namespace RPAWriter2
                 }
                 _currentConversation = stored;
                 RefreshPinnedMessage();
-                _chatAutoScroll = true;
-                ChatScroll.ScrollToEnd();
+                ChatMessages.ScrollToEnd();
             }
             finally
             {
@@ -3662,7 +4112,7 @@ namespace RPAWriter2
         {
             var conversation = _chatViewMode == ChatViewMode.Conversation;
             ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            ChatListContainer.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            ChatMessages.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatInputPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             PinnedHeaderPanel.Visibility = conversation && _pinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
@@ -3790,8 +4240,7 @@ namespace RPAWriter2
             PinnedHeaderPanel.DataContext = _pinnedMessage;
             _pinnedExpanded = false;
             UpdatePinnedExpandState();
-            if (_chatListView != null)
-                _chatListView.Refresh();
+            ChatMessages.RefreshFilter();
             ApplyChatViewMode();
         }
 
@@ -4041,6 +4490,7 @@ namespace RPAWriter2
             _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
             _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
             _settings.MemoryBankMode = MemoryBankIndexToMode(MemoryBankModeCombo?.SelectedIndex ?? 0);
+            _settings.SecurityAuditMode = (SecurityAuditModeCombo?.SelectedIndex ?? 0) == 1 ? "CredentialsOnly" : "Full";
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
             _settings.ChatLogFilePath = ChatLogFilePathBox.Text.Trim();
             _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
