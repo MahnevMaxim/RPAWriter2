@@ -154,7 +154,35 @@ namespace RPAWriter.Core.Services
 
             AddReferenceAssemblies(paths);
 
-            return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return DeduplicateByAssemblyName(paths);
+        }
+
+        /// <summary>
+        /// Keeps only the first path for each assembly simple name. The framework runtime
+        /// directory and the reference-assemblies folder both contain e.g. mscorlib.dll and
+        /// System.Activities.dll with identical identities but different Mvids; feeding two
+        /// copies into <see cref="PathAssemblyResolver"/> makes <see cref="MetadataLoadContext"/>
+        /// throw "already been loaded into this MetadataLoadContext" while resolving the core
+        /// assembly. Deduplicating by file name (the resolver's own lookup key) leaves exactly
+        /// one candidate per assembly.
+        /// </summary>
+        private static List<string> DeduplicateByAssemblyName(IEnumerable<string> paths)
+        {
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in paths)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                    continue;
+
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (name.Length == 0 || !seen.Add(name))
+                    continue;
+
+                result.Add(path);
+            }
+
+            return result;
         }
 
         private static void AddReferenceAssemblies(List<string> paths)
