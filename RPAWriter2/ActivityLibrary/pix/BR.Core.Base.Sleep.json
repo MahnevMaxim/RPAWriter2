@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Sleep",
   "wfSnippet": "Delay",
-  "defaultDisplayName": "Sleep",
+  "defaultDisplayName": "Пауза",
+  "description": "Приостанавливает выполнение на заданное время.",
   "role": "statement",
   "parent": null,
   "parameters": [

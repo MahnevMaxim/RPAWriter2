@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.If",
   "wfSnippet": "If",
-  "defaultDisplayName": "If",
+  "defaultDisplayName": "Если",
+  "description": "Условный оператор: выполняет ветку по заданному условию.",
   "role": "if",
   "parent": null,
   "parameters": [

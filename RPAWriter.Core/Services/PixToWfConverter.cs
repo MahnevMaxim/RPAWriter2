@@ -19,16 +19,32 @@ namespace RPAWriter.Core.Services
         private readonly PixActivityLibrary _pixLibrary;
         private readonly SnippetWorkflowEmitter _emitter;
         private readonly RobotGenerator _generator;
+        private readonly IReadOnlyDictionary<string, string> _mappings;
+        private readonly List<string> _appliedMappings = new List<string>();
 
-        public PixToWfConverter() : this(new PixActivityLibrary(), new WfSnippetLibrary())
+        public PixToWfConverter() : this(new PixActivityLibrary(), new WfSnippetLibrary(), null)
         {
         }
 
         public PixToWfConverter(PixActivityLibrary pixLibrary, WfSnippetLibrary snippets)
+            : this(pixLibrary, snippets, null)
+        {
+        }
+
+        /// <summary>
+        /// Creates a converter that also honors a user/AI-managed PIX → MWF activity mapping.
+        /// Each entry maps a PIX activity full name to a Workflow Foundation activity full name.
+        /// A null or empty collection keeps the built-in snippet mapping only.
+        /// </summary>
+        public PixToWfConverter(
+            PixActivityLibrary pixLibrary,
+            WfSnippetLibrary snippets,
+            IReadOnlyDictionary<string, string> pixToMwfMappings)
         {
             _pixLibrary = pixLibrary ?? throw new ArgumentNullException(nameof(pixLibrary));
             _emitter = new SnippetWorkflowEmitter(snippets ?? throw new ArgumentNullException(nameof(snippets)));
             _generator = new RobotGenerator();
+            _mappings = pixToMwfMappings ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
         public PixConversionResult Convert(string pixXml)
@@ -40,7 +56,8 @@ namespace RPAWriter.Core.Services
                 Plan = plan,
                 Xaml = _emitter.EmitWorkflowXaml(plan),
                 CSharpCode = _generator.EmitHelperCode(plan),
-                Warnings = warnings
+                Warnings = warnings,
+                Mappings = new List<string>(_appliedMappings)
             };
         }
 
@@ -48,6 +65,8 @@ namespace RPAWriter.Core.Services
         {
             if (string.IsNullOrWhiteSpace(pixXml))
                 throw new ArgumentNullException(nameof(pixXml));
+
+            _appliedMappings.Clear();
 
             var doc = XDocument.Parse(pixXml);
             var root = doc.Root;
@@ -127,7 +146,7 @@ namespace RPAWriter.Core.Services
                     break;
                 case "statement":
                 default:
-                    BuildStatement(node, descriptor, step, fullName);
+                    BuildStatement(node, descriptor, step, fullName, warnings);
                     break;
             }
 
@@ -138,8 +157,27 @@ namespace RPAWriter.Core.Services
             return node;
         }
 
-        private void BuildStatement(ActivityNode node, PixActivityDescriptor descriptor, XElement step, string fullName)
+        private void BuildStatement(ActivityNode node, PixActivityDescriptor descriptor, XElement step, string fullName, IList<string> warnings)
         {
+            // A user/AI-managed PIX → MWF mapping takes precedence over the built-in snippet.
+            string mappedActivity;
+            if (TryGetMapping(fullName, out mappedActivity))
+            {
+                var mappedKind = MwfActivityTypeMapper.Resolve(mappedActivity);
+                if (mappedKind.HasValue)
+                {
+                    node.Kind = mappedKind.Value;
+                    node.MappedActivity = mappedActivity;
+                    _appliedMappings.Add(fullName + " → " + mappedActivity);
+                    ApplyParameters(node, descriptor, step);
+                    FillMappedFallback(node, step, fullName);
+                    return;
+                }
+
+                warnings.Add("Mapped MWF activity \"" + mappedActivity + "\" for \"" + fullName +
+                             "\" is not a supported WF activity; kept the built-in mapping.");
+            }
+
             switch (descriptor.WfSnippet)
             {
                 case "Assign":
@@ -148,15 +186,21 @@ namespace RPAWriter.Core.Services
                     break;
                 case "Delay":
                     node.Kind = ActivityNodeKind.Delay;
-                    node.Expression = ReadProperty(step, "Duration");
+                    ApplyParameters(node, descriptor, step);
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Duration");
                     break;
                 case "WriteLine":
                     node.Kind = ActivityNodeKind.WriteLine;
-                    node.Expression = ReadProperty(step, "Text") ?? ReadText(step);
+                    ApplyParameters(node, descriptor, step);
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Text") ?? ReadText(step);
                     break;
                 case "Throw":
                     node.Kind = ActivityNodeKind.Throw;
-                    node.Expression = ReadProperty(step, "Exception") ?? "new System.Exception()";
+                    ApplyParameters(node, descriptor, step);
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Exception") ?? "new System.Exception()";
                     break;
                 case "Return":
                     node.Kind = ActivityNodeKind.Return;
@@ -164,6 +208,53 @@ namespace RPAWriter.Core.Services
                 case "InvokeMethod":
                 default:
                     node.Kind = ActivityNodeKind.InvokeMethod;
+                    node.ClassName = "RpaActions";
+                    node.MethodName = MapMethodName(LastSegment(fullName));
+                    node.Arguments = ReadArguments(step);
+                    break;
+            }
+        }
+
+        private bool TryGetMapping(string fullName, out string mwfActivity)
+        {
+            mwfActivity = null;
+            if (_mappings == null || _mappings.Count == 0 || string.IsNullOrWhiteSpace(fullName))
+                return false;
+
+            return _mappings.TryGetValue(fullName, out mwfActivity) && !string.IsNullOrWhiteSpace(mwfActivity);
+        }
+
+        /// <summary>
+        /// Fills the mapped node the same way the built-in snippet mapping does, so a mapped
+        /// kind (e.g. WriteLine for a previously-InvokeMethod activity) still receives its
+        /// expression/argument values from the PIX step.
+        /// </summary>
+        private void FillMappedFallback(ActivityNode node, XElement step, string fullName)
+        {
+            switch (node.Kind)
+            {
+                case ActivityNodeKind.Delay:
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Duration");
+                    break;
+                case ActivityNodeKind.WriteLine:
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Text") ?? ReadText(step);
+                    break;
+                case ActivityNodeKind.Throw:
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Exception") ?? "new System.Exception()";
+                    break;
+                case ActivityNodeKind.If:
+                case ActivityNodeKind.While:
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Condition") ?? "false";
+                    break;
+                case ActivityNodeKind.ForEach:
+                    if (string.IsNullOrEmpty(node.Expression))
+                        node.Expression = ReadProperty(step, "Values");
+                    break;
+                case ActivityNodeKind.InvokeMethod:
                     node.ClassName = "RpaActions";
                     node.MethodName = MapMethodName(LastSegment(fullName));
                     node.Arguments = ReadArguments(step);

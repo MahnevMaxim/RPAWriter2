@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Container",
   "wfSnippet": "Sequence",
-  "defaultDisplayName": "Container",
+  "defaultDisplayName": "Контейнер",
+  "description": "Контейнер шагов: выполняет вложенные действия последовательно.",
   "role": "container",
   "parent": null,
   "parameters": [],

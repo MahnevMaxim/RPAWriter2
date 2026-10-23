@@ -1,7 +1,8 @@
 {
   "activityFullName": "Activities.BaseCollections.List.Add",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "List add",
+  "defaultDisplayName": "Добавить в список",
+  "description": "Добавляет элемент в список.",
   "role": "statement",
   "parent": null,
   "parameters": [],

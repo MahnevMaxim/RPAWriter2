@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Try",
   "wfSnippet": null,
-  "defaultDisplayName": "Try",
+  "defaultDisplayName": "Попытка",
+  "description": "Начало блока try.",
   "role": "try",
   "parent": "BR.Core.Base.TryCatch",
   "parameters": [],

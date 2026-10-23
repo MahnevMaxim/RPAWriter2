@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.IfFalse",
   "wfSnippet": null,
-  "defaultDisplayName": "Else",
+  "defaultDisplayName": "Иначе",
+  "description": "Ветка «иначе» условного оператора.",
   "role": "else",
   "parent": "BR.Core.Base.If",
   "parameters": [],

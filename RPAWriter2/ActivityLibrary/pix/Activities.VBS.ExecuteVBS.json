@@ -1,7 +1,8 @@
 {
   "activityFullName": "Activities.VBS.ExecuteVBS",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Execute VBS",
+  "defaultDisplayName": "Выполнить VBS",
+  "description": "Выполняет скрипт VBS.",
   "role": "statement",
   "parent": null,
   "parameters": [],

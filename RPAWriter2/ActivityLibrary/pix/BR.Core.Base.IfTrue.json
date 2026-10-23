@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.IfTrue",
   "wfSnippet": null,
-  "defaultDisplayName": "Then",
+  "defaultDisplayName": "Тогда",
+  "description": "Ветка «тогда» условного оператора.",
   "role": "then",
   "parent": "BR.Core.Base.If",
   "parameters": [],

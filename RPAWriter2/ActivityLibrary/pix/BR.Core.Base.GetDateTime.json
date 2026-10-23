@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.GetDateTime",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Get date time",
+  "defaultDisplayName": "Получить дату/время",
+  "description": "Возвращает текущую дату и время.",
   "role": "statement",
   "parent": null,
   "parameters": [],

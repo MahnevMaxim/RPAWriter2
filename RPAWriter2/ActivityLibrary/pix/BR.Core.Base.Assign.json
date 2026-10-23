@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Assign",
   "wfSnippet": "Assign",
-  "defaultDisplayName": "Assign",
+  "defaultDisplayName": "Присвоить",
+  "description": "Присваивает переменной значение выражения.",
   "role": "statement",
   "parent": null,
   "parameters": [

@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.BaseActivities.GoToStep",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Go to step",
+  "defaultDisplayName": "Перейти к шагу",
+  "description": "Переходит к указанному шагу.",
   "role": "statement",
   "parent": null,
   "parameters": [],

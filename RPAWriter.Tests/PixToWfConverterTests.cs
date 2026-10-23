@@ -73,12 +73,13 @@ namespace RPAWriter.Tests
             </Script>
             """;
 
-        private static PixToWfConverter CreateConverter()
+        private static PixToWfConverter CreateConverter(IReadOnlyDictionary<string, string> mappings = null)
         {
             var root = FindActivityLibrary();
             return new PixToWfConverter(
                 new PixActivityLibrary(Path.Combine(root, "pix")),
-                new WfSnippetLibrary(Path.Combine(root, "wf")));
+                new WfSnippetLibrary(Path.Combine(root, "wf")),
+                mappings);
         }
 
         private static string FindActivityLibrary()
@@ -190,6 +191,38 @@ namespace RPAWriter.Tests
             CreateConverter().ConvertToPlan(pix, warnings);
 
             Assert.That(warnings, Does.Contain("VBScript is not portable to Workflow Foundation; mapped to InvokeMethod RpaActions.ExecuteVBS."));
+        }
+
+        [Test]
+        public void Convert_WithMapping_OverridesKind()
+        {
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "BR.Core.Base.Assign", "System.Activities.Statements.WriteLine" }
+            };
+
+            var result = CreateConverter(mappings).Convert(SamplePix);
+            var assign = result.Plan.Root.Children[0];
+
+            Assert.That(assign.Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
+            Assert.That(assign.MappedActivity, Is.EqualTo("System.Activities.Statements.WriteLine"));
+            Assert.That(assign.Expression, Is.EqualTo("https://example.com"));
+            Assert.That(result.Mappings, Does.Contain("BR.Core.Base.Assign → System.Activities.Statements.WriteLine"));
+        }
+
+        [Test]
+        public void Convert_WithUnknownMappedType_KeepsBuiltInMappingAndWarns()
+        {
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "BR.Core.Base.Assign", "My.Custom.WfActivity" }
+            };
+            var warnings = new List<string>();
+
+            var plan = CreateConverter(mappings).ConvertToPlan(SamplePix, warnings);
+
+            Assert.That(plan.Root.Children[0].Kind, Is.EqualTo(ActivityNodeKind.Assign));
+            Assert.That(warnings, Does.Contain("Mapped MWF activity \"My.Custom.WfActivity\" for \"BR.Core.Base.Assign\" is not a supported WF activity; kept the built-in mapping."));
         }
 
         [Test]

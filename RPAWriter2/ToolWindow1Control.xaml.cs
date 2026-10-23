@@ -166,6 +166,7 @@ namespace RPAWriter2
             PopulateControlsGallery();
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
+            PixMwfMapControl.CloseRequested += OnPixMwfMapClosed;
             _mic = new MicrophoneRecorder();
             _mic.LevelChanged += OnMicLevelChanged;
             _stt = SpeechToTextFactory.Create(_settings);
@@ -246,6 +247,8 @@ namespace RPAWriter2
             UnhookRetryNotifier();
             UnhookPromptNotifier();
             _ai = AiProviderFactory.Create(_settings);
+            if (PixMwfMapControl != null)
+                PixMwfMapControl.AiProvider = _ai;
             LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
             HookTokenUsage();
             HookMessageNotifier();
@@ -466,6 +469,17 @@ namespace RPAWriter2
         {
             _converterMessages.Clear();
             CopyConverterAllButton.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnOpenPixMwfMap(object sender, RoutedEventArgs e)
+        {
+            PixMwfMapControl.LoadData();
+            PixMwfMapHost.Visibility = Visibility.Visible;
+        }
+
+        private void OnPixMwfMapClosed(object sender, EventArgs e)
+        {
+            PixMwfMapHost.Visibility = Visibility.Collapsed;
         }
 
         private ChatMessage AppendSpecStreaming()
@@ -2162,7 +2176,8 @@ namespace RPAWriter2
             try
             {
                 var pix = File.ReadAllText(dlg.FileName);
-                var result = new PixToWfConverter().Convert(pix);
+                var mappings = PixMwfMapControl?.Store?.GetAll();
+                var result = new PixToWfConverter(new PixActivityLibrary(), new WfSnippetLibrary(), mappings).Convert(pix);
 
                 var solutionDir = GetOpenSolutionDirectory();
                 var outDir = solutionDir != null
@@ -2186,6 +2201,9 @@ namespace RPAWriter2
                 sb.AppendLine("Warnings (" + result.Warnings.Count + "):");
                 foreach (var w in result.Warnings)
                     sb.AppendLine("- " + w);
+                sb.AppendLine("Applied mappings (" + result.Mappings.Count + "):");
+                foreach (var m in result.Mappings)
+                    sb.AppendLine("- " + m);
                 File.WriteAllText(reportPath, sb.ToString());
 
                 SetConverterOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
@@ -2237,6 +2255,148 @@ namespace RPAWriter2
                 ShowError(ex);
             }
         }
+
+        private async void OnImportPixActivities(object sender, RoutedEventArgs e)
+        {
+            var pixDir = ResolvePixInstallDirectory();
+            if (pixDir == null)
+            {
+                AppendConverterText("Import cancelled: PIX installation folder was not selected.");
+                return;
+            }
+
+            var targetDir = ActivityLibraryPaths.ResolvePixActivitiesDirectory();
+            var sourceDir = TryFindSourcePixLibrary(GetOpenSolutionDirectory());
+
+            try
+            {
+                AppendConverterText("Started importing PIX activities from: " + pixDir);
+                AppendConverterText("Runtime library target: " + targetDir);
+                if (sourceDir != null && !string.Equals(sourceDir, targetDir, StringComparison.OrdinalIgnoreCase))
+                    AppendConverterText("Source library target: " + sourceDir);
+
+                var result = await Task.Run(() =>
+                    new PixActivityLibraryImporter().Import(pixDir, targetDir, AppendConverterText));
+
+                var summary = BuildImportSummary(pixDir, targetDir, result);
+                AppendConverterText(summary);
+                LogService.Info("PIX activity import: " + result.ActivitiesImported + " activities, " +
+                                result.FilesWritten + " files written, " + result.Errors.Count + " errors.");
+
+                if (sourceDir != null && !string.Equals(sourceDir, targetDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    var sourceResult = await Task.Run(() =>
+                        new PixActivityLibraryImporter().Import(pixDir, sourceDir, AppendConverterText));
+                    AppendConverterText(BuildImportSummary(pixDir, sourceDir, sourceResult));
+                    LogService.Info("PIX activity import (source mirror): " + sourceResult.ActivitiesImported + " activities.");
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private async void OnGetAllMwfActivities(object sender, RoutedEventArgs e)
+        {
+            var activitiesDir = PickMwfActivitiesFolder();
+            if (activitiesDir == null)
+            {
+                AppendConverterText("Get All MWF Activities cancelled: activities folder was not selected.");
+                return;
+            }
+
+            var targetDir = ActivityLibraryPaths.ResolveMwfActivitiesDirectory();
+
+            try
+            {
+                AppendConverterText("Started importing MWF activities from: " + activitiesDir);
+                AppendConverterText("Runtime library target: " + targetDir);
+
+                var result = await Task.Run(() =>
+                    new MwfActivityLibraryImporter().Import(activitiesDir, targetDir, AppendConverterText));
+
+                AppendConverterText(BuildMwfImportSummary(activitiesDir, targetDir, result));
+                LogService.Info("MWF activity import: " + result.ActivitiesImported + " activities, " +
+                                result.FilesWritten + " files written, " + result.Errors.Count + " errors.");
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private string? PickMwfActivitiesFolder()
+        {
+            var owner = GetHostWindowHandle();
+            return FolderPicker.PickFolder("Select the folder that contains Workflow Foundation activities", string.Empty, owner);
+        }
+
+        private static string BuildMwfImportSummary(string activitiesDir, string targetDir, WfActivityLibraryImportResult result)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("MWF activity import finished.");
+            sb.AppendLine("Source: " + activitiesDir);
+            sb.AppendLine("Target: " + targetDir);
+            sb.AppendLine("Assemblies scanned: " + result.DllsScanned);
+            sb.AppendLine("Activities imported: " + result.ActivitiesImported);
+            sb.AppendLine("Descriptor files written: " + result.FilesWritten);
+            sb.AppendLine("Obsolete files deleted: " + result.FilesDeleted);
+            if (result.Errors.Count > 0)
+            {
+                sb.AppendLine("Errors (" + result.Errors.Count + "):");
+                foreach (var error in result.Errors)
+                    sb.AppendLine("- " + error);
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string BuildImportSummary(string pixDir, string targetDir, PixActivityLibraryImportResult result)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("PIX activity import finished.");
+            sb.AppendLine("Source: " + pixDir);
+            sb.AppendLine("Target: " + targetDir);
+            sb.AppendLine("Assemblies scanned: " + result.DllsScanned);
+            sb.AppendLine("Activities imported: " + result.ActivitiesImported);
+            sb.AppendLine("Descriptor files written: " + result.FilesWritten);
+            sb.AppendLine("Obsolete files deleted: " + result.FilesDeleted);
+            if (result.Errors.Count > 0)
+            {
+                sb.AppendLine("Errors (" + result.Errors.Count + "):");
+                foreach (var error in result.Errors)
+                    sb.AppendLine("- " + error);
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        private string? ResolvePixInstallDirectory()
+        {
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PIX"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "PIX")
+            };
+
+            foreach (var candidate in candidates)
+                if (Directory.Exists(candidate))
+                    return candidate;
+
+            return FolderPicker.PickFolder(
+                "Select the PIX installation folder",
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                GetHostWindowHandle());
+        }
+
+        private static string? TryFindSourcePixLibrary(string? solutionDir)
+        {
+            if (string.IsNullOrWhiteSpace(solutionDir))
+                return null;
+
+            var candidate = Path.Combine(solutionDir, "RPAWriter2", "ActivityLibrary", "pix");
+            return Directory.Exists(candidate) ? candidate : null;
+        }
+
 
         private string? PickPixRobotsFolder()
         {

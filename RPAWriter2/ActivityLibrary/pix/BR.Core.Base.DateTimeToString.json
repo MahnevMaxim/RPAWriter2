@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.DateTimeToString",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Date time to string",
+  "defaultDisplayName": "Дата в строку",
+  "description": "Преобразует дату/время в строку по формату.",
   "role": "statement",
   "parent": null,
   "parameters": [],

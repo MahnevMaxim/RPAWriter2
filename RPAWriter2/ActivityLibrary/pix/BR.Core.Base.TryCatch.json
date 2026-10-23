@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.TryCatch",
   "wfSnippet": "TryCatch",
-  "defaultDisplayName": "Try Catch",
+  "defaultDisplayName": "Попытка/перехват",
+  "description": "Обработка исключений: блоки try, catch и finally.",
   "role": "tryCatch",
   "parent": null,
   "parameters": [],

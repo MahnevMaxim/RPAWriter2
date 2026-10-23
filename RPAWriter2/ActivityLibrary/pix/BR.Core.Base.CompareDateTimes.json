@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.CompareDateTimes",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Compare date times",
+  "defaultDisplayName": "Сравнить даты",
+  "description": "Сравнивает две даты/времени.",
   "role": "statement",
   "parent": null,
   "parameters": [],

@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.ExecuteScript",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Execute script",
+  "defaultDisplayName": "Выполнить скрипт",
+  "description": "Выполняет скрипт.",
   "role": "statement",
   "parent": null,
   "parameters": [],

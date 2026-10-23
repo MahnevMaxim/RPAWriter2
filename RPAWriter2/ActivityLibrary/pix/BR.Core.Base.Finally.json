@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Finally",
   "wfSnippet": null,
-  "defaultDisplayName": "Finally",
+  "defaultDisplayName": "Наконец",
+  "description": "Блок finally, выполняемый в любом случае.",
   "role": "finally",
   "parent": "BR.Core.Base.TryCatch",
   "parameters": [],

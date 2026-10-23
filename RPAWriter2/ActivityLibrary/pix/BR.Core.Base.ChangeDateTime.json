@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.ChangeDateTime",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Change date time",
+  "defaultDisplayName": "Изменить дату/время",
+  "description": "Изменяет дату и время на заданную величину.",
   "role": "statement",
   "parent": null,
   "parameters": [],

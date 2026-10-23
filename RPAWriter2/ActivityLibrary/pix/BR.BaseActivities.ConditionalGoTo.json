@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.BaseActivities.ConditionalGoTo",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "Conditional go to",
+  "defaultDisplayName": "Условный переход",
+  "description": "Переходит к шагу по условию.",
   "role": "statement",
   "parent": null,
   "parameters": [],

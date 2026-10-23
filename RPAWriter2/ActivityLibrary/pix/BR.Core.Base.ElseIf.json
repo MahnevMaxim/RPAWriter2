@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.ElseIf",
   "wfSnippet": null,
-  "defaultDisplayName": "Else If",
+  "defaultDisplayName": "Иначе если",
+  "description": "Дополнительное условие «иначе если».",
   "role": "elseIf",
   "parent": "BR.Core.Base.If",
   "parameters": [

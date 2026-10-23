@@ -255,6 +255,10 @@ namespace RPAWriter.Core.Models
         public string Name { get; set; }
         public string ClassName { get; set; }
         public string MethodName { get; set; }
+
+        /// <summary>Full MWF activity type chosen by a user/AI-managed mapping, when one was applied.</summary>
+        public string MappedActivity { get; set; }
+
         public List<ArgumentAssignment> Arguments { get; set; } = new List<ArgumentAssignment>();
         public string Variable { get; set; }
         public string Expression { get; set; }
@@ -285,6 +289,9 @@ namespace RPAWriter.Core.Models
 
         /// <summary>Target field on the generated activity node: Expression | Variable | Argument.</summary>
         public string Target { get; set; }
+
+        /// <summary>.NET type of the PIX property (e.g. System.String, System.Data.DataTable).</summary>
+        public string Type { get; set; }
     }
 
     /// <summary>Describes how one PIX activity maps to a Workflow Foundation snippet.</summary>
@@ -298,6 +305,9 @@ namespace RPAWriter.Core.Models
 
         /// <summary>Human-readable display name used when the PIX step has no text.</summary>
         public string DefaultDisplayName { get; set; }
+
+        /// <summary>Russian description of what the activity does.</summary>
+        public string Description { get; set; }
 
         /// <summary>Structural role: container | if | then | elseIf | else | tryCatch | try | catch | finally | statement.</summary>
         public string Role { get; set; }
@@ -319,6 +329,85 @@ namespace RPAWriter.Core.Models
         public string Xaml { get; set; }
         public string CSharpCode { get; set; }
         public List<string> Warnings { get; set; } = new List<string>();
+
+        /// <summary>Applied PIX → MWF mappings, formatted as "pixFullName → mwfFullName".</summary>
+        public List<string> Mappings { get; set; } = new List<string>();
+    }
+
+    /// <summary>Result of importing PIX activities from the installed PIX assemblies.</summary>
+    public class PixActivityLibraryImportResult
+    {
+        /// <summary>Number of scanned assemblies (<c>Core.dll</c> plus <c>Activities.*.dll</c>).</summary>
+        public int DllsScanned { get; set; }
+
+        /// <summary>Number of concrete PIX activities discovered across all assemblies.</summary>
+        public int ActivitiesImported { get; set; }
+
+        /// <summary>Number of descriptor JSON files written to the library directory.</summary>
+        public int FilesWritten { get; set; }
+
+        /// <summary>Number of stale descriptor files removed because their activity no longer exists.</summary>
+        public int FilesDeleted { get; set; }
+
+        /// <summary>Non-fatal errors collected while scanning/reflecting/writing.</summary>
+        public List<string> Errors { get; set; } = new List<string>();
+
+        /// <summary>Assembly names that failed to load (obsolete-file cleanup is skipped when this is non-empty).</summary>
+        public List<string> FailedAssemblies { get; set; } = new List<string>();
+    }
+
+    /// <summary>Property of a Workflow Foundation activity exposed to the converter.</summary>
+    public class WfActivityParameter
+    {
+        /// <summary>Property name.</summary>
+        public string Name { get; set; }
+
+        /// <summary>.NET type of the property (e.g. System.Activities.InArgument&lt;System.String&gt;).</summary>
+        public string Type { get; set; }
+    }
+
+    /// <summary>Describes one Workflow Foundation activity discovered in Activities.*.dll.</summary>
+    public class WfActivityDescriptor
+    {
+        /// <summary>Full CLR type name of the activity.</summary>
+        public string ActivityFullName { get; set; }
+
+        /// <summary>Human-readable display name used by the converter UI.</summary>
+        public string DefaultDisplayName { get; set; }
+
+        /// <summary>Russian description of what the activity does.</summary>
+        public string Description { get; set; }
+
+        /// <summary>Full name of the base activity type (typically System.Activities.Activity).</summary>
+        public string BaseType { get; set; }
+
+        /// <summary>Assembly file name the activity was found in.</summary>
+        public string AssemblyName { get; set; }
+
+        /// <summary>Public instance properties exposed by the activity.</summary>
+        public List<WfActivityParameter> Parameters { get; set; } = new List<WfActivityParameter>();
+    }
+
+    /// <summary>Result of importing Workflow Foundation activities from Activities.*.dll.</summary>
+    public class WfActivityLibraryImportResult
+    {
+        /// <summary>Number of scanned assemblies (<c>Activities.*.dll</c>).</summary>
+        public int DllsScanned { get; set; }
+
+        /// <summary>Number of concrete WF activities discovered across all assemblies.</summary>
+        public int ActivitiesImported { get; set; }
+
+        /// <summary>Number of descriptor JSON files written to the library directory.</summary>
+        public int FilesWritten { get; set; }
+
+        /// <summary>Number of stale descriptor files removed because their activity no longer exists.</summary>
+        public int FilesDeleted { get; set; }
+
+        /// <summary>Non-fatal errors collected while scanning/reflecting/writing.</summary>
+        public List<string> Errors { get; set; } = new List<string>();
+
+        /// <summary>Assembly names that failed to load (obsolete-file cleanup is skipped when this is non-empty).</summary>
+        public List<string> FailedAssemblies { get; set; } = new List<string>();
     }
 
     /// <summary>Knowledge-base record: task + solution (XAML/C#) + source robot + documentation.</summary>

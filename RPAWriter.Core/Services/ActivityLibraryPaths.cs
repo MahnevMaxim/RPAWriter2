@@ -14,6 +14,7 @@ namespace RPAWriter.Core.Services
         public const string ActivityLibraryFolderName = "ActivityLibrary";
         public const string WfSnippetsFolderName = "wf";
         public const string PixActivitiesFolderName = "pix";
+        public const string MwfActivitiesFolderName = "mwf";
 
         /// <summary>
         /// Returns the deployed activity library directory. Candidates, in order:
@@ -47,6 +48,9 @@ namespace RPAWriter.Core.Services
 
         public static string ResolvePixActivitiesDirectory()
             => Path.Combine(ResolveActivityLibraryDirectory(), PixActivitiesFolderName);
+
+        public static string ResolveMwfActivitiesDirectory()
+            => Path.Combine(ResolveActivityLibraryDirectory(), MwfActivitiesFolderName);
 
         private static string CombineDir(string baseDir)
         {

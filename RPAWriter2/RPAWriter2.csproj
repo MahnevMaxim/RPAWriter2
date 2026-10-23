@@ -58,6 +58,11 @@
     <VSIXSourceItem Include="$(OutputPath)System.Numerics.Vectors.dll" />
     <VSIXSourceItem Include="$(OutputPath)System.Threading.Tasks.Extensions.dll" />
     <VSIXSourceItem Include="$(OutputPath)System.ValueTuple.dll" />
+    <!-- PIX activity importer: MetadataLoadContext reflects over the installed .NET 7 PIX
+         assemblies. Its transitive dependencies are not auto-packaged by VSSDK, so ship them. -->
+    <VSIXSourceItem Include="$(OutputPath)System.Reflection.MetadataLoadContext.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Reflection.Metadata.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Collections.Immutable.dll" />
     <!-- Speech-to-text runtime dependencies: NAudio (microphone capture) and Vosk (offline STT). -->
     <VSIXSourceItem Include="$(OutputPath)NAudio.dll" />
     <VSIXSourceItem Include="$(OutputPath)NAudio.Core.dll" />

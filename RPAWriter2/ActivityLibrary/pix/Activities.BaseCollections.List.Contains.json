@@ -1,7 +1,8 @@
 {
   "activityFullName": "Activities.BaseCollections.List.Contains",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "List contains",
+  "defaultDisplayName": "Список содержит",
+  "description": "Проверяет, содержит ли список элемент.",
   "role": "statement",
   "parent": null,
   "parameters": [],

@@ -1,0 +1,156 @@
+<UserControl x:Class="RPAWriter2.Controls.PixMwfMappingControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <!-- Self-contained dark theme brushes (kept local so the control does not depend on the host's resources). -->
+        <SolidColorBrush x:Key="Dark.Window" Color="#2D2D30"/>
+        <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
+        <SolidColorBrush x:Key="Dark.Control" Color="#333337"/>
+        <SolidColorBrush x:Key="Dark.ControlHover" Color="#3E3E42"/>
+        <SolidColorBrush x:Key="Dark.ControlPressed" Color="#264F78"/>
+        <SolidColorBrush x:Key="Dark.Border" Color="#3F3F46"/>
+        <SolidColorBrush x:Key="Dark.Text" Color="#F1F1F1"/>
+        <SolidColorBrush x:Key="Dark.Accent" Color="#264F78"/>
+        <SolidColorBrush x:Key="Dark.ErrorText" Color="#F48771"/>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+
+        <Style TargetType="ListView">
+            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style TargetType="ListViewItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{TemplateBinding GridView.ColumnCollection}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.Accent}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Background="{StaticResource Dark.Window}">
+        <Border DockPanel.Dock="Top" Margin="0,0,0,6">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Close" Click="OnClose" Margin="8,0,0,0"/>
+                <WrapPanel>
+                    <Button x:Name="AiMapButton" Content="AI Map" Click="OnAiMap" Margin="0,0,8,0" ToolTip="Send all activities to the AI provider and let it assign mappings"/>
+                    <Button x:Name="SaveButton" Content="Save" Click="OnSave" Margin="0,0,8,0"/>
+                    <Button x:Name="ReloadButton" Content="Reload" Click="OnReload" Margin="0,0,8,0"/>
+                    <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" IsEnabled="False"/>
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Margin="0,6,0,0">
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="{StaticResource Dark.Text}"/>
+        </Border>
+
+        <Grid>
+            <ListView x:Name="MapList" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="PIX Activity" Width="220" DisplayMemberBinding="{Binding PixFullName}"/>
+                        <GridViewColumn Header="PIX Name" Width="160" DisplayMemberBinding="{Binding PixDisplayName}"/>
+                        <GridViewColumn Header="MWF Activity" Width="300">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox
+                                        ItemsSource="{Binding DataContext.MwfActivities, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                        DisplayMemberPath="ActivityFullName"
+                                        SelectedValuePath="ActivityFullName"
+                                        SelectedValue="{Binding MwfFullName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsDropDownOpen="{Binding IsPickerOpen, Mode=TwoWay}"
+                                        ToolTip="{Binding MwfDescription}"
+                                        MinWidth="240"/>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="MWF Description" Width="280" DisplayMemberBinding="{Binding MwfDescription}"/>
+                        <GridViewColumn Header="" Width="90">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding ActionLabel}" Click="OnRowAction" Tag="{Binding}" Padding="8,2"/>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+            <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource Dark.Text}" Visibility="Collapsed"
+                       Text="No PIX activities loaded. Click Reload after importing the PIX/MWF libraries."/>
+        </Grid>
+    </DockPanel>
+</UserControl>
+

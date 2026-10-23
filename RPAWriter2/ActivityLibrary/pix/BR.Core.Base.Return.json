@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Return",
   "wfSnippet": "Return",
-  "defaultDisplayName": "Return",
+  "defaultDisplayName": "Возврат",
+  "description": "Завершает workflow (значение результата не переносится).",
   "role": "statement",
   "parent": null,
   "parameters": [],

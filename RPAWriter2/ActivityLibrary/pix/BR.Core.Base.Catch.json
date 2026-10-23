@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.Catch",
   "wfSnippet": null,
-  "defaultDisplayName": "Catch",
+  "defaultDisplayName": "Перехват",
+  "description": "Обработчик исключения (блок catch).",
   "role": "catch",
   "parent": "BR.Core.Base.TryCatch",
   "parameters": [],

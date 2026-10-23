@@ -1,7 +1,8 @@
 {
   "activityFullName": "Activities.BaseCollections.List.CreateList",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "List create",
+  "defaultDisplayName": "Создать список",
+  "description": "Создаёт новый список.",
   "role": "statement",
   "parent": null,
   "parameters": [],

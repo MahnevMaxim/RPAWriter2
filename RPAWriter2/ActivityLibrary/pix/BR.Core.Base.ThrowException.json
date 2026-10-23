@@ -1,7 +1,8 @@
 {
   "activityFullName": "BR.Core.Base.ThrowException",
   "wfSnippet": "Throw",
-  "defaultDisplayName": "Throw exception",
+  "defaultDisplayName": "Выбросить исключение",
+  "description": "Выбрасывает исключение и прерывает выполнение.",
   "role": "statement",
   "parent": null,
   "parameters": [

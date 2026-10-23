@@ -1,7 +1,8 @@
 {
   "activityFullName": "Activities.BaseCollections.List.OutputListAsString",
   "wfSnippet": "InvokeMethod",
-  "defaultDisplayName": "List to string",
+  "defaultDisplayName": "Список в строку",
+  "description": "Преобразует список в строку.",
   "role": "statement",
   "parent": null,
   "parameters": [],

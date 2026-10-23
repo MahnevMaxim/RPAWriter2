@@ -1467,8 +1467,16 @@
                     <Button Content="UiPath → MWF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
                     <Button Content="Convert PIX to MWF" Click="OnConvertPix" Margin="0,5,8,0"/>
                     <Button Content="Get All Activities From PIX" Click="OnGetAllActivitiesFromPix" Margin="0,5,8,0"/>
+                    <Button Content="Import PIX activities (rewrite library)" Click="OnImportPixActivities" Margin="0,5,8,0"/>
+                    <Button Content="Get All MWF Activities" Click="OnGetAllMwfActivities" Margin="0,5,8,0"/>
+                    <Button Content="PIX to MWF map" Click="OnOpenPixMwfMap" Margin="0,5,8,0"/>
                     <Button Content="Clear" Click="OnClearConverter" Margin="0,5,8,0"/>
                 </WrapPanel>
+                <Border x:Name="PixMwfMapHost" DockPanel.Dock="Top" Margin="0,0,0,8"
+                        BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
+                        Background="{StaticResource Dark.Panel}" Padding="8,6" Height="380" Visibility="Collapsed">
+                    <controls:PixMwfMappingControl x:Name="PixMwfMapControl"/>
+                </Border>
                 <Grid Margin="0,0,0,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
