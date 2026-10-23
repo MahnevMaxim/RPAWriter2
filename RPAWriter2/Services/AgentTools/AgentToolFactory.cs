@@ -41,6 +41,7 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<string, string, CancellationToken, Task<string>> _spawnSubAgentAsync;
         private readonly bool _enableSubagents;
         private readonly int _subagentMaxDepth;
+        private readonly Func<AgentMode> _getMode;
         private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
@@ -58,7 +59,8 @@ namespace RPAWriter2.Services.AgentTools
             MemoryBankMode memoryBankMode,
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
-            int subagentMaxDepth)
+            int subagentMaxDepth,
+            Func<AgentMode> getMode)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSpec = getSpec ?? throw new ArgumentNullException(nameof(getSpec));
@@ -75,6 +77,7 @@ namespace RPAWriter2.Services.AgentTools
             _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
             _enableSubagents = enableSubagents;
             _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
+            _getMode = getMode ?? throw new ArgumentNullException(nameof(getMode));
         }
         public AgentToolRegistry CreateRegistry()
         {
@@ -270,6 +273,7 @@ namespace RPAWriter2.Services.AgentTools
         {
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             if (string.IsNullOrWhiteSpace(p)) return Task.FromResult("Missing \"path\" argument.");
+            if (!IsReadAllowed(p)) return Task.FromResult("Access denied: " + p);
             if (!File.Exists(p)) return Task.FromResult("File not found: " + p);
             try { return Task.FromResult(Truncate(File.ReadAllText(p))); }
             catch (Exception ex) { return Task.FromResult("Failed to read file: " + ex.Message); }
@@ -303,6 +307,12 @@ namespace RPAWriter2.Services.AgentTools
                 if (string.IsNullOrWhiteSpace(p))
                 {
                     sb.AppendLine("Error reading a files entry: missing \"path\".");
+                    continue;
+                }
+
+                if (!IsReadAllowed(p))
+                {
+                    sb.AppendLine("Error reading " + p + ": access denied — path is outside the allowed directories (solution / knowledge base / robots / skills) or matches a protected file name.");
                     continue;
                 }
 
@@ -588,6 +598,8 @@ namespace RPAWriter2.Services.AgentTools
             var dir = ResolvePath(args["directory"]?.Value<string>() ?? "");
             if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
                 return Task.FromResult("Directory not found: " + dir);
+            if (!IsReadAllowed(dir))
+                return Task.FromResult("Access denied: " + dir);
 
             var sb = new StringBuilder();
             foreach (var f in EnumerateSources(dir))
@@ -781,6 +793,7 @@ namespace RPAWriter2.Services.AgentTools
             foreach (var raw in paths)
             {
                 var full = ResolvePath(raw);
+                if (!IsReadAllowed(full)) { lines.Add("(access denied: " + full + ")"); continue; }
                 if (!File.Exists(full)) { lines.Add("(missing file: " + full + ")"); continue; }
                 try { lines.AddRange(File.ReadAllLines(full)); }
                 catch (Exception ex) { lines.Add("(read error " + full + ": " + ex.Message + ")"); }
@@ -1257,6 +1270,33 @@ namespace RPAWriter2.Services.AgentTools
                 }
             }
             return results;
+        }
+
+        /// <summary>Allowed roots for the agent's read tools (empty entries are ignored).</summary>
+        private IReadOnlyList<string> GetReadRoots()
+        {
+            var roots = new List<string>();
+            AddRoot(roots, _getSolutionDir());
+            AddRoot(roots, _getKbPath());
+            AddRoot(roots, _getRobotsRootPath());
+            AddRoot(roots, _getSkillsPath());
+            return roots;
+        }
+
+        private static void AddRoot(List<string> roots, string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            roots.Add(path);
+        }
+
+        /// <summary>
+        /// True when the agent may read the given path. In Act mode the agent has full read access
+        /// (any path, including secrets); in other modes the strict <see cref="ReadPathPolicy"/> is applied.
+        /// </summary>
+        private bool IsReadAllowed(string fullPath)
+        {
+            return ReadPathPolicy.IsReadAllowed(fullPath, GetReadRoots(), _getMode());
         }
 
         private string ResolvePath(string path)

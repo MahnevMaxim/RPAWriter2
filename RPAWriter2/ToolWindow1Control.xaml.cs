@@ -77,7 +77,6 @@ namespace RPAWriter2
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly ObservableCollection<ChatMessage> _converterMessages = new ObservableCollection<ChatMessage>();
-        private readonly ObservableCollection<SpecDocsFile> _docsFiles = new ObservableCollection<SpecDocsFile>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
@@ -89,7 +88,6 @@ namespace RPAWriter2
         private CancellationTokenSource? _kbImportCts;
         private volatile bool _kbImportPaused;
         private CancellationTokenSource? _securityAuditCts;
-        private readonly List<string> _securityAuditSolutions = new List<string>();
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -138,6 +136,10 @@ namespace RPAWriter2
         private ICollectionView? _packagesView;
         private ICollectionView? _svgView;
         private bool _pinnedExpanded;
+        // Guards against Checked/Unchecked events firing while the permissions
+        // overlay is being populated from settings (which would otherwise save
+        // half-initialized checkbox states back over the real settings).
+        private bool _suppressPermissionEvents;
 
         public ToolWindow1Control()
         {
@@ -153,10 +155,10 @@ namespace RPAWriter2
             ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
             ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
             AttachmentsList.ItemsSource = _attachments;
-            SpecList.ItemsSource = _specMessages;
+            SpecMessages.Messages = _specMessages;
+            SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             ConverterMessages.Messages = _converterMessages;
             ConverterMessages.CopyMessageRequested += OnChatMessageCopyRequested;
-            DocsFilesList.ItemsSource = _docsFiles;
             HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
             _packagesView.Filter = FilterPackages;
@@ -421,9 +423,8 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => AppendSpecMessage(message)));
                 return;
             }
-            _specMessages.Add(message);
+            SpecMessages.Append(message);
             CopySpecAllButton.Visibility = Visibility.Visible;
-            SpecScroll.ScrollToEnd();
         }
 
         private void AppendSpecText(string text)
@@ -475,11 +476,17 @@ namespace RPAWriter2
         {
             PixMwfMapControl.LoadData();
             PixMwfMapHost.Visibility = Visibility.Visible;
+            PixMwfMapSplitter.Visibility = Visibility.Visible;
+            PixMwfMapRow.MinHeight = 120;
+            PixMwfMapRow.Height = new GridLength(380);
         }
 
         private void OnPixMwfMapClosed(object sender, EventArgs e)
         {
             PixMwfMapHost.Visibility = Visibility.Collapsed;
+            PixMwfMapSplitter.Visibility = Visibility.Collapsed;
+            PixMwfMapRow.MinHeight = 0;
+            PixMwfMapRow.Height = new GridLength(0);
         }
 
         private ChatMessage AppendSpecStreaming()
@@ -885,94 +892,6 @@ namespace RPAWriter2
             File.Copy(sourcePath, Path.Combine(docsDir, Path.GetFileName(sourcePath)), overwrite: true);
         }
 
-        /// <summary>Rebuilds the list of files shown in the Spec tab's docs expander.</summary>
-        private void RefreshDocsFiles()
-        {
-            _docsFiles.Clear();
-            DocsFilesEmptyText.Visibility = Visibility.Collapsed;
-
-            var solutionDir = GetOpenSolutionDirectory();
-            if (solutionDir == null)
-            {
-                DocsFilesEmptyText.Text = "No solution open.";
-                DocsFilesEmptyText.Visibility = Visibility.Visible;
-                return;
-            }
-
-            var docsDir = Path.Combine(solutionDir, "docs");
-            if (!Directory.Exists(docsDir))
-            {
-                DocsFilesEmptyText.Text = "The docs folder does not exist yet.";
-                DocsFilesEmptyText.Visibility = Visibility.Visible;
-                return;
-            }
-
-            try
-            {
-                var files = Directory.GetFiles(docsDir, "*", SearchOption.AllDirectories)
-                                     .Where(IsMarkdownFile)
-                                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
-                foreach (var file in files)
-                {
-                    var relative = file.Length > docsDir.Length
-                        ? file.Substring(docsDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                        : Path.GetFileName(file);
-
-                    _docsFiles.Add(new SpecDocsFile
-                    {
-                        FullPath = file,
-                        Name = relative,
-                        IsMarkdown = IsMarkdownFile(file)
-                    });
-                }
-
-                if (_docsFiles.Count == 0)
-                {
-                    DocsFilesEmptyText.Text = "The docs folder is empty.";
-                    DocsFilesEmptyText.Visibility = Visibility.Visible;
-                }
-            }
-            catch (Exception ex)
-            {
-                DocsFilesEmptyText.Text = "Failed to list docs: " + ex.Message;
-                DocsFilesEmptyText.Visibility = Visibility.Visible;
-            }
-        }
-
-        private static bool IsMarkdownFile(string path)
-        {
-            var ext = Path.GetExtension(path);
-            return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private void OnDocsExpanderExpanded(object sender, RoutedEventArgs e)
-        {
-            RefreshDocsFiles();
-        }
-
-        private async void OnDocsFileClick(object sender, RoutedEventArgs e)
-        {
-            if (!(sender is Button button) || !(button.Tag is string path) || !File.Exists(path))
-                return;
-
-            var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
-            if (dte == null)
-            {
-                ShowNotice("Visual Studio is not available.", NotificationKind.Warning);
-                return;
-            }
-
-            try
-            {
-                await VsDocumentService.OpenOrActivateAsync(dte, path);
-            }
-            catch (Exception ex)
-            {
-                ShowNotice("Failed to open file: " + ex.Message, NotificationKind.Error);
-            }
-        }
-
 #pragma warning disable VSTHRD100 // WPF event handlers are async void
         private async void OnSend(object sender, RoutedEventArgs e)
         {
@@ -1331,7 +1250,6 @@ namespace RPAWriter2
             finally
             {
                 HideImportProgress();
-                RefreshDocsFiles();
             }
         }
 
@@ -1377,7 +1295,6 @@ namespace RPAWriter2
 
                 _currentSpec = null;
                 ShowNotice("Cleared " + removed + " file(s) from docs.", NotificationKind.Success);
-                RefreshDocsFiles();
             }
             catch (Exception ex)
             {
@@ -1446,7 +1363,6 @@ namespace RPAWriter2
             finally
             {
                 HideImportProgress();
-                RefreshDocsFiles();
             }
         }
 
@@ -1569,9 +1485,10 @@ namespace RPAWriter2
 
         /// <summary>
         /// Runs a read-only security audit over every robot solution (RPA-&lt;number&gt;.sln/.slnx)
-        /// located in the same directory as the currently open solution. Shows the discovered
-        /// solutions on the Spec tab, audits each one with the AI provider, writes the combined
-        /// report to the current solution's docs folder and opens it in Visual Studio.
+        /// located in the same directory as the currently open solution and in the sibling robot
+        /// folders (uppercase "RPA-" prefix) at the same level. Shows the discovered solutions on
+        /// the Spec tab, audits each one with the AI provider, writes the combined report to the
+        /// current solution's docs folder and opens it in Visual Studio.
         /// </summary>
         private async void OnRobotSecurityAudit(object sender, RoutedEventArgs e)
         {
@@ -1594,35 +1511,27 @@ namespace RPAWriter2
                 if (baseDirectory == null) return;
             }
 
-            var solutions = RobotSecurityAuditService.FindRobotSolutions(baseDirectory);
+            var solutions = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(baseDirectory);
             if (solutions.Count == 0)
             {
-                ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + ". Select the directory that contains them.", NotificationKind.Warning);
+                ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + " or its sibling RPA-* folders. Select the directory that contains them.", NotificationKind.Warning);
                 var picked = PickSecurityAuditDirectory();
                 if (picked == null) return;
                 baseDirectory = picked;
-                solutions = RobotSecurityAuditService.FindRobotSolutions(baseDirectory);
+                solutions = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(baseDirectory);
                 if (solutions.Count == 0)
                 {
-                    ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + ".", NotificationKind.Error);
+                    ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + " or its sibling RPA-* folders.", NotificationKind.Error);
                     return;
                 }
             }
-
-            _securityAuditSolutions.Clear();
-            _securityAuditSolutions.AddRange(solutions);
-            SecurityAuditSolutionsList.ItemsSource = _securityAuditSolutions;
-            SecurityAuditMessagesBox.Clear();
-            SecurityAuditExpander.IsExpanded = true;
 
             var targetDirectory = GetOpenSolutionDirectory() ?? baseDirectory;
             var docsDirectory = Path.Combine(targetDirectory, "docs");
             var reportPath = Path.Combine(docsDirectory, "security_audit.md");
 
             _securityAuditCts = new CancellationTokenSource();
-            SetSecurityAuditStatus("Auditing " + _securityAuditSolutions.Count + " robot solution(s)...");
-            SecurityAuditProgress.Value = 0;
-            SecurityAuditProgress.Visibility = Visibility.Visible;
+            AppendSpecText("Auditing " + solutions.Count + " robot solution(s)...");
 
             var mode = string.Equals(_settings?.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase)
                 ? SecurityAuditMode.CredentialsOnly
@@ -1632,12 +1541,7 @@ namespace RPAWriter2
             service.MessageReported += OnSecurityAuditMessage;
             try
             {
-                var progress = new Progress<string>(SetSecurityAuditStatus);
-                var progressValue = new Progress<double>(SetSecurityAuditProgress);
-                var result = await service.AuditAsync(_securityAuditSolutions, reportPath, progress, progressValue, _securityAuditCts.Token, mode);
-
-                AppendSecurityAuditMessage("Security audit completed: " + result.SolutionsAudited + " solution(s), " + result.SolutionsFailed + " failed.");
-                SetSecurityAuditStatus("Security audit completed: " + result.SolutionsAudited + " solution(s), " + result.SolutionsFailed + " failed.");
+                await service.AuditAsync(solutions, reportPath, cancellationToken: _securityAuditCts.Token, mode: mode);
                 ShowNotice("Security audit completed. Report: " + reportPath, NotificationKind.Success);
 
                 var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
@@ -1649,20 +1553,17 @@ namespace RPAWriter2
             }
             catch (OperationCanceledException)
             {
-                AppendSecurityAuditMessage("Security audit stopped by user.");
-                SetSecurityAuditStatus("Security audit stopped.");
+                AppendSpecText("Security audit stopped by user.");
             }
             catch (Exception ex)
             {
                 LogService.Error(ex, "Security audit failed.");
                 ShowError(ex);
-                AppendSecurityAuditMessage("Security audit failed.\n\n" + ex);
-                SetSecurityAuditStatus("Security audit failed.");
+                AppendSpecText("Security audit failed.\n\n" + ex);
             }
             finally
             {
                 service.MessageReported -= OnSecurityAuditMessage;
-                SecurityAuditProgress.Visibility = Visibility.Collapsed;
                 _securityAuditCts.Dispose();
                 _securityAuditCts = null;
             }
@@ -1689,39 +1590,7 @@ namespace RPAWriter2
         private void OnSecurityAuditMessage(object? sender, string message)
         {
             LogService.Info("Security audit: " + message);
-            AppendSecurityAuditMessage(message);
-        }
-
-        private void AppendSecurityAuditMessage(string text)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => AppendSecurityAuditMessage(text)));
-                return;
-            }
-            SecurityAuditMessagesBox.AppendText(text + Environment.NewLine);
-            SecurityAuditMessagesBox.ScrollToEnd();
-        }
-
-        private void SetSecurityAuditStatus(string status)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetSecurityAuditStatus(status)));
-                return;
-            }
-            SecurityAuditStatusText.Text = status;
-        }
-
-        private void SetSecurityAuditProgress(double value)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetSecurityAuditProgress(value)));
-                return;
-            }
-            SecurityAuditProgress.Value = value;
-            SecurityAuditProgress.Visibility = Visibility.Visible;
+            AppendSpecText(message);
         }
 
         private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
@@ -3796,11 +3665,20 @@ namespace RPAWriter2
 
         private void OnPermissionsClick(object sender, RoutedEventArgs e)
         {
-            AllowReadFilesCheckBox.IsChecked = _settings.AllowReadFiles;
-            AllowEditFilesCheckBox.IsChecked = _settings.AllowEditFiles;
-            AllowExecuteCommandCheckBox.IsChecked = _settings.AllowExecuteCommand;
-            AllowWebFetchCheckBox.IsChecked = _settings.AllowWebFetch;
-            AllowMcpCheckBox.IsChecked = _settings.AllowMcp;
+            _suppressPermissionEvents = true;
+            try
+            {
+                AllowReadFilesCheckBox.IsChecked = _settings.AllowReadFiles;
+                AllowEditFilesCheckBox.IsChecked = _settings.AllowEditFiles;
+                AllowExecuteCommandCheckBox.IsChecked = _settings.AllowExecuteCommand;
+                AllowWebFetchCheckBox.IsChecked = _settings.AllowWebFetch;
+                AllowMcpCheckBox.IsChecked = _settings.AllowMcp;
+            }
+            finally
+            {
+                _suppressPermissionEvents = false;
+            }
+
             PermissionsOverlay.Visibility = Visibility.Visible;
         }
 
@@ -3897,6 +3775,9 @@ namespace RPAWriter2
 
         private void OnPermissionChanged(object sender, RoutedEventArgs e)
         {
+            if (_suppressPermissionEvents)
+                return;
+
             _settings.AllowReadFiles = AllowReadFilesCheckBox?.IsChecked ?? true;
             _settings.AllowEditFiles = AllowEditFilesCheckBox?.IsChecked ?? true;
             _settings.AllowExecuteCommand = AllowExecuteCommandCheckBox?.IsChecked ?? false;
@@ -3957,7 +3838,8 @@ namespace RPAWriter2
                 memoryBankMode,
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
-                _settings.SubagentMaxDepth);
+                _settings.SubagentMaxDepth,
+                () => _mode);
             return factory.CreateRegistry();
         }
 
@@ -4102,9 +3984,6 @@ namespace RPAWriter2
             if (_restoringUiState)
                 return;
             PersistUiState();
-
-            if ((MainTabs.SelectedItem as TabItem)?.Header as string == "Spec")
-                RefreshDocsFiles();
         }
 
         /// <summary>Writes the current chat/tab state so the next session can restore it.</summary>

@@ -226,6 +226,112 @@ namespace RPAWriter.Tests
             var all = registry.ForMode(AgentMode.Act, AgentPermissions.All);
             Assert.That(all.Count, Is.EqualTo(2));
         }
+
+        [Test]
+        public void TryGetExecutableTool_MutatingToolInPlan_IsBlocked()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("write", "write", "{}", mutates: true, (a, c) => Task.FromResult("w")));
+
+            var allowed = registry.TryGetExecutableTool("write", AgentMode.Plan, AgentPermissions.All, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(reason, Does.Contain("mutating"));
+        }
+
+        [Test]
+        public void TryGetExecutableTool_DisabledPermission_IsBlocked()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("run", "run", "{}", mutates: true, (a, c) => Task.FromResult("r"), permission: AgentPermissions.ExecuteCommand));
+
+            var allowed = registry.TryGetExecutableTool("run", AgentMode.Act, AgentPermissions.ReadFiles, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(reason, Does.Contain("execute command"));
+        }
+
+        [Test]
+        public void TryGetExecutableTool_UnknownTool_IsBlocked()
+        {
+            var registry = new AgentToolRegistry();
+
+            var allowed = registry.TryGetExecutableTool("nope", AgentMode.Act, AgentPermissions.All, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(tool, Is.Null);
+            Assert.That(reason, Does.Contain("Unknown tool"));
+        }
+
+        [Test]
+        public void TryGetExecutableTool_ReadToolInPlan_IsAllowed()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read", "read", "{}", mutates: false, (a, c) => Task.FromResult("r")));
+
+            var allowed = registry.TryGetExecutableTool("read", AgentMode.Plan, AgentPermissions.ReadFiles, out var tool, out var reason);
+
+            Assert.That(allowed, Is.True);
+            Assert.That(tool.Name, Is.EqualTo("read"));
+            Assert.That(reason, Is.Null);
+        }
+
+        [Test]
+        public void TryGetExecutableTool_MutatingToolInActWithPermission_IsAllowed()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("write", "write", "{}", mutates: true, (a, c) => Task.FromResult("w")));
+
+            var allowed = registry.TryGetExecutableTool("write", AgentMode.Act, AgentPermissions.All, out var tool, out var reason);
+
+            Assert.That(allowed, Is.True);
+        }
+
+        [Test]
+        public void TryGetExecutableTool_HelpMode_BlocksAll()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read", "read", "{}", mutates: false, (a, c) => Task.FromResult("r")));
+
+            var allowed = registry.TryGetExecutableTool("read", AgentMode.Help, AgentPermissions.All, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(reason, Does.Contain("Help"));
+        }
+
+        [Test]
+        public void ForMode_Help_ReturnsEmpty()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read", "read", "{}", mutates: false, (a, c) => Task.FromResult("r")));
+
+            Assert.That(registry.ForMode(AgentMode.Help), Is.Empty);
+            Assert.That(registry.ForMode(AgentMode.Help, AgentPermissions.All), Is.Empty);
+        }
+
+        [Test]
+        public void TryGetExecutableTool_WebToolWithWebFetchDisabled_IsBlocked()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("fetch_web", "web", "{}", mutates: false, (a, c) => Task.FromResult("x"), permission: AgentPermissions.WebFetch));
+
+            var allowed = registry.TryGetExecutableTool("fetch_web", AgentMode.Act, AgentPermissions.ReadFiles, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(reason, Does.Contain("web fetch"));
+        }
+
+        [Test]
+        public void TryGetExecutableTool_ReadToolWithReadPermissionDisabled_IsBlocked()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read", "read", "{}", mutates: false, (a, c) => Task.FromResult("r")));
+
+            var allowed = registry.TryGetExecutableTool("read", AgentMode.Act, AgentPermissions.EditFiles, out var tool, out var reason);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(reason, Does.Contain("read files"));
+        }
     }
 
     [TestFixture]
@@ -307,6 +413,39 @@ namespace RPAWriter.Tests
                     new Dictionary<string, object>
                     {
                         ["message"] = new Dictionary<string, object> { ["content"] = content }
+                    }
+                }
+            };
+            return System.Text.Json.JsonSerializer.Serialize(payload);
+        }
+
+        private static string NativeToolCalls(string toolName, string argsJson)
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["choices"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["message"] = new Dictionary<string, object>
+                        {
+                            ["role"] = "assistant",
+                            ["content"] = null,
+                            ["tool_calls"] = new[]
+                            {
+                                new Dictionary<string, object>
+                                {
+                                    ["id"] = "call_1",
+                                    ["type"] = "function",
+                                    ["function"] = new Dictionary<string, object>
+                                    {
+                                        ["name"] = toolName,
+                                        ["arguments"] = argsJson
+                                    }
+                                }
+                            }
+                        },
+                        ["finish_reason"] = "tool_calls"
                     }
                 }
             };
@@ -447,6 +586,123 @@ namespace RPAWriter.Tests
             var result = await runner.RunAsync("go", AgentMode.Plan, CancellationToken.None);
 
             Assert.That(result.FinalText, Is.EqualTo("готово"));
+        }
+
+        [Test]
+        public async Task RunAsync_UnknownTool_ContinuesAndReturnsFinal()
+        {
+            var registry = new AgentToolRegistry();
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("{\"action\":\"tool_call\",\"tool\":\"nope\",\"arguments\":{}}"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"done\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_MutatingToolInPlan_FiresBlockedEvent()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("write_file", "write", "{}", mutates: true, (a, c) => Task.FromResult("x")));
+
+            AgentToolCall blockedCall = null;
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("{\"action\":\"tool_call\",\"tool\":\"write_file\",\"arguments\":{}}"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"done\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            runner.ToolExecuted += (s, e) => { if (e.Blocked) blockedCall = e; };
+            var result = await runner.RunAsync("go", AgentMode.Plan, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(blockedCall, Is.Not.Null);
+            Assert.That(blockedCall.ToolName, Is.EqualTo("write_file"));
+            Assert.That(blockedCall.Blocked, Is.True);
+        }
+
+        [Test]
+        public async Task RunAsync_HelpMode_BlocksAllTools()
+        {
+            var executed = false;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read_file", "read", "{}", mutates: false, (a, c) =>
+            {
+                executed = true;
+                return Task.FromResult("content");
+            }));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(Completion("{\"action\":\"tool_call\",\"tool\":\"read_file\",\"arguments\":{}}"));
+            responses.Enqueue(Completion("{\"action\":\"final\",\"text\":\"done\"}"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Help, CancellationToken.None);
+
+            Assert.That(executed, Is.False);
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_Native_MutatingToolInPlan_BlocksIt()
+        {
+            var executed = false;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("write_file", "write", "{}", mutates: true, (a, c) =>
+            {
+                executed = true;
+                return Task.FromResult("should-not-run");
+            }));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(NativeToolCalls("write_file", "{}"));
+            responses.Enqueue(Completion("ok"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "m", ToolCallingMode = ToolCallingMode.Native }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, toolCallingMode: ToolCallingMode.Native);
+            var result = await runner.RunAsync("go", AgentMode.Plan, CancellationToken.None);
+
+            Assert.That(executed, Is.False);
+            Assert.That(result.FinalText, Is.EqualTo("ok"));
+        }
+
+        [Test]
+        public async Task RunAsync_Native_DisabledPermission_BlocksIt()
+        {
+            var executed = false;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("run_command", "run", "{}", mutates: true, (a, c) =>
+            {
+                executed = true;
+                return Task.FromResult("should-not-run");
+            }, permission: AgentPermissions.ExecuteCommand));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(NativeToolCalls("run_command", "{}"));
+            responses.Enqueue(Completion("ok"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "m", ToolCallingMode = ToolCallingMode.Native }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, toolCallingMode: ToolCallingMode.Native, allowedPermissions: AgentPermissions.ReadFiles | AgentPermissions.EditFiles);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(executed, Is.False);
+            Assert.That(result.FinalText, Is.EqualTo("ok"));
         }
     }
 

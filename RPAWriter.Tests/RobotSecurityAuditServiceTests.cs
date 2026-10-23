@@ -130,6 +130,62 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void FindRobotSolutionsInSiblingFolders_GivenRobotFolder_ScansSiblingFolders()
+        {
+            Directory.CreateDirectory(_root);
+            Directory.CreateDirectory(Path.Combine(_root, "RPA-1141"));
+            Directory.CreateDirectory(Path.Combine(_root, "RPA-1111"));
+            Directory.CreateDirectory(Path.Combine(_root, "RPA-1234"));
+            Directory.CreateDirectory(Path.Combine(_root, "rpa-999"));
+            Directory.CreateDirectory(Path.Combine(_root, "Docs"));
+
+            File.WriteAllText(Path.Combine(_root, "RPA-1141", "RPA-1141.sln"), "");
+            File.WriteAllText(Path.Combine(_root, "RPA-1111", "RPA-1111.sln"), "");
+            File.WriteAllText(Path.Combine(_root, "RPA-1234", "RPA-1234.slnx"), "");
+            File.WriteAllText(Path.Combine(_root, "rpa-999", "rpa-999.sln"), "");
+            File.WriteAllText(Path.Combine(_root, "Docs", "RPA-1.sln"), "");
+
+            var result = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(Path.Combine(_root, "RPA-1141"));
+
+            var names = result.Select(Path.GetFileName).ToList();
+            Assert.That(names, Is.EqualTo(new[] { "RPA-1111.sln", "RPA-1141.sln", "RPA-1234.slnx" }));
+        }
+
+        [Test]
+        public void FindRobotSolutionsInSiblingFolders_GivenRobotsRoot_ScansRobotSubfolders()
+        {
+            Directory.CreateDirectory(_root);
+            Directory.CreateDirectory(Path.Combine(_root, "RPA-10"));
+            Directory.CreateDirectory(Path.Combine(_root, "RPA-20"));
+            File.WriteAllText(Path.Combine(_root, "RPA-10", "RPA-10.sln"), "");
+            File.WriteAllText(Path.Combine(_root, "RPA-20", "RPA-20.slnx"), "");
+
+            var result = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(_root);
+
+            var names = result.Select(Path.GetFileName).ToList();
+            Assert.That(names, Is.EqualTo(new[] { "RPA-10.sln", "RPA-20.slnx" }));
+        }
+
+        [Test]
+        public void FindRobotSolutionsInSiblingFolders_FlatDirectory_FindsSolutions()
+        {
+            Directory.CreateDirectory(_root);
+            File.WriteAllText(Path.Combine(_root, "RPA-1234.sln"), "");
+            File.WriteAllText(Path.Combine(_root, "RPA-653.sln"), "");
+
+            var result = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(_root);
+
+            var names = result.Select(Path.GetFileName).ToList();
+            Assert.That(names, Is.EqualTo(new[] { "RPA-1234.sln", "RPA-653.sln" }));
+        }
+
+        [Test]
+        public void FindRobotSolutionsInSiblingFolders_MissingDirectory_ReturnsEmpty()
+        {
+            Assert.That(RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(Path.Combine(_root, "missing")), Is.Empty);
+        }
+
+        [Test]
         public async Task AuditAsync_WritesReportAndLogsPipeline()
         {
             var solutionDir = Path.Combine(_root, "RPA-1234");

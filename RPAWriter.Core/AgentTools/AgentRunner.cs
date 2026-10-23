@@ -324,41 +324,28 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             CancellationToken cancellationToken)
         {
-            var tool = _registry.Find(call.Name);
-            if (tool == null)
+            if (!_registry.TryGetExecutableTool(call.Name, mode, _allowedPermissions, out var tool, out var blockReason))
             {
-                messages.Add(new ChatMessageData
+                if (tool == null)
                 {
-                    Role = "tool",
-                    Content = "Unknown tool: \"" + call.Name + "\". Use one of the tools listed in the system prompt.",
-                    ToolCallId = call.Id ?? ""
-                });
-                return null;
-            }
-
-            if (tool.Mutates && mode != AgentMode.Act)
-            {
-                var blocked = new AgentToolCall
+                    messages.Add(new ChatMessageData
+                    {
+                        Role = "tool",
+                        Content = blockReason,
+                        ToolCallId = call.Id ?? ""
+                    });
+                }
+                else
                 {
-                    ToolName = tool.Name,
-                    Blocked = true,
-                    Result = "Blocked: this mutating tool is not allowed in Plan mode."
-                };
-                ToolExecuted?.Invoke(this, blocked);
-                messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
-                return null;
-            }
-
-            if ((_allowedPermissions & tool.Permission) == 0)
-            {
-                var blocked = new AgentToolCall
-                {
-                    ToolName = tool.Name,
-                    Blocked = true,
-                    Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
-                };
-                ToolExecuted?.Invoke(this, blocked);
-                messages.Add(new ChatMessageData { Role = "tool", Content = blocked.Result, ToolCallId = call.Id ?? "" });
+                    var blocked = new AgentToolCall
+                    {
+                        ToolName = tool.Name,
+                        Blocked = true,
+                        Result = blockReason
+                    };
+                    ToolExecuted?.Invoke(this, blocked);
+                    messages.Add(new ChatMessageData { Role = "tool", Content = blockReason, ToolCallId = call.Id ?? "" });
+                }
                 return null;
             }
 
@@ -413,40 +400,27 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             CancellationToken cancellationToken)
         {
-            var tool = _registry.Find(call.ToolName);
-            if (tool == null)
+            if (!_registry.TryGetExecutableTool(call.ToolName, mode, _allowedPermissions, out var tool, out var blockReason))
             {
-                messages.Add(new ChatMessageData
+                if (tool == null)
                 {
-                    Role = "user",
-                    Content = "Unknown tool: \"" + call.ToolName + "\". Use one of the tools listed in the system prompt."
-                });
-                return null;
-            }
-
-            if (tool.Mutates && mode != AgentMode.Act)
-            {
-                var blocked = new AgentToolCall
+                    messages.Add(new ChatMessageData
+                    {
+                        Role = "user",
+                        Content = blockReason
+                    });
+                }
+                else
                 {
-                    ToolName = tool.Name,
-                    Blocked = true,
-                    Result = "Blocked: this mutating tool is not allowed in Plan mode."
-                };
-                ToolExecuted?.Invoke(this, blocked);
-                messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
-                return null;
-            }
-
-            if ((_allowedPermissions & tool.Permission) == 0)
-            {
-                var blocked = new AgentToolCall
-                {
-                    ToolName = tool.Name,
-                    Blocked = true,
-                    Result = "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings."
-                };
-                ToolExecuted?.Invoke(this, blocked);
-                messages.Add(new ChatMessageData { Role = "user", Content = blocked.Result });
+                    var blocked = new AgentToolCall
+                    {
+                        ToolName = tool.Name,
+                        Blocked = true,
+                        Result = blockReason
+                    };
+                    ToolExecuted?.Invoke(this, blocked);
+                    messages.Add(new ChatMessageData { Role = "user", Content = blockReason });
+                }
                 return null;
             }
 
@@ -514,19 +488,6 @@ namespace RPAWriter.Core.AgentTools
             list.Add(new ChatMessageData { Role = "assistant", Content = response?.Answer ?? "" });
             list.Add(new ChatMessageData { Role = "user", Content = MaxTokensRecoveryNudge });
             return list;
-        }
-
-        private static string PermissionName(AgentPermissions permission)
-        {
-            switch (permission)
-            {
-                case AgentPermissions.ReadFiles: return "read files";
-                case AgentPermissions.EditFiles: return "edit files";
-                case AgentPermissions.ExecuteCommand: return "execute command";
-                case AgentPermissions.WebFetch: return "web fetch";
-                case AgentPermissions.Mcp: return "MCP";
-                default: return "unknown";
-            }
         }
 
         private static string Truncate(string text, int max)

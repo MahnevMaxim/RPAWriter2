@@ -466,155 +466,7 @@
             </Setter>
         </Style>
 
-        <Style x:Key="MaterialExpanderStyle" TargetType="Expander">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="12,10"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Expander">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4">
-                            <DockPanel>
-                                <ToggleButton x:Name="HeaderSite"
-                                              DockPanel.Dock="Top"
-                                              Content="{TemplateBinding Header}"
-                                              ContentTemplate="{TemplateBinding HeaderTemplate}"
-                                              Foreground="{TemplateBinding Foreground}"
-                                              Background="Transparent"
-                                              BorderThickness="0"
-                                              Padding="12,7"
-                                              Cursor="Hand"
-                                              HorizontalContentAlignment="Stretch"
-                                              VerticalContentAlignment="Center"
-                                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
-                                    <ToggleButton.Template>
-                                        <ControlTemplate TargetType="ToggleButton">
-                                            <Border x:Name="HeaderBd"
-                                                    Background="{TemplateBinding Background}"
-                                                    CornerRadius="3"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <ContentPresenter Grid.Column="0"
-                                                                      ContentSource="Content"
-                                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                                      VerticalAlignment="Center"
-                                                                      RecognizesAccessKey="True"
-                                                                      TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                                    <Grid Grid.Column="1" Margin="8,0,0,0">
-                                                        <Path x:Name="ChevronRight"
-                                                              Data="M 10,6 L 8.59,7.41 L 13.17,12 L 8.59,16.59 L 10,18 L 16,12 Z"
-                                                              Fill="White"
-                                                              Stretch="Uniform" Width="15" Height="15"
-                                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        <Path x:Name="ChevronDown"
-                                                              Data="M 7.41,8.59 L 12,13.17 L 16.59,8.59 L 18,10 L 12,16 L 6,10 Z"
-                                                              Fill="White"
-                                                              Stretch="Uniform" Width="15" Height="15"
-                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                              Visibility="Collapsed"/>
-                                                    </Grid>
 
-                                                </Grid>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="HeaderBd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
-                                                </Trigger>
-                                                <Trigger Property="IsPressed" Value="True">
-                                                    <Setter TargetName="HeaderBd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
-                                                </Trigger>
-                                                <Trigger Property="IsChecked" Value="True">
-                                                    <Setter TargetName="HeaderBd" Property="CornerRadius" Value="3,3,0,0"/>
-                                                    <Setter TargetName="ChevronRight" Property="Visibility" Value="Collapsed"/>
-                                                    <Setter TargetName="ChevronDown" Property="Visibility" Value="Visible"/>
-                                                </Trigger>
-                                                <Trigger Property="IsEnabled" Value="False">
-                                                    <Setter TargetName="HeaderBd" Property="Opacity" Value="0.5"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </ToggleButton.Template>
-                                </ToggleButton>
-                                <ContentPresenter x:Name="ContentSite"
-                                                  DockPanel.Dock="Top"
-                                                  Margin="{TemplateBinding Padding}"
-                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                                  Visibility="Collapsed"/>
-                            </DockPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="True">
-                                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="DocFileLinkStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="2,2"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <TextBlock x:Name="LinkText"
-                                   Text="{TemplateBinding Content}"
-                                   Foreground="{TemplateBinding Foreground}"
-                                   TextTrimming="CharacterEllipsis"
-                                   VerticalAlignment="Center"/>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="LinkText" Property="Foreground" Value="{StaticResource Material.Accent}"/>
-                                <Setter TargetName="LinkText" Property="TextDecorations" Value="Underline"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="LinkText" Property="Opacity" Value="0.7"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMarkdown}" Value="True">
-                    <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="DocFileTextStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#9A9A9A"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMarkdown}" Value="True">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <DataTemplate x:Key="SpecDocsFileTemplate">
-            <Grid Margin="2,1">
-                <TextBlock Text="{Binding Name}" Style="{StaticResource DocFileTextStyle}" TextTrimming="CharacterEllipsis"/>
-                <Button Content="{Binding Name}" Tag="{Binding FullPath}" Click="OnDocsFileClick" Style="{StaticResource DocFileLinkStyle}"/>
-            </Grid>
-        </DataTemplate>
 
         <Style TargetType="GridSplitter">
             <Setter Property="Background" Value="{StaticResource Dark.Border}"/>
@@ -676,38 +528,6 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <DataTemplate x:Key="MessageTemplate">
-            <Border Background="{StaticResource Dark.Panel}" CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
-                                  Foreground="{StaticResource Dark.Text}"
-                                  Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
-                            <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
-                                     Foreground="#C8C8C8" FontStyle="Italic"
-                                     IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
-                        </Expander>
-                        <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <ContentControl Content="{Binding}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                    <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
-                            Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
-                            ToolTip="Copy message" Click="OnCopyMessage">
-                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
-                    </Button>
-                </Grid>
-            </Border>
-        </DataTemplate>
         <DataTemplate x:Key="ChatMessageTemplate">
             <Border CornerRadius="2" Padding="8,6" Margin="0,0,0,4">
                 <Border.Style>
@@ -1387,18 +1207,6 @@
                     <Button Content="Convert md to docx" Click="OnConvertMarkdownToDocx" Margin="0,5,8,0"/>
                     <Button Content="Clear" Click="OnClearSpec" Margin="0,5,8,0"/>
                 </WrapPanel>
-                <Expander x:Name="DocsExpander" DockPanel.Dock="Top" Margin="0,0,0,8"
-                          Style="{StaticResource MaterialExpanderStyle}"
-                          Header="docs"
-                          IsExpanded="False"
-                          Expanded="OnDocsExpanderExpanded">
-                    <StackPanel>
-                        <TextBlock x:Name="DocsFilesEmptyText" Text="The docs folder is empty." Foreground="#9A9A9A"
-                                   TextWrapping="Wrap" Visibility="Collapsed"/>
-                        <ItemsControl x:Name="DocsFilesList" ItemTemplate="{StaticResource SpecDocsFileTemplate}"
-                                      HorizontalContentAlignment="Stretch"/>
-                    </StackPanel>
-                </Expander>
                 <controls:NotificationBanner x:Name="NoticeBar" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
                                               CloseRequested="OnNoticeClose"
                                               SendToChatRequested="OnNotificationSendToChat"/>
@@ -1411,35 +1219,6 @@
                                      Foreground="{StaticResource Dark.Accent}"/>
                     </StackPanel>
                 </Border>
-                <Expander x:Name="SecurityAuditExpander" DockPanel.Dock="Top" Margin="0,0,0,8"
-                          Style="{StaticResource MaterialExpanderStyle}"
-                          Header="Security audit"
-                          IsExpanded="False">
-                    <Border Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
-                            BorderThickness="1" CornerRadius="2" Padding="8,6">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" x:Name="SecurityAuditStatusText" Foreground="#C8C8C8"
-                                       TextWrapping="Wrap" Text="No solutions scanned."/>
-                            <ProgressBar Grid.Row="1" x:Name="SecurityAuditProgress" Height="6" Margin="0,4,0,0"
-                                         Minimum="0" Maximum="100" Value="0"
-                                         Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
-                            <TextBlock Grid.Row="2" Text="Found solutions:" Foreground="#C8C8C8" Margin="0,6,0,2"/>
-                            <ListBox Grid.Row="3" x:Name="SecurityAuditSolutionsList" Height="120"
-                                     BorderThickness="0" Background="Transparent"
-                                     HorizontalContentAlignment="Stretch"/>
-                            <TextBox Grid.Row="4" x:Name="SecurityAuditMessagesBox" IsReadOnly="True"
-                                     AcceptsReturn="True" TextWrapping="Wrap" Height="100" Margin="0,6,0,0"
-                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-                        </Grid>
-                    </Border>
-                </Expander>
                 <Grid Margin="0,0,0,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1452,18 +1231,20 @@
                         <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
                               Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
                     </Button>
-                    <ScrollViewer Grid.Row="1" x:Name="SpecScroll"
-                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="SpecList" ItemTemplate="{StaticResource MessageTemplate}">
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <controls:ChatMessagesControl x:Name="SpecMessages" Grid.Row="1"/>
                 </Grid>
             </DockPanel>
         </TabItem>
 
         <TabItem Header="Converter">
-            <DockPanel>
-                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="PixMwfMapRow" Height="0"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*" MinHeight="80"/>
+                </Grid.RowDefinitions>
+                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
                     <Button Content="UiPath → MWF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
                     <Button Content="Convert PIX to MWF" Click="OnConvertPix" Margin="0,5,8,0"/>
                     <Button Content="Get All Activities From PIX" Click="OnGetAllActivitiesFromPix" Margin="0,5,8,0"/>
@@ -1472,12 +1253,16 @@
                     <Button Content="PIX to MWF map" Click="OnOpenPixMwfMap" Margin="0,5,8,0"/>
                     <Button Content="Clear" Click="OnClearConverter" Margin="0,5,8,0"/>
                 </WrapPanel>
-                <Border x:Name="PixMwfMapHost" DockPanel.Dock="Top" Margin="0,0,0,8"
+                <Border x:Name="PixMwfMapHost" Grid.Row="1" Margin="0,0,0,8"
                         BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
-                        Background="{StaticResource Dark.Panel}" Padding="8,6" Height="380" Visibility="Collapsed">
+                        Background="{StaticResource Dark.Panel}" Padding="8,6" Visibility="Collapsed">
                     <controls:PixMwfMappingControl x:Name="PixMwfMapControl"/>
                 </Border>
-                <Grid Margin="0,0,0,4">
+                <GridSplitter x:Name="PixMwfMapSplitter" Grid.Row="2" Height="5"
+                              HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ResizeDirection="Rows" ResizeBehavior="Previous"
+                              Visibility="Collapsed"/>
+                <Grid Grid.Row="3" Margin="0,0,0,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -1491,7 +1276,7 @@
                     </Button>
                     <controls:ChatMessagesControl x:Name="ConverterMessages" Grid.Row="1"/>
                 </Grid>
-            </DockPanel>
+            </Grid>
         </TabItem>
 
         <TabItem x:Name="KnowledgeBaseTab" Header="Knowledge base">

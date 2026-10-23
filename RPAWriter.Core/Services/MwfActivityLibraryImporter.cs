@@ -86,29 +86,26 @@ namespace RPAWriter.Core.Services
                         var fileName = Path.GetFileName(dll);
                         result.DllsScanned++;
 
-                        Assembly assembly;
                         try
                         {
-                            assembly = loadContext.LoadFromAssemblyPath(dll);
+                            var assembly = loadContext.LoadFromAssemblyPath(dll);
+                            var count = 0;
+                            foreach (var type in GetConcreteActivities(assembly, activityBase))
+                            {
+                                var descriptor = BuildDescriptor(type, fileName, existing);
+                                WriteDescriptor(targetDirectory, serializer, descriptor, result);
+                                importedNames.Add(descriptor.ActivityFullName);
+                                result.ActivitiesImported++;
+                                count++;
+                            }
+
+                            log("Scanned " + fileName + " — " + count + " activities.");
                         }
                         catch (Exception ex)
                         {
                             result.FailedAssemblies.Add(fileName);
-                            result.Errors.Add("Failed to load " + fileName + ": " + ex.Message);
-                            continue;
+                            result.Errors.Add("Failed to scan " + fileName + ": " + ex.Message);
                         }
-
-                        var count = 0;
-                        foreach (var type in GetConcreteActivities(assembly, activityBase))
-                        {
-                            var descriptor = BuildDescriptor(type, fileName, existing);
-                            WriteDescriptor(targetDirectory, serializer, descriptor, result);
-                            importedNames.Add(descriptor.ActivityFullName);
-                            result.ActivitiesImported++;
-                            count++;
-                        }
-
-                        log("Scanned " + fileName + " — " + count + " activities.");
                     }
                 }
             }
@@ -145,9 +142,35 @@ namespace RPAWriter.Core.Services
 
             var frameworkDir = FindFrameworkDirectory();
             if (!string.IsNullOrWhiteSpace(frameworkDir))
+            {
                 paths.AddRange(Directory.GetFiles(frameworkDir, "*.dll"));
 
+                // WPF assemblies (PresentationFramework.dll, PresentationCore.dll) live in a
+                // nested "WPF" folder of the .NET Framework runtime directory.
+                var wpfDir = Path.Combine(frameworkDir, "WPF");
+                if (Directory.Exists(wpfDir))
+                    paths.AddRange(Directory.GetFiles(wpfDir, "*.dll"));
+            }
+
+            AddReferenceAssemblies(paths);
+
             return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static void AddReferenceAssemblies(List<string> paths)
+        {
+            // Reference assemblies keep PresentationFramework, System.Xaml, WindowsBase and
+            // System.Activities together in one folder; prefer them when they are installed.
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            if (string.IsNullOrWhiteSpace(programFilesX86))
+                return;
+
+            var referenceRoot = Path.Combine(programFilesX86, "Reference Assemblies", "Microsoft", "Framework", ".NETFramework");
+            if (!Directory.Exists(referenceRoot))
+                return;
+
+            foreach (var versionDir in Directory.GetDirectories(referenceRoot, "v4*"))
+                paths.AddRange(Directory.GetFiles(versionDir, "*.dll"));
         }
 
         private static string FindFrameworkDirectory()
@@ -171,7 +194,31 @@ namespace RPAWriter.Core.Services
 
         private static IEnumerable<Type> GetConcreteActivities(Assembly assembly, Type activityBase)
         {
-            foreach (var type in assembly.GetExportedTypes())
+            Type[] types;
+            try
+            {
+                types = assembly.GetExportedTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                types = ex.Types.Where(t => t != null).ToArray();
+            }
+            catch (FileNotFoundException)
+            {
+                // A referenced assembly (e.g. PresentationFramework) could not be resolved while
+                // enumerating the exported types; fall back to the defined types so the remaining
+                // activities are still imported.
+                try
+                {
+                    types = assembly.DefinedTypes.Select(t => t.AsType()).ToArray();
+                }
+                catch
+                {
+                    yield break;
+                }
+            }
+
+            foreach (var type in types)
             {
                 if (type.IsAbstract)
                     continue;
@@ -183,12 +230,20 @@ namespace RPAWriter.Core.Services
 
         private static bool DerivesFromActivity(Type type, Type activityBase)
         {
-            if (activityBase != null && type == activityBase)
-                return false;
+            try
+            {
+                if (activityBase != null && type == activityBase)
+                    return false;
 
-            for (var current = type.BaseType; current != null; current = current.BaseType)
-                if (string.Equals(current.FullName, ActivityBaseFullName, StringComparison.Ordinal))
-                    return true;
+                for (var current = type.BaseType; current != null; current = current.BaseType)
+                    if (string.Equals(current.FullName, ActivityBaseFullName, StringComparison.Ordinal))
+                        return true;
+            }
+            catch
+            {
+                // Base type resolution can fail when a dependency is missing; treat the type as
+                // a non-activity rather than aborting the whole import.
+            }
 
             return false;
         }

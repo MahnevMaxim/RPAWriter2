@@ -33,14 +33,71 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Tools allowed for a mode AND whose permission category is enabled.</summary>
         public IReadOnlyList<IAgentTool> ForMode(AgentMode mode, AgentPermissions allowed)
         {
-            // Help is a pure support chat: it answers from the bundled documentation and exposes no tools.
-            if (mode == AgentMode.Help)
-                return new List<IAgentTool>();
-
             return _tools.Values
-                .Where(t => (mode == AgentMode.Act || !t.Mutates) && (allowed & t.Permission) != 0)
+                .Where(t => IsExecutable(t, mode, allowed))
                 .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Single source of truth for whether a tool may actually run in the given mode and with the
+        /// given enabled permissions. This is the enforcement boundary: the same predicate is used both
+        /// to expose tools to the model (<see cref="ForMode"/>) and to gate execution here, so a tool that
+        /// is hidden from the model can never be invoked.
+        /// </summary>
+        public bool TryGetExecutableTool(string name, AgentMode mode, AgentPermissions allowed, out IAgentTool tool, out string blockReason)
+        {
+            tool = Find(name);
+            if (tool == null)
+            {
+                blockReason = "Unknown tool: \"" + (name ?? "") + "\". Use one of the tools listed in the system prompt.";
+                return false;
+            }
+
+            if (!IsExecutable(tool, mode, allowed))
+            {
+                blockReason = mode == AgentMode.Help
+                    ? "Blocked: Help mode exposes no tools."
+                    : tool.Mutates && mode != AgentMode.Act
+                        ? "Blocked: this mutating tool is not allowed in Plan mode."
+                        : "Blocked: tool \"" + tool.Name + "\" requires the \"" + PermissionName(tool.Permission) + "\" permission, which is disabled in Settings.";
+                return false;
+            }
+
+            blockReason = null;
+            return true;
+        }
+
+        /// <summary>True when the tool is allowed to run for the given mode and enabled permission categories.</summary>
+        private static bool IsExecutable(IAgentTool tool, AgentMode mode, AgentPermissions allowed)
+        {
+            // Help is a pure support chat: it answers from the bundled documentation and exposes no tools.
+            if (mode == AgentMode.Help)
+                return false;
+
+            // Plan is read-only: mutating tools are never allowed.
+            if (tool.Mutates && mode != AgentMode.Act)
+                return false;
+
+            // Every tool is additionally gated by its permission category.
+            if ((allowed & tool.Permission) == 0)
+                return false;
+
+            return true;
+        }
+
+        private static string PermissionName(AgentPermissions permission)
+        {
+            switch (permission)
+            {
+                case AgentPermissions.ReadFiles: return "read files";
+                case AgentPermissions.EditFiles: return "edit files";
+                case AgentPermissions.ExecuteCommand: return "execute command";
+                case AgentPermissions.WebFetch: return "web fetch";
+                case AgentPermissions.Mcp: return "MCP";
+                case AgentPermissions.Subagents: return "sub-agents";
+                default: return "unknown";
+            }
         }
     }
 }

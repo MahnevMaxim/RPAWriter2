@@ -198,6 +198,58 @@ namespace RPAWriter.Core.Services
         }
 
         /// <summary>
+        /// Returns the full paths of robot solutions discovered across the robot folders that sit at
+        /// the same level as <paramref name="directory"/>. Both the directory itself and its parent are
+        /// inspected: flat <c>RPA-&lt;number&gt;.sln/.slnx</c> files in the directory, and the same files
+        /// inside every subfolder whose name starts with an uppercase "RPA-" prefix. This makes the audit
+        /// cover the currently open robot solution together with its sibling robot folders.
+        /// Results are deduplicated and sorted by name.
+        /// </summary>
+        public static IReadOnlyList<string> FindRobotSolutionsInSiblingFolders(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return Array.Empty<string>();
+
+            var roots = new List<string> { directory };
+            var parent = Directory.GetParent(directory);
+            if (parent != null)
+                roots.Add(parent.FullName);
+
+            var solutions = new List<string>();
+            foreach (var root in roots.Distinct(StringComparer.OrdinalIgnoreCase))
+                solutions.AddRange(FindRobotSolutionsInRootAndRobotSubfolders(root));
+
+            return solutions
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Collects flat robot solutions from <paramref name="root"/> and from each of its subfolders
+        /// whose name starts with an uppercase "RPA-" prefix.
+        /// </summary>
+        private static IEnumerable<string> FindRobotSolutionsInRootAndRobotSubfolders(string root)
+        {
+            var results = new List<string>(FindRobotSolutions(root));
+
+            string[] subdirectories;
+            try { subdirectories = Directory.GetDirectories(root); }
+            catch { return results; }
+
+            foreach (var sub in subdirectories)
+            {
+                var name = Path.GetFileName(sub.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (!name.StartsWith("RPA-", StringComparison.Ordinal))
+                    continue;
+
+                results.AddRange(FindRobotSolutions(sub));
+            }
+
+            return results;
+        }
+
+        /// <summary>
         /// Returns true when <paramref name="fileName"/> matches the robot solution pattern:
         /// starts with an uppercase "RPA-" followed by one or more digits, then ".sln" or ".slnx".
         /// </summary>
