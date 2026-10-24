@@ -37,6 +37,12 @@ namespace RPAWriter.Core.Services
             "RPAWriter2",
             "pix-mwf-map.json");
 
+        /// <summary>
+        /// Process-wide shared store used by both the Converter tool window (manual mapping UI)
+        /// and the chat's native mapping tools so they always read and write the same document.
+        /// </summary>
+        public static PixMwfMappingStore Shared { get; } = new PixMwfMappingStore();
+
         /// <summary>Full path of the file this store reads and writes.</summary>
         public string FilePath => _filePath;
 

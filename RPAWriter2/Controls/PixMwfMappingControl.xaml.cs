@@ -47,7 +47,7 @@ namespace RPAWriter2.Controls
             "If no MWF argument fits an argument, unmap it by passing an empty mwf_argument. " +
             "After all assignments, answer with a short summary. Do not invent arguments that are not listed.";
 
-        private readonly PixMwfMappingStore _store = new PixMwfMappingStore();
+        private readonly PixMwfMappingStore _store;
         private readonly ObservableCollection<PixMwfMappingRow> _rows = new ObservableCollection<PixMwfMappingRow>();
         private ICollectionView _view;
         private ListCollectionView _listView;
@@ -56,8 +56,13 @@ namespace RPAWriter2.Controls
         private ISet<string> _onlyActivityNames;
         private CancellationTokenSource _aiCts;
 
-        public PixMwfMappingControl()
+        public PixMwfMappingControl() : this(PixMwfMappingStore.Shared)
         {
+        }
+
+        public PixMwfMappingControl(PixMwfMappingStore store)
+        {
+            _store = store ?? throw new ArgumentNullException(nameof(store));
             InitializeComponent();
 
             DataContext = this;

@@ -1236,49 +1236,6 @@
             </DockPanel>
         </TabItem>
 
-        <TabItem Header="Converter">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition x:Name="PixMwfMapRow" Height="0"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*" MinHeight="80"/>
-                </Grid.RowDefinitions>
-                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <Button Content="UiPath → MWF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
-                    <Button Content="Convert PIX to MWF" Click="OnConvertPix" Margin="0,5,8,0"/>
-                    <Button Content="Get All Activities From PIX Folder" Click="OnGetAllActivitiesFromPix" Margin="0,5,8,0"/>
-                    <Button Content="Import PIX activities (rewrite library)" Click="OnImportPixActivities" Margin="0,5,8,0"/>
-                    <Button Content="Get All MWF Activities" Click="OnGetAllMwfActivities" Margin="0,5,8,0"/>
-                    <Button Content="PIX to MWF map" Click="OnOpenPixMwfMap" Margin="0,5,8,0"/>
-                    <Button Content="Clear" Click="OnClearConverter" Margin="0,5,8,0"/>
-                </WrapPanel>
-                <Border x:Name="PixMwfMapHost" Grid.Row="1" Margin="0,0,0,8"
-                        BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
-                        Background="{StaticResource Dark.Panel}" Padding="8,6" Visibility="Collapsed">
-                    <controls:PixMwfMappingControl x:Name="PixMwfMapControl"/>
-                </Border>
-                <GridSplitter x:Name="PixMwfMapSplitter" Grid.Row="2" Height="5"
-                              HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                              ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                              Visibility="Collapsed"/>
-                <Grid Grid.Row="3" Margin="0,0,0,4">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Button x:Name="CopyConverterAllButton" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
-                            Margin="0,0,0,4"
-                            Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                            ToolTip="Copy all" Click="OnCopyConverterOutput" Visibility="Collapsed">
-                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
-                    </Button>
-                    <controls:ChatMessagesControl x:Name="ConverterMessages" Grid.Row="1"/>
-                </Grid>
-            </Grid>
-        </TabItem>
-
         <TabItem x:Name="KnowledgeBaseTab" Header="Knowledge base">
             <Grid>
                 <Grid.RowDefinitions>
@@ -1355,6 +1312,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -1561,6 +1519,17 @@
                     <Button Content="Save settings" Margin="0,0,8,0" Click="OnSaveSettings"/>
                     <Button Content="Refresh prompts from disk" Click="OnRefreshPromptsFromDisk"/>
                 </StackPanel>
+                <Button Grid.Row="43" Grid.Column="0" Grid.ColumnSpan="2" Content="Open RPA Writer Converter →"
+                        HorizontalAlignment="Left" Margin="0,12,0,0"
+                        Background="Transparent" BorderThickness="0" Foreground="#64B5F6" Cursor="Hand"
+                        Click="OnOpenConverterToolWindow">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <TextBlock Text="{TemplateBinding Content}" TextDecorations="Underline"
+                                       Foreground="{TemplateBinding Foreground}" Cursor="Hand"/>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
                 </Grid>
             </ScrollViewer>
             </Grid>

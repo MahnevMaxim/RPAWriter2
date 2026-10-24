@@ -1,6 +1,6 @@
-# 11. Вкладка Converter
+# 11. Окно инструментов Converter
 
-Вкладка **Converter** — универсальный конвертер роботов в Windows Workflow Foundation (WF/MWF): перенос роботов **UiPath** и **PIX** в обычный XAML + C#, импорт библиотек активностей и ручной/AI-маппинг активностей PIX на WF.
+Окно инструментов **Converter** (View → Other Windows → RPA Writer Converter) — универсальный конвертер роботов в Windows Workflow Foundation (WF/MWF): перенос роботов **UiPath** и **PIX** в обычный XAML + C#, импорт библиотек активностей и ручной/AI-маппинг активностей PIX на WF.
 
 ## Кнопки
 

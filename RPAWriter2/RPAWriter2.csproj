@@ -149,4 +149,7 @@
       <Generator>VsctGenerator</Generator>
     </VSCTCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="RpaConverter\" />
+  </ItemGroup>
 </Project>
