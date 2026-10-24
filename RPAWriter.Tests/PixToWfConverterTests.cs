@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
@@ -223,6 +224,65 @@ namespace RPAWriter.Tests
 
             Assert.That(plan.Root.Children[0].Kind, Is.EqualTo(ActivityNodeKind.Assign));
             Assert.That(warnings, Does.Contain("Mapped MWF activity \"My.Custom.WfActivity\" for \"BR.Core.Base.Assign\" is not a supported WF activity; kept the built-in mapping."));
+        }
+
+        [Test]
+        public void Convert_WithArgumentMapping_AppliesRenameAndConversion()
+        {
+            var root = FindActivityLibrary();
+            var argumentMappings = new Dictionary<string, IReadOnlyList<PixMwfArgumentMapping>>(StringComparer.OrdinalIgnoreCase)
+            {
+                {
+                    "Some.Unknown.Activity",
+                    new List<PixMwfArgumentMapping>
+                    {
+                        new PixMwfArgumentMapping
+                        {
+                            PixArgument = "Text",
+                            MwfArgument = "Message",
+                            Conversion = ConversionKind.ToString
+                        }
+                    }
+                }
+            };
+
+            var converter = new PixToWfConverter(
+                new PixActivityLibrary(Path.Combine(root, "pix")),
+                new WfSnippetLibrary(Path.Combine(root, "wf")),
+                null,
+                argumentMappings);
+
+            var pix = """
+                <Script xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.datacontract.org/2004/07/BR.Logic">
+                  <Name>Args.pix</Name>
+                  <Logic i:type="ExecutedStep">
+                    <Childs>
+                      <AbstractStep i:type="ExecutedStep">
+                        <Childs />
+                        <PropertyValues>
+                          <PropertyValue><PropertyName>Text</PropertyName><_dataType>Expression</_dataType><_expression>hello</_expression></PropertyValue>
+                        </PropertyValues>
+                        <Text></Text>
+                        <_activityFullName>Some.Unknown.Activity</_activityFullName>
+                      </AbstractStep>
+                    </Childs>
+                    <PropertyValues />
+                    <Text></Text>
+                    <_activityFullName>BR.Core.Base.Container</_activityFullName>
+                  </Logic>
+                </Script>
+                """;
+
+            var warnings = new List<string>();
+            var plan = converter.ConvertToPlan(pix, warnings);
+            var node = plan.Root.Children[0];
+
+            Assert.That(node.Kind, Is.EqualTo(ActivityNodeKind.InvokeMethod));
+
+            var arg = node.Arguments.FirstOrDefault(a => a.Parameter == "Message");
+            Assert.That(arg, Is.Not.Null);
+            Assert.That(arg.Value, Is.EqualTo("(hello).ToString()"));
+            Assert.That(warnings, Does.Contain("Applied conversion ToString to argument Text → Message of Some.Unknown.Activity."));
         }
 
         [Test]

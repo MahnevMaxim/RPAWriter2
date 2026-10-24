@@ -292,6 +292,18 @@ namespace RPAWriter.Core.Models
 
         /// <summary>.NET type of the PIX property (e.g. System.String, System.Data.DataTable).</summary>
         public string Type { get; set; }
+
+        /// <summary>Human-readable argument name shown in the mapping UI.</summary>
+        public string DisplayName { get; set; }
+
+        /// <summary>Argument description used by the UI and the AI mapping prompts.</summary>
+        public string Description { get; set; }
+
+        /// <summary>True when the argument is required (from attribute metadata, when available).</summary>
+        public bool IsRequired { get; set; }
+
+        /// <summary>Default value of the argument (from attribute metadata, when available).</summary>
+        public string DefaultValue { get; set; }
     }
 
     /// <summary>Describes how one PIX activity maps to a Workflow Foundation snippet.</summary>
@@ -364,6 +376,21 @@ namespace RPAWriter.Core.Models
 
         /// <summary>.NET type of the property (e.g. System.Activities.InArgument&lt;System.String&gt;).</summary>
         public string Type { get; set; }
+
+        /// <summary>Human-readable argument name shown in the mapping UI.</summary>
+        public string DisplayName { get; set; }
+
+        /// <summary>Argument description used by the UI and the AI mapping prompts.</summary>
+        public string Description { get; set; }
+
+        /// <summary>Data-flow direction: In | Out | InOut | Property. Empty when unknown.</summary>
+        public string Direction { get; set; }
+
+        /// <summary>True when the argument is required (from attribute metadata, when available).</summary>
+        public bool IsRequired { get; set; }
+
+        /// <summary>Default value of the argument (from attribute metadata, when available).</summary>
+        public string DefaultValue { get; set; }
     }
 
     /// <summary>Describes one Workflow Foundation activity discovered in Activities.*.dll.</summary>

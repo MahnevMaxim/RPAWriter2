@@ -49,39 +49,28 @@
             </Setter>
         </Style>
 
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+        <Style TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="6,3"/>
-            <Setter Property="MinHeight" Value="24"/>
-        </Style>
-
-        <Style TargetType="ListView">
-            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-        </Style>
-
-        <Style TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListViewItem">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                            <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{TemplateBinding GridView.ColumnCollection}"/>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger Property="IsHighlighted" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.Accent}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#6F6F6F"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -89,27 +78,151 @@
             </Setter>
         </Style>
 
-        <Style TargetType="GridViewColumnHeader">
+        <ControlTemplate x:Key="ComboBoxToggleButton" TargetType="ToggleButton">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                <Path x:Name="Arrow" Fill="{StaticResource Dark.Text}"
+                      HorizontalAlignment="Right" VerticalAlignment="Center"
+                      Margin="0,0,6,0" Data="M 0 0 L 3.5 4 L 7 0 Z"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid SnapsToDevicePixels="True">
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Template="{StaticResource ComboBoxToggleButton}"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            <ContentPresenter x:Name="ContentSite"
+                                              Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                <Grid x:Name="DropDown" SnapsToDevicePixels="True"
+                                      MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder"
+                                            Background="{StaticResource Dark.Panel}"
+                                            BorderBrush="{StaticResource Dark.Border}"
+                                            BorderThickness="1"/>
+                                    <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="RowBackground" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
             <Setter Property="BorderThickness" Value="0,0,1,1"/>
             <Setter Property="Padding" Value="6,4"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Dark.Accent}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </UserControl.Resources>
 
     <DockPanel Background="{StaticResource Dark.Window}">
         <Border DockPanel.Dock="Top" Margin="0,0,0,6">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Close" Click="OnClose" Margin="8,0,0,0"/>
-                <WrapPanel>
-                    <Button x:Name="AiMapButton" Content="AI Map" Click="OnAiMap" Margin="0,0,8,0" ToolTip="Send all activities to the AI provider and let it assign mappings"/>
-                    <Button x:Name="SaveButton" Content="Save" Click="OnSave" Margin="0,0,8,0"/>
-                    <Button x:Name="ReloadButton" Content="Reload" Click="OnReload" Margin="0,0,8,0"/>
-                    <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" IsEnabled="False"/>
-                </WrapPanel>
-            </DockPanel>
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Close" Click="OnClose" Margin="8,0,0,0"/>
+                    <WrapPanel>
+                        <Button x:Name="AiMapButton" Content="AI Map" Click="OnAiMap" Margin="0,0,8,0" ToolTip="Send all activities to the AI provider and let it assign mappings"/>
+                        <Button x:Name="AiMapArgumentsButton" Content="AI Map arguments" Click="OnAiMapArguments" Margin="0,0,8,0" ToolTip="Send mapped activities with their arguments to the AI provider and let it map arguments"/>
+                        <Button x:Name="SaveButton" Content="Save" Click="OnSave" Margin="0,0,8,0"/>
+                        <Button x:Name="SaveAsButton" Content="Save As…" Click="OnSaveAs" Margin="0,0,8,0"/>
+                        <Button x:Name="ReloadButton" Content="Reload" Click="OnReload" Margin="0,0,8,0"/>
+                        <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" IsEnabled="False"/>
+                    </WrapPanel>
+                </DockPanel>
+                <StackPanel Margin="0,6,0,0">
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock DockPanel.Dock="Left" Text="PIX activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Button DockPanel.Dock="Right" x:Name="ClearFilterButton" Content="Clear filter" Click="OnClearFilter" Margin="8,0,0,0"/>
+                        <TextBox x:Name="FilterBox" VerticalContentAlignment="Center" Padding="4,2"
+                                 ToolTip="Filter table rows by PIX activity full name or display name"
+                                 TextChanged="OnFilterTextChanged"/>
+                    </DockPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="MWF activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Button DockPanel.Dock="Right" x:Name="ClearMwfFilterButton" Content="Clear filter" Click="OnClearMwfFilter" Margin="8,0,0,0"/>
+                        <TextBox x:Name="MwfFilterBox" VerticalContentAlignment="Center" Padding="4,2"
+                                 ToolTip="Filter the MWF activity drop-down by full name, display name or description"
+                                 TextChanged="OnMwfFilterTextChanged"/>
+                    </DockPanel>
+                </StackPanel>
+            </StackPanel>
         </Border>
 
         <Border DockPanel.Dock="Bottom" Margin="0,6,0,0">
@@ -117,36 +230,113 @@
         </Border>
 
         <Grid>
-            <ListView x:Name="MapList" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListView.View>
-                    <GridView>
-                        <GridViewColumn Header="PIX Activity" Width="220" DisplayMemberBinding="{Binding PixFullName}"/>
-                        <GridViewColumn Header="PIX Name" Width="160" DisplayMemberBinding="{Binding PixDisplayName}"/>
-                        <GridViewColumn Header="MWF Activity" Width="300">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ComboBox
-                                        ItemsSource="{Binding DataContext.MwfActivities, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                        DisplayMemberPath="ActivityFullName"
-                                        SelectedValuePath="ActivityFullName"
-                                        SelectedValue="{Binding MwfFullName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        IsDropDownOpen="{Binding IsPickerOpen, Mode=TwoWay}"
-                                        ToolTip="{Binding MwfDescription}"
-                                        MinWidth="240"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="MWF Description" Width="280" DisplayMemberBinding="{Binding MwfDescription}"/>
-                        <GridViewColumn Header="" Width="90">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding ActionLabel}" Click="OnRowAction" Tag="{Binding}" Padding="8,2"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                    </GridView>
-                </ListView.View>
-            </ListView>
+            <DataGrid x:Name="MapList"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserResizeRows="False"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal"
+                      RowHeaderWidth="0"
+                      RowDetailsVisibilityMode="Collapsed"
+                      HorizontalScrollBarVisibility="Auto"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      LoadingRow="OnMapListLoadingRow">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="PIX Activity" Binding="{Binding PixFullName}" Width="220" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="Args" Width="70">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding DetailsLabel}" Click="OnToggleDetails" Tag="{Binding}" Padding="8,2"
+                                        ToolTip="Show/hide PIX and MWF activity arguments (name, type, direction)"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="PIX Name" Binding="{Binding PixDisplayName}" Width="160" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="MWF Activity" Width="300">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox
+                                    ItemsSource="{Binding DataContext.MwfActivities, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    DisplayMemberPath="ActivityFullName"
+                                    SelectedValuePath="ActivityFullName"
+                                    SelectedValue="{Binding MwfFullName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    IsDropDownOpen="{Binding IsPickerOpen, Mode=TwoWay}"
+                                    ToolTip="{Binding MwfDescription}"
+                                    MinWidth="240"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="MWF Description" Binding="{Binding MwfDescription}" Width="280" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding ActionLabel}" Click="OnRowAction" Tag="{Binding}" Padding="8,2"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+                <DataGrid.RowDetailsTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}" BorderThickness="0,1,0,1" Padding="12,8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Arguments" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <Button Content="{Binding ArgumentMappingToggleLabel}" Click="OnToggleArgumentMapping" Tag="{Binding}"
+                                            Padding="8,2" IsEnabled="{Binding IsMapped}" ToolTip="Map PIX arguments to MWF arguments"/>
+                                    <Button Content="Auto-match" Click="OnAutoMatchArguments" Tag="{Binding}" Padding="8,2" Margin="8,0,0,0"
+                                            Visibility="{Binding ArgumentMappingVisibility}" ToolTip="Match unmapped arguments by name, then by type"/>
+                                </StackPanel>
+
+                                <Grid Grid.Row="1" Visibility="{Binding ArgumentsListVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                        <TextBlock Text="PIX arguments" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding PixArgumentsText}" FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Top" Foreground="#C8C8C8"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="MWF arguments" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding MwfArgumentsText}" FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Top" Foreground="#C8C8C8"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding ArgumentMappings}" Visibility="{Binding ArgumentMappingVisibility}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="260"/>
+                                                    <ColumnDefinition Width="240"/>
+                                                    <ColumnDefinition Width="130"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding PixDisplay}" FontFamily="Consolas" TextWrapping="Wrap"
+                                                           VerticalAlignment="Top" Margin="0,0,10,0" ToolTip="{Binding PixDescription}"/>
+                                                <ComboBox Grid.Column="1" ItemsSource="{Binding MwfArguments}" DisplayMemberPath="Display" SelectedValuePath="Name"
+                                                          SelectedValue="{Binding MwfArgument, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="200"/>
+                                                <ComboBox Grid.Column="2" ItemsSource="{Binding ConversionOptions}" DisplayMemberPath="Label" SelectedValuePath="Kind"
+                                                          SelectedValue="{Binding Conversion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,0"/>
+                                                <TextBox Grid.Column="3" Text="{Binding ConversionExpression, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         IsEnabled="{Binding IsExpressionEnabled}" VerticalAlignment="Top"
+                                                         ToolTip="Format string or custom C# expression; {0} is the source value"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </DataGrid.RowDetailsTemplate>
+            </DataGrid>
             <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="{StaticResource Dark.Text}" Visibility="Collapsed"
                        Text="No PIX activities loaded. Click Reload after importing the PIX/MWF libraries."/>

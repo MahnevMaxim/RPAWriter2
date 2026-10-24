@@ -71,5 +71,35 @@ namespace RPAWriter.Core.Services
 
             return result;
         }
+
+        /// <summary>
+        /// Writes (or overwrites) the descriptor JSON for a single activity so it becomes
+        /// known to the library. Used to append activities discovered in a scanned PIX
+        /// robot folder that are not yet part of the library. No-op for a null descriptor
+        /// or a descriptor without an activity full name.
+        /// </summary>
+        public void EnsureDescriptor(PixActivityDescriptor descriptor)
+        {
+            if (descriptor == null || string.IsNullOrWhiteSpace(descriptor.ActivityFullName) ||
+                string.IsNullOrWhiteSpace(_directory))
+                return;
+
+            try
+            {
+                Directory.CreateDirectory(_directory);
+                var path = Path.Combine(_directory, descriptor.ActivityFullName.Trim() + ".json");
+                var json = JsonConvert.SerializeObject(descriptor, Formatting.Indented,
+                    new JsonSerializerSettings
+                    {
+                        ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver()
+                    });
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+            }
+            catch
+            {
+                // The library may be read-only (e.g. deployed next to the VSIX); the activity
+                // then remains available only through the in-memory mapping table rows.
+            }
+        }
     }
 }

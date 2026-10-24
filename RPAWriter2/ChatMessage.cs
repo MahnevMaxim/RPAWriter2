@@ -127,6 +127,9 @@ namespace RPAWriter2
         /// <summary>When this entry was created (UTC).</summary>
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
+        /// <summary>When this entry was created, converted to local time for display.</summary>
+        public DateTime TimestampLocal => TimestampUtc.ToLocalTime();
+
         public bool HasReasoning => !string.IsNullOrWhiteSpace(Reasoning);
 
         /// <summary>True when the reasoning expander should be visible: while thinking or when reasoning exists.</summary>

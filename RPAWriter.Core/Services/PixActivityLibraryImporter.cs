@@ -414,11 +414,16 @@ namespace RPAWriter.Core.Services
                 if (!IsActivityParameterDeclaringType(property.DeclaringType))
                     continue;
 
+                var attributes = ActivityMetadata.ReadAttributes(property);
                 result.Add(new PixActivityParameter
                 {
                     Pix = property.Name,
                     Target = "Argument",
-                    Type = SimplifyTypeName(property.PropertyType)
+                    Type = SimplifyTypeName(property.PropertyType),
+                    DisplayName = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DisplayNameAttribute"),
+                    Description = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DescriptionAttribute"),
+                    IsRequired = ActivityMetadata.HasAttribute(attributes, "System.ComponentModel.DataAnnotations.RequiredAttribute"),
+                    DefaultValue = ActivityMetadata.ReadDefaultValue(attributes, "System.ComponentModel.DefaultValueAttribute")
                 });
             }
 

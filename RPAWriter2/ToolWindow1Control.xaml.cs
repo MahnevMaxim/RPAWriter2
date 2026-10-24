@@ -169,6 +169,7 @@ namespace RPAWriter2
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
             PixMwfMapControl.CloseRequested += OnPixMwfMapClosed;
+            PixMwfMapControl.Log = AppendConverterText;
             _mic = new MicrophoneRecorder();
             _mic.LevelChanged += OnMicLevelChanged;
             _stt = SpeechToTextFactory.Create(_settings);
@@ -434,13 +435,16 @@ namespace RPAWriter2
 
         private void AppendConverterMessage(ChatMessage message)
         {
-            if (!Dispatcher.CheckAccess())
+            // Always route through the dispatcher queue so every append takes the same
+            // FIFO path. Mixing direct UI-thread appends with queued BeginInvoke appends
+            // (from background tasks) causes reordering: a summary appended directly on
+            // the UI thread can overtake per-assembly "Scanned ..." lines that are still
+            // sitting in the queue.
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                Dispatcher.BeginInvoke(new Action(() => AppendConverterMessage(message)));
-                return;
-            }
-            ConverterMessages.Append(message);
-            CopyConverterAllButton.Visibility = Visibility.Visible;
+                ConverterMessages.Append(message);
+                CopyConverterAllButton.Visibility = Visibility.Visible;
+            }));
         }
 
         private void AppendConverterText(string text)
@@ -475,6 +479,11 @@ namespace RPAWriter2
         private void OnOpenPixMwfMap(object sender, RoutedEventArgs e)
         {
             PixMwfMapControl.LoadData();
+            ShowPixMwfMap();
+        }
+
+        private void ShowPixMwfMap()
+        {
             PixMwfMapHost.Visibility = Visibility.Visible;
             PixMwfMapSplitter.Visibility = Visibility.Visible;
             PixMwfMapRow.MinHeight = 120;
@@ -2098,14 +2107,34 @@ namespace RPAWriter2
                                     ", distinct activities: " + result.Occurrences.Count +
                                     ", parse errors: " + result.ParseErrors.Count + ".");
 
-                var known = new PixActivityLibrary().GetKnownActivityNames();
+                var library = new PixActivityLibrary();
+                var known = library.GetKnownActivityNames();
                 var missing = result.Occurrences
                     .Where(kv => !known.Contains(kv.Key))
                     .OrderByDescending(kv => kv.Value)
                     .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                // Append activities used by the robots but not yet known to the library, so
+                // they show up in the PIX → MWF mapping table and can be mapped.
+                var added = 0;
+                foreach (var activity in result.Occurrences.Keys)
+                {
+                    if (known.Contains(activity))
+                        continue;
+
+                    library.EnsureDescriptor(new PixActivityDescriptor
+                    {
+                        ActivityFullName = activity,
+                        DefaultDisplayName = activity,
+                        Role = "statement"
+                    });
+                    added++;
+                }
+
                 AppendConverterText(BuildPixScanSummaryText(folder, result, missing));
+                if (added > 0)
+                    AppendConverterText("Appended " + added + " new activity descriptor(s) to the PIX library.");
 
                 foreach (var m in missing)
                     LogService.Warn("Missing PIX activity: " + m.Key + " (occurrences: " + m.Value + ")");
@@ -2118,6 +2147,11 @@ namespace RPAWriter2
                     AppendConverterText("Report written to: " + reportPath);
                     LogService.Info("PIX activities report written to: " + reportPath);
                 }
+
+                // Show the mapping table filtered to only the activities found in this folder.
+                PixMwfMapControl.LoadData();
+                PixMwfMapControl.SetFolderActivitiesFilter(result.Occurrences.Keys);
+                ShowPixMwfMap();
             }
             catch (Exception ex)
             {
@@ -3840,6 +3874,7 @@ namespace RPAWriter2
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
                 () => _mode);
+            factory.PixMwfStore = PixMwfMapControl?.Store;
             return factory.CreateRegistry();
         }
 

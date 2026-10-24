@@ -79,6 +79,13 @@ namespace RPAWriter2.Services.AgentTools
             _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
             _getMode = getMode ?? throw new ArgumentNullException(nameof(getMode));
         }
+
+        /// <summary>
+        /// Shared PIX → MWF mapping store. The argument-mapping tools read/write it so the
+        /// AI maps the same document the mapping control edits. Null until the host wires it.
+        /// </summary>
+        public PixMwfMappingStore? PixMwfStore { get; set; }
+
         public AgentToolRegistry CreateRegistry()
         {
             var registry = new AgentToolRegistry();
@@ -161,8 +168,80 @@ namespace RPAWriter2.Services.AgentTools
             // ---- Mutating tools (Act only, permission-gated) ----
             registry.Register(new AgentTool("run_commands", """Run non-interactive shell commands from the root of the workspace in Windows environment. Use for listing files, checking git status, running builds, executing tests, etc. Commands must be non-interactive. Commands that require follow-up input like pagers should be skipped or used with supported flags/env (e.g. git --no-pager, --non-interactive) to bypass the interaction steps. Output beyond ~47k characters is middle-truncated (start and end preserved); filter output when you need specific sections. Commands run through Windows PowerShell (powershell.exe); quote paths and arguments for powershell.exe and use ';' to sequence commands. Write commands directly; do not wrap them in another powershell.exe -Command invocation. Only start another shell when you intentionally need a different shell or a separate process. Include multiple commands in the same call when they are independent and safe to run concurrently. When independent reads, searches, or edits are also needed, call those tools in the same response.""", "{\"commands\":[\"string\"]}", true, RunCommandsAsync, permission: AgentPermissions.ExecuteCommand));
             registry.Register(new AgentTool("download_file", "Download a file from a URL and save it to disk.", "{\"url\":\"string\",\"path\":\"string\"}", true, DownloadFileAsync, permission: AgentPermissions.WebFetch));
+            registry.Register(new AgentTool("list_pix_mwf_activities", "List the PIX and MWF activities known to the converter libraries together with their full argument descriptions (name, type, direction, description, required, default value). Use this to obtain the data needed to match PIX arguments to MWF arguments.", "{}", false, ListPixMwfActivitiesAsync));
+            registry.Register(new AgentTool("map_pix_mwf_arguments", "Map one PIX activity argument to one MWF activity argument in the PIX to MWF mapping store. pix_activity and pix_argument are required. Pass an empty mwf_argument to unmap. conversion is one of None, ToString, Parse, DateTimeFormat, Custom; conversion_expression is the format string or a custom C# expression template where {0} is the source value.", "{\"pix_activity\":\"string\",\"pix_argument\":\"string\",\"mwf_argument?\":\"string\",\"conversion?\":\"string\",\"conversion_expression?\":\"string\"}", true, MapPixMwfArgumentsAsync));
 
             return registry;
+        }
+
+        private Task<string> ListPixMwfActivitiesAsync(JObject args, CancellationToken ct)
+        {
+            var pixLibrary = new PixActivityLibrary();
+            var mwfLibrary = new MwfActivityLibrary();
+
+            var pix = pixLibrary.GetKnownActivityNames()
+                .Select(pixLibrary.Load)
+                .Where(d => d != null)
+                .OrderBy(d => d.ActivityFullName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var mwf = mwfLibrary.GetKnownActivityNames()
+                .Select(mwfLibrary.Load)
+                .Where(d => d != null)
+                .OrderBy(d => d.ActivityFullName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var payload = new JObject
+            {
+                ["pix"] = JArray.FromObject(pix),
+                ["mwf"] = JArray.FromObject(mwf)
+            };
+
+            return Task.FromResult(payload.ToString(Formatting.Indented));
+        }
+
+        private Task<string> MapPixMwfArgumentsAsync(JObject args, CancellationToken ct)
+        {
+            var store = PixMwfStore;
+            if (store == null)
+                return Task.FromResult("Error: the PIX to MWF mapping store is not available.");
+
+            var pixActivity = args["pix_activity"]?.Value<string>() ?? string.Empty;
+            var pixArgument = args["pix_argument"]?.Value<string>() ?? string.Empty;
+            var mwfArgument = args["mwf_argument"]?.Value<string>() ?? string.Empty;
+            var conversionText = args["conversion"]?.Value<string>() ?? "None";
+            var expression = args["conversion_expression"]?.Value<string>() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(pixActivity) || string.IsNullOrWhiteSpace(pixArgument))
+                return Task.FromResult("Error: pix_activity and pix_argument are required.");
+
+            if (!TryParseConversion(conversionText, out var conversion))
+                return Task.FromResult("Error: unknown conversion \"" + conversionText + "\". Use None, ToString, Parse, DateTimeFormat or Custom.");
+
+            store.SetArgumentMapping(
+                pixActivity,
+                pixArgument,
+                string.IsNullOrWhiteSpace(mwfArgument) ? null : mwfArgument,
+                conversion,
+                string.IsNullOrWhiteSpace(expression) ? null : expression);
+
+            return Task.FromResult(string.IsNullOrWhiteSpace(mwfArgument)
+                ? "Unmapped argument " + pixArgument + " of " + pixActivity + "."
+                : "Mapped " + pixActivity + "." + pixArgument + " → " + mwfArgument + " (" + conversion + ").");
+        }
+
+        private static bool TryParseConversion(string text, out ConversionKind conversion)
+        {
+            switch ((text ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "none": conversion = ConversionKind.None; return true;
+                case "tostring": conversion = ConversionKind.ToString; return true;
+                case "parse": conversion = ConversionKind.Parse; return true;
+                case "datetimeformat":
+                case "datetime": conversion = ConversionKind.DateTimeFormat; return true;
+                case "custom": conversion = ConversionKind.Custom; return true;
+                default: conversion = ConversionKind.None; return false;
+            }
         }
 
         private async Task<string> AskQuestionAsync(JObject args, CancellationToken ct)

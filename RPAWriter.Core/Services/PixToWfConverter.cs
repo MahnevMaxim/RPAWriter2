@@ -20,14 +20,15 @@ namespace RPAWriter.Core.Services
         private readonly SnippetWorkflowEmitter _emitter;
         private readonly RobotGenerator _generator;
         private readonly IReadOnlyDictionary<string, string> _mappings;
+        private readonly IReadOnlyDictionary<string, IReadOnlyList<PixMwfArgumentMapping>> _argumentMappings;
         private readonly List<string> _appliedMappings = new List<string>();
 
-        public PixToWfConverter() : this(new PixActivityLibrary(), new WfSnippetLibrary(), null)
+        public PixToWfConverter() : this(new PixActivityLibrary(), new WfSnippetLibrary(), null, null)
         {
         }
 
         public PixToWfConverter(PixActivityLibrary pixLibrary, WfSnippetLibrary snippets)
-            : this(pixLibrary, snippets, null)
+            : this(pixLibrary, snippets, null, null)
         {
         }
 
@@ -40,11 +41,25 @@ namespace RPAWriter.Core.Services
             PixActivityLibrary pixLibrary,
             WfSnippetLibrary snippets,
             IReadOnlyDictionary<string, string> pixToMwfMappings)
+            : this(pixLibrary, snippets, pixToMwfMappings, null)
+        {
+        }
+
+        /// <summary>
+        /// Creates a converter that also honors argument-level mappings (PIX argument → MWF
+        /// argument with an optional conversion), keyed by PIX activity full name.
+        /// </summary>
+        public PixToWfConverter(
+            PixActivityLibrary pixLibrary,
+            WfSnippetLibrary snippets,
+            IReadOnlyDictionary<string, string> pixToMwfMappings,
+            IReadOnlyDictionary<string, IReadOnlyList<PixMwfArgumentMapping>> argumentMappings)
         {
             _pixLibrary = pixLibrary ?? throw new ArgumentNullException(nameof(pixLibrary));
             _emitter = new SnippetWorkflowEmitter(snippets ?? throw new ArgumentNullException(nameof(snippets)));
             _generator = new RobotGenerator();
             _mappings = pixToMwfMappings ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _argumentMappings = argumentMappings ?? new Dictionary<string, IReadOnlyList<PixMwfArgumentMapping>>(StringComparer.OrdinalIgnoreCase);
         }
 
         public PixConversionResult Convert(string pixXml)
@@ -114,6 +129,8 @@ namespace RPAWriter.Core.Services
                 node.ClassName = "RpaActions";
                 node.MethodName = MapMethodName(LastSegment(fullName));
                 node.Name = ReadText(step) ?? "Unknown activity";
+                node.Arguments = ReadArguments(step);
+                ApplyArgumentMappings(node, fullName, warnings);
                 warnings.Add("Unknown PIX activity \"" + fullName + "\" mapped to InvokeMethod " + node.MethodName + ".");
                 return node;
             }
@@ -171,6 +188,7 @@ namespace RPAWriter.Core.Services
                     _appliedMappings.Add(fullName + " → " + mappedActivity);
                     ApplyParameters(node, descriptor, step);
                     FillMappedFallback(node, step, fullName);
+                    ApplyArgumentMappings(node, fullName, warnings);
                     return;
                 }
 
@@ -211,6 +229,7 @@ namespace RPAWriter.Core.Services
                     node.ClassName = "RpaActions";
                     node.MethodName = MapMethodName(LastSegment(fullName));
                     node.Arguments = ReadArguments(step);
+                    ApplyArgumentMappings(node, fullName, warnings);
                     break;
             }
         }
@@ -279,6 +298,62 @@ namespace RPAWriter.Core.Services
                         node.Arguments.Add(new ArgumentAssignment { Parameter = p.Pix, Value = value });
                         break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Applies argument-level mappings to an activity node's <see cref="ArgumentAssignment"/>
+        /// list: renames the PIX parameter to the mapped MWF argument and wraps the value in the
+        /// configured conversion expression when one is set.
+        /// </summary>
+        private void ApplyArgumentMappings(ActivityNode node, string pixFullName, IList<string> warnings)
+        {
+            if (node?.Arguments == null || node.Arguments.Count == 0)
+                return;
+
+            if (!_argumentMappings.TryGetValue(pixFullName, out var mappings) || mappings == null)
+                return;
+
+            foreach (var assignment in node.Arguments)
+            {
+                if (string.IsNullOrWhiteSpace(assignment.Parameter))
+                    continue;
+
+                var mapping = mappings.FirstOrDefault(m =>
+                    m != null && string.Equals(m.PixArgument, assignment.Parameter, StringComparison.OrdinalIgnoreCase));
+                if (mapping == null || string.IsNullOrWhiteSpace(mapping.MwfArgument))
+                    continue;
+
+                assignment.Parameter = mapping.MwfArgument;
+                assignment.Value = BuildConversionExpression(assignment.Value, mapping);
+
+                if (mapping.Conversion != ConversionKind.None)
+                    warnings.Add("Applied conversion " + mapping.Conversion + " to argument " +
+                                 mapping.PixArgument + " → " + mapping.MwfArgument + " of " + pixFullName + ".");
+            }
+        }
+
+        private static string BuildConversionExpression(string value, PixMwfArgumentMapping mapping)
+        {
+            if (mapping == null || mapping.Conversion == ConversionKind.None || string.IsNullOrWhiteSpace(value))
+                return value;
+
+            var expr = mapping.ConversionExpression ?? string.Empty;
+            switch (mapping.Conversion)
+            {
+                case ConversionKind.ToString:
+                    return "(" + value + ").ToString()";
+                case ConversionKind.DateTimeFormat:
+                    return "System.DateTime.ParseExact(" + value + ", \"" +
+                           (string.IsNullOrWhiteSpace(expr) ? "dd.MM.yyyy" : expr) +
+                           "\", System.Globalization.CultureInfo.InvariantCulture)";
+                case ConversionKind.Parse:
+                    return "System.Convert.ChangeType(" + value + ", typeof(" +
+                           (string.IsNullOrWhiteSpace(expr) ? "string" : expr) + "))";
+                case ConversionKind.Custom:
+                    return string.IsNullOrWhiteSpace(expr) ? value : expr.Replace("{0}", value);
+                default:
+                    return value;
             }
         }
 

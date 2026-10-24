@@ -13,10 +13,10 @@ namespace RPAWriter.Core.Services
 {
     /// <summary>
     /// Rebuilds the Workflow Foundation activity library from the selected activities folder.
-    /// It reflects over every <c>Activities.*.dll</c> using <see cref="MetadataLoadContext"/>,
-    /// extracts concrete public activities that derive from <c>System.Activities.Activity</c>
-    /// together with their property signatures, and writes one JSON descriptor per activity
-    /// into the library's "mwf" folder.
+    /// It reflects over every <c>Activities.*.dll</c> plus the built-in <c>System.Activities.dll</c>
+    /// using <see cref="MetadataLoadContext"/>, extracts concrete public activities that derive from
+    /// <c>System.Activities.Activity</c> together with their property signatures, and writes one JSON
+    /// descriptor per activity into the library's "mwf" folder.
     /// </summary>
     public class MwfActivityLibraryImporter
     {
@@ -65,6 +65,16 @@ namespace RPAWriter.Core.Services
                 result.Errors.Add("No WF activity assemblies found in " + activitiesDirectory);
                 return result;
             }
+
+            // The built-in System.Activities.dll ships with the .NET Framework and contains the
+            // standard WF activities (Sequence, Flowchart, Assign, WriteLine, Delay, etc.). Scan it
+            // alongside the user-provided Activities.*.dll assemblies so the imported library also
+            // covers the framework activities. The path is taken from the already-collected resolver
+            // paths, which guarantees it is the same file the resolver returns for the
+            // "System.Activities" assembly name (avoiding an "already been loaded" error).
+            var systemActivitiesPath = FindSystemActivitiesPath(resolverPaths);
+            if (!string.IsNullOrWhiteSpace(systemActivitiesPath))
+                assemblies.Add(systemActivitiesPath);
 
             var existing = LoadExistingDescriptors(targetDirectory);
             var serializer = CreateSerializerSettings();
@@ -133,6 +143,17 @@ namespace RPAWriter.Core.Services
             return Directory.GetFiles(activitiesDirectory, ActivitiesSearchPattern)
                 .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Returns the path to <c>System.Activities.dll</c> from the resolver paths. The first match
+        /// (case-insensitive by file name) is the same copy that <see cref="MetadataLoadContext"/>
+        /// resolves for <see cref="FrameworkAssemblyName"/>, so loading it by path afterwards is safe.
+        /// </summary>
+        private static string FindSystemActivitiesPath(IEnumerable<string> resolverPaths)
+        {
+            return resolverPaths.FirstOrDefault(p =>
+                string.Equals(Path.GetFileName(p), FrameworkAssemblyName + ".dll", StringComparison.OrdinalIgnoreCase));
         }
 
         private static List<string> CollectResolverPaths(string activitiesDirectory)
@@ -304,10 +325,16 @@ namespace RPAWriter.Core.Services
                 if (!IsActivityParameterDeclaringType(property.DeclaringType))
                     continue;
 
+                var attributes = ActivityMetadata.ReadAttributes(property);
                 result.Add(new WfActivityParameter
                 {
                     Name = property.Name,
-                    Type = SimplifyTypeName(property.PropertyType)
+                    Type = SimplifyTypeName(property.PropertyType),
+                    DisplayName = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DisplayNameAttribute"),
+                    Description = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DescriptionAttribute"),
+                    Direction = ActivityMetadata.ExtractDirection(property.PropertyType),
+                    IsRequired = ActivityMetadata.HasAttribute(attributes, "System.ComponentModel.DataAnnotations.RequiredAttribute"),
+                    DefaultValue = ActivityMetadata.ReadDefaultValue(attributes, "System.ComponentModel.DefaultValueAttribute")
                 });
             }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 using RPAWriter.Core.Models;
@@ -17,6 +18,8 @@ namespace RPAWriter.Core.Services
         private readonly string _filePath;
         private readonly Dictionary<string, string> _mappings =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, List<PixMwfArgumentMapping>> _argumentMappings =
+            new Dictionary<string, List<PixMwfArgumentMapping>>(StringComparer.OrdinalIgnoreCase);
 
         public PixMwfMappingStore() : this(DefaultFilePath)
         {
@@ -72,14 +75,87 @@ namespace RPAWriter.Core.Services
             _mappings.Remove(pixActivityFullName.Trim());
         }
 
-        /// <summary>Copy of all mappings (PIX → MWF).</summary>
+        /// <summary>Copy of all activity-level mappings (PIX → MWF).</summary>
         public IReadOnlyDictionary<string, string> GetAll()
             => new Dictionary<string, string>(_mappings, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Argument mappings stored for a PIX activity (a copy; never null).</summary>
+        public IReadOnlyList<PixMwfArgumentMapping> GetArgumentMappings(string pixActivityFullName)
+        {
+            if (string.IsNullOrWhiteSpace(pixActivityFullName))
+                return new List<PixMwfArgumentMapping>();
+
+            List<PixMwfArgumentMapping> list;
+            return _argumentMappings.TryGetValue(pixActivityFullName.Trim(), out list)
+                ? new List<PixMwfArgumentMapping>(list)
+                : new List<PixMwfArgumentMapping>();
+        }
+
+        /// <summary>
+        /// Sets (or, when <paramref name="mwfArgument"/> is empty, removes) the mapping for one
+        /// PIX argument of a PIX activity, together with an optional conversion.
+        /// </summary>
+        public void SetArgumentMapping(
+            string pixActivityFullName,
+            string pixArgument,
+            string mwfArgument,
+            ConversionKind conversion = ConversionKind.None,
+            string conversionExpression = null)
+        {
+            if (string.IsNullOrWhiteSpace(pixActivityFullName) || string.IsNullOrWhiteSpace(pixArgument))
+                return;
+
+            var key = pixActivityFullName.Trim();
+            List<PixMwfArgumentMapping> list;
+            if (!_argumentMappings.TryGetValue(key, out list))
+            {
+                list = new List<PixMwfArgumentMapping>();
+                _argumentMappings[key] = list;
+            }
+
+            var existing = list.FirstOrDefault(m =>
+                string.Equals(m.PixArgument, pixArgument, StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(mwfArgument))
+            {
+                if (existing != null)
+                    list.Remove(existing);
+                if (list.Count == 0)
+                    _argumentMappings.Remove(key);
+                return;
+            }
+
+            if (existing == null)
+            {
+                existing = new PixMwfArgumentMapping { PixArgument = pixArgument.Trim() };
+                list.Add(existing);
+            }
+
+            existing.MwfArgument = mwfArgument.Trim();
+            existing.Conversion = conversion;
+            existing.ConversionExpression = conversionExpression;
+        }
+
+        /// <summary>Removes the argument mapping for a single PIX argument, if any.</summary>
+        public void RemoveArgumentMapping(string pixActivityFullName, string pixArgument)
+        {
+            SetArgumentMapping(pixActivityFullName, pixArgument, null);
+        }
+
+        /// <summary>Removes all argument mappings for a PIX activity.</summary>
+        public void ClearArgumentMappings(string pixActivityFullName)
+        {
+            if (string.IsNullOrWhiteSpace(pixActivityFullName))
+                return;
+
+            _argumentMappings.Remove(pixActivityFullName.Trim());
+        }
 
         /// <summary>Reloads the mapping document from disk, discarding unsaved changes.</summary>
         public void Load()
         {
             _mappings.Clear();
+            _argumentMappings.Clear();
             try
             {
                 if (!File.Exists(_filePath))
@@ -87,12 +163,30 @@ namespace RPAWriter.Core.Services
 
                 var json = File.ReadAllText(_filePath, Encoding.UTF8);
                 var document = JsonConvert.DeserializeObject<PixMwfMappingDocument>(json);
-                if (document?.Mappings == null)
+                if (document == null)
                     return;
 
-                foreach (var pair in document.Mappings)
-                    if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
-                        _mappings[pair.Key.Trim()] = pair.Value.Trim();
+                if (document.Mappings != null)
+                {
+                    foreach (var pair in document.Mappings)
+                        if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+                            _mappings[pair.Key.Trim()] = pair.Value.Trim();
+                }
+
+                if (document.ArgumentMappings != null)
+                {
+                    foreach (var pair in document.ArgumentMappings)
+                    {
+                        if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value == null)
+                            continue;
+
+                        var list = pair.Value
+                            .Where(m => m != null && !string.IsNullOrWhiteSpace(m.PixArgument))
+                            .ToList();
+                        if (list.Count > 0)
+                            _argumentMappings[pair.Key.Trim()] = list;
+                    }
+                }
             }
             catch
             {
@@ -100,20 +194,32 @@ namespace RPAWriter.Core.Services
             }
         }
 
-        /// <summary>Writes the current mapping document to disk.</summary>
+        /// <summary>Writes the current mapping document to the store's default file path.</summary>
         public void Save()
+            => SaveAs(_filePath);
+
+        /// <summary>
+        /// Writes the current mapping document to an arbitrary file path (used by "Save As"
+        /// so the user can choose the file name). The store keeps writing to its default
+        /// path on subsequent <see cref="Save"/> calls.
+        /// </summary>
+        public void SaveAs(string filePath)
         {
+            if (string.IsNullOrWhiteSpace(filePath))
+                return;
+
             try
             {
-                var directory = Path.GetDirectoryName(_filePath);
+                var directory = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory))
                     Directory.CreateDirectory(directory);
 
                 var document = new PixMwfMappingDocument
                 {
-                    Mappings = new Dictionary<string, string>(_mappings, StringComparer.OrdinalIgnoreCase)
+                    Mappings = new Dictionary<string, string>(_mappings, StringComparer.OrdinalIgnoreCase),
+                    ArgumentMappings = new Dictionary<string, List<PixMwfArgumentMapping>>(_argumentMappings, StringComparer.OrdinalIgnoreCase)
                 };
-                File.WriteAllText(_filePath, JsonConvert.SerializeObject(document, Formatting.Indented), new UTF8Encoding(false));
+                File.WriteAllText(filePath, JsonConvert.SerializeObject(document, Formatting.Indented), new UTF8Encoding(false));
             }
             catch
             {

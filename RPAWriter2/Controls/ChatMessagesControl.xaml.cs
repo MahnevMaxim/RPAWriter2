@@ -33,6 +33,24 @@ namespace RPAWriter2.Controls
             AttachView(_messages);
         }
 
+        /// <summary>
+        /// Dependency property controlling whether each message shows its timestamp.
+        /// Defaults to true, so timestamps are shown unless explicitly disabled in XAML.
+        /// </summary>
+        public static readonly DependencyProperty ShowTimestampProperty =
+            DependencyProperty.Register(
+                nameof(ShowTimestamp),
+                typeof(bool),
+                typeof(ChatMessagesControl),
+                new PropertyMetadata(true));
+
+        /// <summary>Gets or sets whether each message shows its timestamp.</summary>
+        public bool ShowTimestamp
+        {
+            get => (bool)GetValue(ShowTimestampProperty);
+            set => SetValue(ShowTimestampProperty, value);
+        }
+
         /// <summary>The message collection rendered by this control. Assign an existing collection to share it.</summary>
         public ObservableCollection<ChatMessage> Messages
         {
