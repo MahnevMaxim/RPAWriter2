@@ -25,6 +25,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
         <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>
+        <conv:MermaidCodeToElementConverter x:Key="MermaidCodeToElement"/>
         <conv:OptionEqualsAnswerConverter x:Key="OptionEqualsAnswerConverter"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
@@ -77,12 +78,22 @@
         </DataTemplate>
 
         <DataTemplate DataType="{x:Type core:CodeMessageBlock}">
-            <Border Background="{StaticResource Code.Background}" BorderBrush="{StaticResource Dark.Border}"
-                    BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,4,0,0">
-                <ScrollViewer Style="{StaticResource CodeScrollViewerStyle}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                    <ContentControl Content="{Binding Tokens, Mode=OneWay, Converter={StaticResource CodeToTextBlock}}"/>
-                </ScrollViewer>
-            </Border>
+            <Grid>
+                <Border x:Name="CodeBorder" Background="{StaticResource Code.Background}" BorderBrush="{StaticResource Dark.Border}"
+                        BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,4,0,0">
+                    <ScrollViewer Style="{StaticResource CodeScrollViewerStyle}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ContentControl Content="{Binding Tokens, Mode=OneWay, Converter={StaticResource CodeToTextBlock}}"/>
+                    </ScrollViewer>
+                </Border>
+                <ContentControl x:Name="MermaidHost" Visibility="Collapsed"
+                                Content="{Binding Code, Mode=OneWay, Converter={StaticResource MermaidCodeToElement}}"/>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsMermaid}" Value="True">
+                    <Setter TargetName="CodeBorder" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="MermaidHost" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <DataTemplate x:Key="ChatMessageTemplate">

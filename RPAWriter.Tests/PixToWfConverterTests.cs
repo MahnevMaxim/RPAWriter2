@@ -309,5 +309,107 @@ namespace RPAWriter.Tests
             Assert.That(result.Xaml, Is.Not.Empty);
             Assert.That(result.CSharpCode, Is.Not.Empty);
         }
+
+        [Test]
+        public void Convert_FailOnUnmapped_ThrowsForUnknownActivity()
+        {
+            var pix = """
+                <Script xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.datacontract.org/2004/07/BR.Logic">
+                  <Name>Unknown.pix</Name>
+                  <Logic i:type="ExecutedStep">
+                    <Childs>
+                      <AbstractStep i:type="ExecutedStep">
+                        <Childs />
+                        <PropertyValues />
+                        <Text></Text>
+                        <_activityFullName>Some.Unknown.Activity</_activityFullName>
+                      </AbstractStep>
+                    </Childs>
+                    <PropertyValues />
+                    <Text></Text>
+                    <_activityFullName>BR.Core.Base.Container</_activityFullName>
+                  </Logic>
+                </Script>
+                """;
+
+            var converter = CreateConverter();
+            converter.FailOnUnmapped = true;
+
+            Assert.That(() => converter.Convert(pix),
+                Throws.TypeOf<PixConversionException>()
+                    .With.Message.Contains("Some.Unknown.Activity"));
+        }
+
+        [Test]
+        public void Convert_FailOnUnmapped_AllowsBuiltInAndMappedActivities()
+        {
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Some.Custom.Activity", "System.Activities.Statements.WriteLine" }
+            };
+
+            var pix = """
+                <Script xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.datacontract.org/2004/07/BR.Logic">
+                  <Name>Mixed.pix</Name>
+                  <Logic i:type="ExecutedStep">
+                    <Childs>
+                      <AbstractStep i:type="ExecutedStep">
+                        <Childs />
+                        <PropertyValues />
+                        <Text></Text>
+                        <_activityFullName>BR.Core.Base.Assign</_activityFullName>
+                      </AbstractStep>
+                      <AbstractStep i:type="ExecutedStep">
+                        <Childs />
+                        <PropertyValues />
+                        <Text></Text>
+                        <_activityFullName>Some.Custom.Activity</_activityFullName>
+                      </AbstractStep>
+                    </Childs>
+                    <PropertyValues />
+                    <Text></Text>
+                    <_activityFullName>BR.Core.Base.Container</_activityFullName>
+                  </Logic>
+                </Script>
+                """;
+
+            var converter = CreateConverter(mappings);
+            converter.FailOnUnmapped = true;
+
+            var result = converter.Convert(pix);
+
+            Assert.That(result.Plan.Root.Children[0].Kind, Is.EqualTo(ActivityNodeKind.Assign));
+            Assert.That(result.Plan.Root.Children[1].Kind, Is.EqualTo(ActivityNodeKind.WriteLine));
+        }
+
+        [Test]
+        public void Convert_FailOnUnmapped_ThrowsForStatementWithoutBuiltInSnippet()
+        {
+            var pix = """
+                <Script xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.datacontract.org/2004/07/BR.Logic">
+                  <Name>Vbs.pix</Name>
+                  <Logic i:type="ExecutedStep">
+                    <Childs>
+                      <AbstractStep i:type="ExecutedStep">
+                        <Childs />
+                        <PropertyValues />
+                        <Text></Text>
+                        <_activityFullName>Activities.VBS.ExecuteVBS</_activityFullName>
+                      </AbstractStep>
+                    </Childs>
+                    <PropertyValues />
+                    <Text></Text>
+                    <_activityFullName>BR.Core.Base.Container</_activityFullName>
+                  </Logic>
+                </Script>
+                """;
+
+            var converter = CreateConverter();
+            converter.FailOnUnmapped = true;
+
+            Assert.That(() => converter.Convert(pix),
+                Throws.TypeOf<PixConversionException>()
+                    .With.Message.Contains("Activities.VBS.ExecuteVBS"));
+        }
     }
 }

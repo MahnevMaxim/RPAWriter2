@@ -25,6 +25,7 @@ namespace RPAWriter2.Controls
         private bool _isPickerOpen;
         private bool _isDetailsOpen;
         private bool _isArgumentMappingOpen;
+        private bool _isPixDescriptionExpanded;
 
         public PixMwfMappingRow(
             int index,
@@ -62,8 +63,42 @@ namespace RPAWriter2.Controls
         /// <summary>Column 2 — PIX activity display name.</summary>
         public string PixDisplayName { get; }
 
-        /// <summary>PIX activity description (used in the AI mapping prompt, not displayed in the table).</summary>
+        /// <summary>PIX activity description (shown in the table and used in the AI mapping prompt).</summary>
         public string PixDescription { get; }
+
+        /// <summary>True when the full description is expanded; otherwise only the first line is shown.</summary>
+        public bool IsPixDescriptionExpanded
+        {
+            get => _isPixDescriptionExpanded;
+            set
+            {
+                if (_isPixDescriptionExpanded == value)
+                    return;
+                _isPixDescriptionExpanded = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(PixDescriptionToggleGlyph));
+            }
+        }
+
+        /// <summary>First line of the description, shown while collapsed.</summary>
+        public string PixDescriptionFirstLine => FirstLine(PixDescription);
+
+        /// <summary>True when the row has a description that can be toggled (expanded/collapsed).</summary>
+        public bool HasPixDescriptionOverflow => !string.IsNullOrEmpty(PixDescription);
+
+        /// <summary>Glyph indicating the expand/collapse action.</summary>
+        public string PixDescriptionToggleGlyph => _isPixDescriptionExpanded ? "▲" : "▼";
+
+        /// <summary>Shows the expand/collapse glyph for any non-empty description.</summary>
+        public Visibility PixDescriptionToggleVisibility => HasPixDescriptionOverflow ? Visibility.Visible : Visibility.Collapsed;
+
+        private static string FirstLine(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+            var index = text.IndexOfAny(new[] { '\r', '\n' });
+            return index < 0 ? text : text.Substring(0, index);
+        }
 
         /// <summary>Arguments of the PIX activity: name, .NET type and data-flow direction.</summary>
         public IReadOnlyList<ActivityArgumentInfo> PixArguments { get; }
@@ -103,7 +138,9 @@ namespace RPAWriter2.Controls
 
                 RebuildArgumentMappings();
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(MwfDisplayName));
                 OnPropertyChanged(nameof(MwfDescription));
+                OnPropertyChanged(nameof(MwfDescriptionToolTip));
                 OnPropertyChanged(nameof(MwfArguments));
                 OnPropertyChanged(nameof(MwfArgumentsText));
                 OnPropertyChanged(nameof(IsMapped));
@@ -111,7 +148,20 @@ namespace RPAWriter2.Controls
             }
         }
 
-        /// <summary>Column 4 — description of the selected MWF activity.</summary>
+        /// <summary>Display name (short human-readable name) of the selected MWF activity.</summary>
+        public string MwfDisplayName
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(MwfFullName))
+                    return string.Empty;
+                return _mwfDescriptors.TryGetValue(MwfFullName, out var descriptor)
+                    ? descriptor.DefaultDisplayName ?? string.Empty
+                    : string.Empty;
+            }
+        }
+
+        /// <summary>Description of the selected MWF activity.</summary>
         public string MwfDescription
         {
             get
@@ -121,6 +171,16 @@ namespace RPAWriter2.Controls
                 return _mwfDescriptors.TryGetValue(MwfFullName, out var descriptor)
                     ? descriptor.Description ?? string.Empty
                     : string.Empty;
+            }
+        }
+
+        /// <summary>Tooltip text for the MWF activity picker; null when there is nothing to show.</summary>
+        public string? MwfDescriptionToolTip
+        {
+            get
+            {
+                var description = MwfDescription;
+                return string.IsNullOrWhiteSpace(description) ? null : description;
             }
         }
 
@@ -319,12 +379,11 @@ namespace RPAWriter2.Controls
             var innerType = type;
             var direction = parameter.Direction ?? string.Empty;
 
-            if (string.IsNullOrEmpty(direction))
-            {
-                if (ExtractWrappedType(type, "InOutArgument", out var t)) { direction = "InOut"; innerType = t; }
-                else if (ExtractWrappedType(type, "OutArgument", out t)) { direction = "Out"; innerType = t; }
-                else if (ExtractWrappedType(type, "InArgument", out t)) { direction = "In"; innerType = t; }
-            }
+            // Unwrap the WF argument wrapper even when Direction is already stored, so
+            // descriptors written before the inner-type extraction still render the value type.
+            if (ExtractWrappedType(type, "InOutArgument", out var t)) { if (string.IsNullOrEmpty(direction)) direction = "InOut"; innerType = t; }
+            else if (ExtractWrappedType(type, "OutArgument", out t)) { if (string.IsNullOrEmpty(direction)) direction = "Out"; innerType = t; }
+            else if (ExtractWrappedType(type, "InArgument", out t)) { if (string.IsNullOrEmpty(direction)) direction = "In"; innerType = t; }
 
             return new ActivityArgumentInfo(parameter.Name, innerType, direction, parameter.Description, parameter.DisplayName);
         }

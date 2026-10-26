@@ -97,6 +97,15 @@ namespace RPAWriter.Core.Services
                 : new List<PixMwfArgumentMapping>();
         }
 
+        /// <summary>Copy of all argument-level mappings, keyed by PIX activity full name.</summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<PixMwfArgumentMapping>> GetAllArgumentMappings()
+        {
+            var result = new Dictionary<string, IReadOnlyList<PixMwfArgumentMapping>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in _argumentMappings)
+                result[pair.Key] = new List<PixMwfArgumentMapping>(pair.Value);
+            return result;
+        }
+
         /// <summary>
         /// Sets (or, when <paramref name="mwfArgument"/> is empty, removes) the mapping for one
         /// PIX argument of a PIX activity, together with an optional conversion.

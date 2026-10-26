@@ -49,15 +49,18 @@ namespace RPAWriter.Tests
                 Assert.That(sleep, Is.Not.Null);
                 Assert.That(sleep.WfSnippet, Is.EqualTo("Delay"));
                 Assert.That(sleep.Parameters.Any(p => p.Pix == "Count" && p.Target == "Expression"), Is.True);
-                Assert.That(sleep.DefaultDisplayName, Is.EqualTo("Пауза"));
-                Assert.That(sleep.Description, Is.EqualTo("Приостанавливает выполнение на заданное время."));
+                Assert.That(sleep.DefaultDisplayName, Is.EqualTo("Ожидание"));
+                Assert.That(sleep.Description, Is.EqualTo("Данная активность используется для установки времени бездействия робота, прежде чем он продолжит алгоритм или начнёт выполнять его заново."));
+                var sleepCount = sleep.Parameters.First(p => p.Pix == "Count");
+                Assert.That(sleepCount.DisplayName, Is.EqualTo("Время ожидания"));
+                Assert.That(sleepCount.Description, Is.EqualTo("Длительность ожидания."));
 
                 var ifDescriptor = library.Load("BR.Core.Base.If");
                 Assert.That(ifDescriptor, Is.Not.Null);
                 Assert.That(ifDescriptor.Role, Is.EqualTo("if"));
                 Assert.That(ifDescriptor.Parameters.Any(p => p.Pix == "Condition" && p.Target == "Expression"), Is.True);
-                Assert.That(ifDescriptor.DefaultDisplayName, Is.EqualTo("Если"));
-                Assert.That(ifDescriptor.Description, Does.StartWith("Условный оператор"));
+                Assert.That(ifDescriptor.DefaultDisplayName, Is.EqualTo("Условный оператор"));
+                Assert.That(ifDescriptor.Description, Does.StartWith("Логика данной активности"));
 
                 // A regular activity gets the safe InvokeMethod fallback and a parameter signature.
                 var clickElement = library.Load("Activities.Web.ClickElement");

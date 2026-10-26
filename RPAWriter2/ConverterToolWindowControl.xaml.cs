@@ -37,6 +37,9 @@ namespace RPAWriter2
             ConverterMessages.CopyMessageRequested += OnMessageCopyRequested;
             PixMwfMapControl.CloseRequested += OnPixMwfMapClosed;
             PixMwfMapControl.Log = AppendConverterText;
+            PixRobotConversionPanel.StartRequested += OnPixRobotConversionStarted;
+            PixRobotConversionPanel.CloseRequested += OnPixRobotConversionClosed;
+            PixRobotConversionPanel.Log = AppendConverterText;
 
             var settings = SettingsStore.Load();
             PixMwfMapControl.AiProvider = AiProviderFactory.Create(settings);
@@ -155,53 +158,112 @@ namespace RPAWriter2
 
         private void OnConvertPix(object sender, RoutedEventArgs e)
         {
-            var dlg = new OpenFileDialog
+            // Keep the last-used folders when they are already filled (persisted between
+            // sessions); only fall back to the configured defaults on first use or when
+            // the user cleared the boxes.
+            if (string.IsNullOrWhiteSpace(PixRobotConversionPanel.PixFolder))
             {
-                Title = "PIX robot",
-                Filter = "PIX robot (*.pix)|*.pix|All files (*.*)|*.*"
-            };
-            if (dlg.ShowDialog() != true) return;
-
-            try
-            {
-                var pix = File.ReadAllText(dlg.FileName);
-                var mappings = PixMwfMapControl.Store.GetAll();
-                var result = new PixToWfConverter(new PixActivityLibrary(), new WfSnippetLibrary(), mappings).Convert(pix);
-
-                var solutionDir = GetOpenSolutionDirectory();
-                var outDir = solutionDir != null
-                    ? Path.Combine(solutionDir, "temp")
-                    : Path.GetDirectoryName(dlg.FileName);
-                Directory.CreateDirectory(outDir);
-
-                var baseName = Path.GetFileNameWithoutExtension(dlg.FileName);
-                var xamlPath = Path.Combine(outDir, baseName + ".wf.xaml");
-                var csPath = Path.Combine(outDir, baseName + ".wf.cs");
-                var reportPath = Path.Combine(outDir, baseName + ".wf.txt");
-
-                File.WriteAllText(xamlPath, result.Xaml);
-                File.WriteAllText(csPath, result.CSharpCode);
-
-                var sb = new StringBuilder();
-                sb.AppendLine("PIX to WF conversion report");
-                sb.AppendLine("Source: " + dlg.FileName);
-                sb.AppendLine("Output XAML: " + xamlPath);
-                sb.AppendLine("Output C#: " + csPath);
-                sb.AppendLine("Warnings (" + result.Warnings.Count + "):");
-                foreach (var w in result.Warnings)
-                    sb.AppendLine("- " + w);
-                sb.AppendLine("Applied mappings (" + result.Mappings.Count + "):");
-                foreach (var m in result.Mappings)
-                    sb.AppendLine("- " + m);
-                File.WriteAllText(reportPath, sb.ToString());
-
-                SetConverterOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
-                AppendConverterText("Conversion completed → " + outDir + ". Warnings: " + result.Warnings.Count);
+                var settings = SettingsStore.Load();
+                var configured = (settings.RobotsRootPath ?? "").Trim();
+                PixRobotConversionPanel.PixFolder = !string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)
+                    ? configured
+                    : string.Empty;
             }
-            catch (Exception ex) { ShowError(ex); }
+
+            if (string.IsNullOrWhiteSpace(PixRobotConversionPanel.MwfFolder))
+                PixRobotConversionPanel.MwfFolder = GetOpenSolutionDirectory() ?? string.Empty;
+
+            ShowPixRobotConversion();
         }
 
-        private async void OnGetAllActivitiesFromPix(object sender, RoutedEventArgs e)
+        private void ShowPixRobotConversion()
+        {
+            PixRobotConversionHost.Visibility = Visibility.Visible;
+            PixRobotConversionRow.MinHeight = 96;
+            PixRobotConversionRow.Height = GridLength.Auto;
+        }
+
+        private void HidePixRobotConversion()
+        {
+            PixRobotConversionHost.Visibility = Visibility.Collapsed;
+            PixRobotConversionRow.MinHeight = 0;
+            PixRobotConversionRow.Height = new GridLength(0);
+        }
+
+        private void OnPixRobotConversionClosed(object sender, EventArgs e)
+        {
+            HidePixRobotConversion();
+        }
+
+        private async void OnPixRobotConversionStarted(object sender, EventArgs e)
+        {
+            var pixFolder = PixRobotConversionPanel.PixFolder;
+            var mwfFolder = PixRobotConversionPanel.MwfFolder;
+            if (string.IsNullOrWhiteSpace(pixFolder) || string.IsNullOrWhiteSpace(mwfFolder))
+                return;
+
+            PixRobotConversionPanel.SetBusy(true);
+            try
+            {
+                AppendConverterText("Converting PIX robot folder: " + pixFolder);
+                AppendConverterText("Output MWF folder: " + mwfFolder);
+
+                var result = await Task.Run(() =>
+                {
+                    var converter = new PixRobotToMwfConverter(
+                        new PixActivityLibrary(),
+                        new WfSnippetLibrary(),
+                        PixMwfMapControl.Store.GetAll(),
+                        PixMwfMapControl.Store.GetAllArgumentMappings())
+                    {
+                        FailOnUnmapped = true,
+                        Log = AppendConverterText
+                    };
+                    return converter.ConvertAndWrite(pixFolder, mwfFolder);
+                });
+
+                var sb = new StringBuilder();
+                sb.AppendLine("PIX robot to MWF conversion completed.");
+                sb.AppendLine("Robot: " + result.RobotName);
+                sb.AppendLine("Scripts generated: " + result.Scripts.Count);
+                foreach (var s in result.Scripts)
+                    sb.AppendLine("- " + s.SourceFileName + " -> " + s.OutputFileName);
+                sb.AppendLine("Warnings: " + result.Warnings.Count);
+                sb.AppendLine("Report: " + Path.Combine(mwfFolder, "conversion-report.txt"));
+                AppendConverterText(sb.ToString().TrimEnd());
+
+                LogService.Info("PIX robot to MWF conversion completed: " + result.Scripts.Count + " scripts into " + mwfFolder);
+            }
+            catch (PixConversionException ex)
+            {
+                AppendConverterText("Conversion aborted: " + ex.Message);
+                LogService.Error(ex);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+            finally
+            {
+                PixRobotConversionPanel.SetBusy(false);
+            }
+        }
+
+        private void OnViewWfSnippets(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var window = new WfSnippetsWindow();
+                SetOwnerHandle(window);
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private async void OnParseAllActivitiesFromPix(object sender, RoutedEventArgs e)
         {
             var folder = PickPixRobotsFolder();
             if (folder == null) return;
@@ -218,34 +280,18 @@ namespace RPAWriter2
                                     ", distinct activities: " + result.Occurrences.Count +
                                     ", parse errors: " + result.ParseErrors.Count + ".");
 
-                var library = new PixActivityLibrary();
-                var known = library.GetKnownActivityNames();
+                var known = new PixActivityLibrary().GetKnownActivityNames();
                 var missing = result.Occurrences
                     .Where(kv => !known.Contains(kv.Key))
                     .OrderByDescending(kv => kv.Value)
                     .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
-                // Append activities used by the robots but not yet known to the library, so
-                // they show up in the PIX → MWF mapping table and can be mapped.
-                var added = 0;
-                foreach (var activity in result.Occurrences.Keys)
-                {
-                    if (known.Contains(activity))
-                        continue;
-
-                    library.EnsureDescriptor(new PixActivityDescriptor
-                    {
-                        ActivityFullName = activity,
-                        DefaultDisplayName = activity,
-                        Role = "statement"
-                    });
-                    added++;
-                }
+                // Do not append unknown activities to the library — only warn about them.
+                if (missing.Count > 0)
+                    AppendConverterText("Warning: " + missing.Count + " activity(ies) found in the robots are missing from the PIX library. Import PIX activities or map them manually.");
 
                 AppendConverterText(BuildPixScanSummaryText(folder, result, missing));
-                if (added > 0)
-                    AppendConverterText("Appended " + added + " new activity descriptor(s) to the PIX library.");
 
                 foreach (var m in missing)
                     LogService.Warn("Missing PIX activity: " + m.Key + " (occurrences: " + m.Value + ")");
@@ -327,8 +373,40 @@ namespace RPAWriter2
                 AppendConverterText("Started importing MWF activities from: " + activitiesDir);
                 AppendConverterText("Runtime library target: " + targetDir);
 
-                var result = await Task.Run(() =>
-                    new MwfActivityLibraryImporter().Import(activitiesDir, targetDir, AppendConverterText));
+                // System.Activities activities are imported from the user's selection (the filter
+                // configured with "Get System Activities" / "Select System Activities"). When no
+                // discovery has been saved yet, all framework activities are imported for
+                // backwards compatibility.
+                var store = new SystemActivitiesStore();
+                var cachedSystemActivities = store.GetActivities();
+                var selectedSystemActivities = cachedSystemActivities.Count > 0
+                    ? store.GetSelectedNames()
+                    : null;
+                if (selectedSystemActivities != null)
+                    AppendConverterText("Importing " + selectedSystemActivities.Count + " selected System.Activities activities.");
+
+                WfActivityLibraryImportResult result;
+                if (MwfActivitySourceImporter.IsSourceDirectory(activitiesDir))
+                {
+                    // Parse the C# sources first, then import the selected System.Activities
+                    // activities (with their names and descriptions). Activities.*.dll assemblies
+                    // are deliberately not scanned by this button.
+                    var sourceResult = await Task.Run(() =>
+                        new MwfActivitySourceImporter().Import(activitiesDir, targetDir, AppendConverterText));
+                    AppendConverterText("Source parsing: " + sourceResult.ActivitiesImported +
+                        " activities imported from " + sourceResult.SourceFilesScanned + " C# files.");
+                    var frameworkResult = await Task.Run(() =>
+                        new MwfActivityLibraryImporter().ImportFrameworkActivities(targetDir, selectedSystemActivities, AppendConverterText));
+                    result = CombineWfImportResults(sourceResult, frameworkResult);
+                }
+                else
+                {
+                    // No C# sources in the folder: still import the selected System.Activities
+                    // activities by reflection. Activities.*.dll assemblies are intentionally
+                    // ignored here.
+                    result = await Task.Run(() =>
+                        new MwfActivityLibraryImporter().ImportFrameworkActivities(targetDir, selectedSystemActivities, AppendConverterText));
+                }
 
                 AppendConverterText(BuildMwfImportSummary(activitiesDir, targetDir, result));
                 LogService.Info("MWF activity import: " + result.ActivitiesImported + " activities, " +
@@ -337,6 +415,73 @@ namespace RPAWriter2
             catch (Exception ex)
             {
                 ShowError(ex);
+            }
+        }
+
+        private async void OnGetSystemActivities(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                AppendConverterText("Discovering built-in System.Activities activities...");
+
+                var activities = await Task.Run(() =>
+                    new MwfActivityLibraryImporter().DiscoverFrameworkActivities(AppendConverterText));
+
+                var store = new SystemActivitiesStore();
+                store.SaveDiscovery(activities);
+                var selected = store.GetSelectedNames();
+
+                AppendConverterText("System.Activities discovery finished: " + activities.Count +
+                    " activities found, " + selected.Count + " selected. Saved to " + store.FilePath);
+                LogService.Info("System.Activities discovery: " + activities.Count + " activities, " +
+                                selected.Count + " selected.");
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private void OnSelectSystemActivities(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var store = new SystemActivitiesStore();
+                var activities = store.GetActivities();
+                if (activities.Count == 0)
+                {
+                    AppendConverterText("No System.Activities discovered yet. Click \"Get System Activities\" first.");
+                    return;
+                }
+
+                var window = new SystemActivitiesSelectionWindow(activities, store.GetSelectedNames());
+                SetOwnerHandle(window);
+
+                if (window.ShowDialog() == true)
+                {
+                    store.SaveFilter(window.SelectedFullNames);
+                    AppendConverterText("System.Activities selection saved: " + window.SelectedFullNames.Count + " activities selected.");
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private void SetOwnerHandle(System.Windows.Window window)
+        {
+            var owner = GetHostWindowHandle();
+            if (owner == IntPtr.Zero)
+                return;
+
+            try
+            {
+                new System.Windows.Interop.WindowInteropHelper(window) { Owner = owner };
+            }
+            catch
+            {
+                // Fall through: the dialog opens without an owner.
             }
         }
 
@@ -353,6 +498,8 @@ namespace RPAWriter2
             sb.AppendLine("Source: " + activitiesDir);
             sb.AppendLine("Target: " + targetDir);
             sb.AppendLine("Assemblies scanned: " + result.DllsScanned);
+            if (result.SourceFilesScanned > 0)
+                sb.AppendLine("Source files scanned: " + result.SourceFilesScanned);
             sb.AppendLine("Activities imported: " + result.ActivitiesImported);
             sb.AppendLine("Descriptor files written: " + result.FilesWritten);
             sb.AppendLine("Obsolete files deleted: " + result.FilesDeleted);
@@ -363,6 +510,23 @@ namespace RPAWriter2
                     sb.AppendLine("- " + error);
             }
             return sb.ToString().TrimEnd();
+        }
+
+        private static WfActivityLibraryImportResult CombineWfImportResults(WfActivityLibraryImportResult source, WfActivityLibraryImportResult framework)
+        {
+            var combined = new WfActivityLibraryImportResult
+            {
+                DllsScanned = source.DllsScanned + framework.DllsScanned,
+                SourceFilesScanned = source.SourceFilesScanned + framework.SourceFilesScanned,
+                ActivitiesImported = source.ActivitiesImported + framework.ActivitiesImported,
+                FilesWritten = source.FilesWritten + framework.FilesWritten,
+                FilesDeleted = source.FilesDeleted + framework.FilesDeleted
+            };
+            combined.Errors.AddRange(source.Errors);
+            combined.Errors.AddRange(framework.Errors);
+            combined.FailedAssemblies.AddRange(source.FailedAssemblies);
+            combined.FailedAssemblies.AddRange(framework.FailedAssemblies);
+            return combined;
         }
 
         private static string BuildImportSummary(string pixDir, string targetDir, PixActivityLibraryImportResult result)

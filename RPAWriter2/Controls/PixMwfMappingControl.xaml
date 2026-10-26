@@ -49,6 +49,16 @@
             </Setter>
         </Style>
 
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
+            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Dark.Accent}"/>
+            <Setter Property="Padding" Value="4,2"/>
+        </Style>
+
         <Style TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -190,6 +200,24 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="PixDescriptionCellStyle" TargetType="DataGridCell"
+               BasedOn="{StaticResource {x:Type DataGridCell}}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True" ClipToBounds="True">
+                            <ContentPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel Background="{StaticResource Dark.Window}">
@@ -206,21 +234,31 @@
                         <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" IsEnabled="False"/>
                     </WrapPanel>
                 </DockPanel>
-                <StackPanel Margin="0,6,0,0">
-                    <DockPanel Margin="0,0,0,4">
-                        <TextBlock DockPanel.Dock="Left" Text="PIX activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <Button DockPanel.Dock="Right" x:Name="ClearFilterButton" Content="Clear filter" Click="OnClearFilter" Margin="8,0,0,0"/>
-                        <TextBox x:Name="FilterBox" VerticalContentAlignment="Center" Padding="4,2"
+                <StackPanel Margin="0,6,0,0" Grid.IsSharedSizeScope="True">
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="FilterLabel"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="PIX activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" x:Name="FilterBox" VerticalContentAlignment="Center"
                                  ToolTip="Filter table rows by PIX activity full name or display name"
                                  TextChanged="OnFilterTextChanged"/>
-                    </DockPanel>
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Left" Text="MWF activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <Button DockPanel.Dock="Right" x:Name="ClearMwfFilterButton" Content="Clear filter" Click="OnClearMwfFilter" Margin="8,0,0,0"/>
-                        <TextBox x:Name="MwfFilterBox" VerticalContentAlignment="Center" Padding="4,2"
+                        <Button Grid.Column="2" x:Name="ClearFilterButton" Content="Clear filter" Click="OnClearFilter" Margin="8,0,0,0"/>
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="FilterLabel"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="MWF activities filter:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" x:Name="MwfFilterBox" VerticalContentAlignment="Center"
                                  ToolTip="Filter the MWF activity drop-down by full name, display name or description"
                                  TextChanged="OnMwfFilterTextChanged"/>
-                    </DockPanel>
+                        <Button Grid.Column="2" x:Name="ClearMwfFilterButton" Content="Clear filter" Click="OnClearMwfFilter" Margin="8,0,0,0"/>
+                    </Grid>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -244,16 +282,42 @@
                       SelectionUnit="FullRow"
                       LoadingRow="OnMapListLoadingRow">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="PIX Activity" Binding="{Binding PixFullName}" Width="220" IsReadOnly="True"/>
-                    <DataGridTemplateColumn Header="Args" Width="70">
+                    <DataGridTextColumn Header="PIX Activity" Binding="{Binding PixFullName}" Width="Auto" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="PIX Name" Binding="{Binding PixDisplayName}" Width="160" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="PIX Description" Width="320" CellStyle="{StaticResource PixDescriptionCellStyle}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Content="{Binding DetailsLabel}" Click="OnToggleDetails" Tag="{Binding}" Padding="8,2"
-                                        ToolTip="Show/hide PIX and MWF activity arguments (name, type, direction)"/>
+                                <Border Background="Transparent" Cursor="Hand" Padding="0,2"
+                                        MouseLeftButtonUp="OnTogglePixDescription">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="CollapsedText" Grid.Column="0"
+                                                   Text="{Binding PixDescriptionFirstLine}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                                   ToolTip="{Binding PixDescription}"/>
+                                        <TextBlock x:Name="ExpandedText" Grid.Column="0"
+                                                   Text="{Binding PixDescription}"
+                                                   TextWrapping="Wrap" VerticalAlignment="Top" Margin="0,0,6,0"
+                                                   Visibility="Collapsed"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding PixDescriptionToggleGlyph}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                   Foreground="{StaticResource Dark.Text}"
+                                                   Visibility="{Binding PixDescriptionToggleVisibility}"/>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsPixDescriptionExpanded}" Value="True">
+                                        <Setter TargetName="CollapsedText" Property="Visibility" Value="Collapsed"/>
+                                        <Setter TargetName="ExpandedText" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="PIX Name" Binding="{Binding PixDisplayName}" Width="160" IsReadOnly="True"/>
                     <DataGridTemplateColumn Header="MWF Activity" Width="300">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -263,12 +327,21 @@
                                     SelectedValuePath="ActivityFullName"
                                     SelectedValue="{Binding MwfFullName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsDropDownOpen="{Binding IsPickerOpen, Mode=TwoWay}"
-                                    ToolTip="{Binding MwfDescription}"
+                                    ToolTip="{Binding MwfDescriptionToolTip}"
                                     MinWidth="240"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="MWF Name" Binding="{Binding MwfDisplayName}" Width="180" IsReadOnly="True"/>
                     <DataGridTextColumn Header="MWF Description" Binding="{Binding MwfDescription}" Width="280" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="Args" Width="70">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding DetailsLabel}" Click="OnToggleDetails" Tag="{Binding}" Padding="8,2"
+                                        ToolTip="Show/hide PIX and MWF activity arguments (name, type, direction)"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Header="" Width="90">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

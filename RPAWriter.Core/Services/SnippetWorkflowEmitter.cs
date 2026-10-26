@@ -25,7 +25,7 @@ namespace RPAWriter.Core.Services
             var root = plan.Root ?? new ActivityNode { Kind = ActivityNodeKind.Sequence, Name = "Root" };
             var sb = new StringBuilder();
             sb.AppendLine("<!-- Workflow: " + (plan.Name ?? "Untitled") + " (RPAWriter PIX converter) -->");
-            sb.AppendLine("<Activity x:Class=\"" + XmlEscape(plan.Name ?? "Untitled") + "\"");
+            sb.AppendLine("<Activity x:Class=\"Robots." + XmlEscape(plan.Name ?? "Untitled") + "\"");
             sb.AppendLine("    xmlns=\"http://schemas.microsoft.com/netfx/2009/xaml/activities\"");
             sb.AppendLine("    xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"");
             sb.AppendLine("    xmlns:local=\"clr-namespace:Robots\"");
@@ -88,6 +88,9 @@ namespace RPAWriter.Core.Services
                     break;
                 case ActivityNodeKind.Return:
                     break;
+                case ActivityNodeKind.InvokeWorkflow:
+                    result = Replace(result, "TargetClass", XmlEscape(node.ScriptRef ?? "Sequence"));
+                    break;
             }
 
             return result;
@@ -134,6 +137,7 @@ namespace RPAWriter.Core.Services
                 case ActivityNodeKind.TryCatch: return "TryCatch";
                 case ActivityNodeKind.Throw: return "Throw";
                 case ActivityNodeKind.Return: return "Return";
+                case ActivityNodeKind.InvokeWorkflow: return "InvokeWorkflow";
                 case ActivityNodeKind.Sequence:
                 default: return "Sequence";
             }
@@ -208,6 +212,8 @@ namespace RPAWriter.Core.Services
                     return "<Throw DisplayName=\"{{DisplayName}}\" Exception=\"[{{Exception}}]\" />";
                 case ActivityNodeKind.Return:
                     return "<Return DisplayName=\"{{DisplayName}}\" />";
+                case ActivityNodeKind.InvokeWorkflow:
+                    return "<local:{{TargetClass}} DisplayName=\"{{DisplayName}}\" />";
                 default:
                     return "<Sequence DisplayName=\"{{DisplayName}}\" />";
             }

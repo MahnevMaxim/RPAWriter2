@@ -15,6 +15,19 @@ namespace RPAWriter.Core.Services
     {
         private readonly string _directory;
 
+        /// <summary>
+        /// PIX activities that must never be offered in the PIX to MWF mapping table because
+        /// the converter handles them structurally (control flow) rather than through a
+        /// user/AI mapping. Matched case-insensitively by activity full name.
+        /// </summary>
+        public static readonly ISet<string> MappingExcludedActivities =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "BR.Core.Base.If",
+                "BR.Core.Base.IfFalse",
+                "BR.Core.Base.IfTrue"
+            };
+
         public PixActivityLibrary() : this(ActivityLibraryPaths.ResolvePixActivitiesDirectory())
         {
         }

@@ -28,15 +28,8 @@ namespace RPAWriter.Core.Services
         {
             public string Role;
             public string WfSnippet;
-            public string DisplayName;
             public string Parent;
             public List<string> Warnings = new List<string>();
-        }
-
-        private sealed class LocalizedInfo
-        {
-            public string DisplayName;
-            public string Description;
         }
 
         /// <summary>
@@ -49,51 +42,51 @@ namespace RPAWriter.Core.Services
             {
                 {
                     "BR.Core.Base.Container",
-                    new StructuralMapping { Role = "container", WfSnippet = "Sequence", DisplayName = "Container" }
+                    new StructuralMapping { Role = "container", WfSnippet = "Sequence" }
                 },
                 {
                     "BR.Core.Base.If",
-                    new StructuralMapping { Role = "if", WfSnippet = "If", DisplayName = "If" }
+                    new StructuralMapping { Role = "if", WfSnippet = "If" }
                 },
                 {
                     "BR.Core.Base.IfTrue",
-                    new StructuralMapping { Role = "then", DisplayName = "Then", Parent = "BR.Core.Base.If" }
+                    new StructuralMapping { Role = "then", Parent = "BR.Core.Base.If" }
                 },
                 {
                     "BR.Core.Base.IfFalse",
-                    new StructuralMapping { Role = "else", DisplayName = "Else", Parent = "BR.Core.Base.If" }
+                    new StructuralMapping { Role = "else", Parent = "BR.Core.Base.If" }
                 },
                 {
                     "BR.Core.Base.ElseIf",
-                    new StructuralMapping { Role = "elseIf", DisplayName = "Else If", Parent = "BR.Core.Base.If" }
+                    new StructuralMapping { Role = "elseIf", Parent = "BR.Core.Base.If" }
                 },
                 {
                     "BR.Core.Base.TryCatch",
-                    new StructuralMapping { Role = "tryCatch", WfSnippet = "TryCatch", DisplayName = "Try Catch" }
+                    new StructuralMapping { Role = "tryCatch", WfSnippet = "TryCatch" }
                 },
                 {
                     "BR.Core.Base.Try",
-                    new StructuralMapping { Role = "try", DisplayName = "Try", Parent = "BR.Core.Base.TryCatch" }
+                    new StructuralMapping { Role = "try", Parent = "BR.Core.Base.TryCatch" }
                 },
                 {
                     "BR.Core.Base.Catch",
-                    new StructuralMapping { Role = "catch", DisplayName = "Catch", Parent = "BR.Core.Base.TryCatch" }
+                    new StructuralMapping { Role = "catch", Parent = "BR.Core.Base.TryCatch" }
                 },
                 {
                     "BR.Core.Base.Finally",
-                    new StructuralMapping { Role = "finally", DisplayName = "Finally", Parent = "BR.Core.Base.TryCatch" }
+                    new StructuralMapping { Role = "finally", Parent = "BR.Core.Base.TryCatch" }
                 },
                 {
                     "BR.Core.Base.Assign",
-                    new StructuralMapping { Role = "statement", WfSnippet = "Assign", DisplayName = "Assign" }
+                    new StructuralMapping { Role = "statement", WfSnippet = "Assign" }
                 },
                 {
                     "BR.Core.Base.Sleep",
-                    new StructuralMapping { Role = "statement", WfSnippet = "Delay", DisplayName = "Sleep" }
+                    new StructuralMapping { Role = "statement", WfSnippet = "Delay" }
                 },
                 {
                     "BR.Core.Base.ThrowException",
-                    new StructuralMapping { Role = "statement", WfSnippet = "Throw", DisplayName = "Throw exception" }
+                    new StructuralMapping { Role = "statement", WfSnippet = "Throw" }
                 },
                 {
                     "BR.Core.Base.Return",
@@ -101,47 +94,9 @@ namespace RPAWriter.Core.Services
                     {
                         Role = "statement",
                         WfSnippet = "Return",
-                        DisplayName = "Return",
                         Warnings = new List<string> { "Return terminates the workflow; result value is not carried over." }
                     }
                 }
-            };
-
-        /// <summary>
-        /// Russian display names and descriptions for the known PIX activities. The importer writes
-        /// these into every generated descriptor; unknown activities keep their previous values or
-        /// fall back to a humanized type name.
-        /// </summary>
-        private static readonly Dictionary<string, LocalizedInfo> RussianActivityInfo =
-            new Dictionary<string, LocalizedInfo>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "BR.Core.Base.Container", new LocalizedInfo { DisplayName = "Контейнер", Description = "Контейнер шагов: выполняет вложенные действия последовательно." } },
-                { "BR.Core.Base.If", new LocalizedInfo { DisplayName = "Если", Description = "Условный оператор: выполняет ветку по заданному условию." } },
-                { "BR.Core.Base.IfTrue", new LocalizedInfo { DisplayName = "Тогда", Description = "Ветка «тогда» условного оператора." } },
-                { "BR.Core.Base.IfFalse", new LocalizedInfo { DisplayName = "Иначе", Description = "Ветка «иначе» условного оператора." } },
-                { "BR.Core.Base.ElseIf", new LocalizedInfo { DisplayName = "Иначе если", Description = "Дополнительное условие «иначе если»." } },
-                { "BR.Core.Base.TryCatch", new LocalizedInfo { DisplayName = "Попытка/перехват", Description = "Обработка исключений: блоки try, catch и finally." } },
-                { "BR.Core.Base.Try", new LocalizedInfo { DisplayName = "Попытка", Description = "Начало блока try." } },
-                { "BR.Core.Base.Catch", new LocalizedInfo { DisplayName = "Перехват", Description = "Обработчик исключения (блок catch)." } },
-                { "BR.Core.Base.Finally", new LocalizedInfo { DisplayName = "Наконец", Description = "Блок finally, выполняемый в любом случае." } },
-                { "BR.Core.Base.Assign", new LocalizedInfo { DisplayName = "Присвоить", Description = "Присваивает переменной значение выражения." } },
-                { "BR.Core.Base.Sleep", new LocalizedInfo { DisplayName = "Пауза", Description = "Приостанавливает выполнение на заданное время." } },
-                { "BR.Core.Base.ThrowException", new LocalizedInfo { DisplayName = "Выбросить исключение", Description = "Выбрасывает исключение и прерывает выполнение." } },
-                { "BR.Core.Base.Return", new LocalizedInfo { DisplayName = "Возврат", Description = "Завершает workflow (значение результата не переносится)." } },
-                { "BR.Core.Base.ChangeDateTime", new LocalizedInfo { DisplayName = "Изменить дату/время", Description = "Изменяет дату и время на заданную величину." } },
-                { "BR.Core.Base.CompareDateTimes", new LocalizedInfo { DisplayName = "Сравнить даты", Description = "Сравнивает две даты/времени." } },
-                { "BR.Core.Base.DateTimeToString", new LocalizedInfo { DisplayName = "Дата в строку", Description = "Преобразует дату/время в строку по формату." } },
-                { "BR.Core.Base.ExecuteScript", new LocalizedInfo { DisplayName = "Выполнить скрипт", Description = "Выполняет скрипт." } },
-                { "BR.Core.Base.GetDateTime", new LocalizedInfo { DisplayName = "Получить дату/время", Description = "Возвращает текущую дату и время." } },
-                { "BR.BaseActivities.ConditionalGoTo", new LocalizedInfo { DisplayName = "Условный переход", Description = "Переходит к шагу по условию." } },
-                { "BR.BaseActivities.GoToStep", new LocalizedInfo { DisplayName = "Перейти к шагу", Description = "Переходит к указанному шагу." } },
-                { "Activities.BaseCollections.List.Add", new LocalizedInfo { DisplayName = "Добавить в список", Description = "Добавляет элемент в список." } },
-                { "Activities.BaseCollections.List.Clear", new LocalizedInfo { DisplayName = "Очистить список", Description = "Удаляет все элементы из списка." } },
-                { "Activities.BaseCollections.List.Contains", new LocalizedInfo { DisplayName = "Список содержит", Description = "Проверяет, содержит ли список элемент." } },
-                { "Activities.BaseCollections.List.CreateList", new LocalizedInfo { DisplayName = "Создать список", Description = "Создаёт новый список." } },
-                { "Activities.BaseCollections.List.OutputListAsString", new LocalizedInfo { DisplayName = "Список в строку", Description = "Преобразует список в строку." } },
-                { "Activities.BaseCollections.List.Remove", new LocalizedInfo { DisplayName = "Удалить из списка", Description = "Удаляет элемент из списка." } },
-                { "Activities.VBS.ExecuteVBS", new LocalizedInfo { DisplayName = "Выполнить VBS", Description = "Выполняет скрипт VBS." } }
             };
 
         /// <summary>
@@ -229,6 +184,8 @@ namespace RPAWriter.Core.Services
                         return result;
                     }
 
+                    var defaultResourceType = activityBase.Assembly.GetType("BR.Properties.LocalizedStrings");
+
                     foreach (var dll in assemblies)
                     {
                         var fileName = Path.GetFileName(dll);
@@ -249,7 +206,7 @@ namespace RPAWriter.Core.Services
                         var count = 0;
                         foreach (var type in GetConcreteActivities(assembly, activityBase))
                         {
-                            var descriptor = BuildDescriptor(type, existing);
+                            var descriptor = BuildDescriptor(type, existing, defaultResourceType);
                             WriteDescriptor(targetDirectory, serializer, descriptor, result);
                             importedNames.Add(descriptor.ActivityFullName);
                             result.ActivitiesImported++;
@@ -360,13 +317,16 @@ namespace RPAWriter.Core.Services
             return false;
         }
 
-        private static PixActivityDescriptor BuildDescriptor(Type type, IDictionary<string, PixActivityDescriptor> existing)
+        private PixActivityDescriptor BuildDescriptor(Type type, IDictionary<string, PixActivityDescriptor> existing, Type defaultResourceType)
         {
             var fullName = type.FullName ?? type.Name;
             existing.TryGetValue(fullName, out var previous);
-            RussianActivityInfo.TryGetValue(fullName, out var localized);
 
-            var parameters = ExtractParameters(type);
+            var attributes = ActivityMetadata.ReadAttributes(type);
+            var displayName = ReadLocalizedAttribute(attributes, "BR.Core.Attributes.LocalizableScreenName", defaultResourceType);
+            var description = ReadLocalizedAttribute(attributes, "BR.Core.Attributes.LocalizableDescription", defaultResourceType);
+
+            var parameters = ExtractParameters(type, defaultResourceType);
             ApplyTargets(fullName, parameters, previous);
 
             if (BuiltInMappings.TryGetValue(fullName, out var mapping))
@@ -375,8 +335,8 @@ namespace RPAWriter.Core.Services
                 {
                     ActivityFullName = fullName,
                     WfSnippet = mapping.WfSnippet,
-                    DefaultDisplayName = localized?.DisplayName ?? mapping.DisplayName,
-                    Description = localized?.Description,
+                    DefaultDisplayName = displayName ?? FallbackDisplayName(previous, fullName),
+                    Description = description ?? previous?.Description,
                     Role = mapping.Role ?? "statement",
                     Parent = mapping.Parent,
                     Parameters = parameters,
@@ -390,11 +350,8 @@ namespace RPAWriter.Core.Services
                 WfSnippet = previous != null && !string.IsNullOrEmpty(previous.WfSnippet)
                     ? previous.WfSnippet
                     : "InvokeMethod",
-                DefaultDisplayName = localized?.DisplayName
-                    ?? (previous != null && !string.IsNullOrEmpty(previous.DefaultDisplayName)
-                        ? previous.DefaultDisplayName
-                        : Humanize(ShortTypeName(fullName))),
-                Description = localized?.Description ?? previous?.Description,
+                DefaultDisplayName = displayName ?? FallbackDisplayName(previous, fullName),
+                Description = description ?? previous?.Description,
                 Role = previous != null && !string.IsNullOrEmpty(previous.Role)
                     ? previous.Role
                     : "statement",
@@ -404,7 +361,14 @@ namespace RPAWriter.Core.Services
             };
         }
 
-        private static List<PixActivityParameter> ExtractParameters(Type type)
+        private static string FallbackDisplayName(PixActivityDescriptor previous, string fullName)
+        {
+            if (previous != null && !string.IsNullOrEmpty(previous.DefaultDisplayName))
+                return previous.DefaultDisplayName;
+            return Humanize(ShortTypeName(fullName));
+        }
+
+        private List<PixActivityParameter> ExtractParameters(Type type, Type defaultResourceType)
         {
             var result = new List<PixActivityParameter>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -420,8 +384,8 @@ namespace RPAWriter.Core.Services
                     Pix = property.Name,
                     Target = "Argument",
                     Type = SimplifyTypeName(property.PropertyType),
-                    DisplayName = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DisplayNameAttribute"),
-                    Description = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DescriptionAttribute"),
+                    DisplayName = ReadLocalizedAttribute(attributes, "BR.Core.Attributes.LocalizableScreenName", defaultResourceType),
+                    Description = ReadLocalizedAttribute(attributes, "BR.Core.Attributes.LocalizableDescription", defaultResourceType),
                     IsRequired = ActivityMetadata.HasAttribute(attributes, "System.ComponentModel.DataAnnotations.RequiredAttribute"),
                     DefaultValue = ActivityMetadata.ReadDefaultValue(attributes, "System.ComponentModel.DefaultValueAttribute")
                 });
@@ -548,6 +512,83 @@ namespace RPAWriter.Core.Services
                 ContractResolver = new CamelCasePropertyNamesContractResolver(),
                 NullValueHandling = NullValueHandling.Include
             };
+        }
+
+        private readonly Dictionary<string, Dictionary<string, string>> _resourceCache =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+
+        private string ReadLocalizedAttribute(IList<CustomAttributeData> attributes, string attributeFullName, Type defaultResourceType)
+        {
+            foreach (var attribute in attributes ?? new List<CustomAttributeData>())
+            {
+                if (!string.Equals(attribute.AttributeType?.FullName, attributeFullName, StringComparison.Ordinal))
+                    continue;
+
+                var args = attribute.ConstructorArguments;
+                if (args.Count == 0)
+                    return null;
+
+                var key = args[0].Value?.ToString();
+                if (string.IsNullOrEmpty(key))
+                    return null;
+
+                Type resourceType = null;
+                if (args.Count > 1)
+                    resourceType = args[1].Value as Type;
+
+                return ResolveResourceString(resourceType, key, defaultResourceType);
+            }
+
+            return null;
+        }
+
+        private string ResolveResourceString(Type resourceType, string key, Type defaultResourceType)
+        {
+            var effectiveType = resourceType ?? defaultResourceType;
+            if (effectiveType == null || string.IsNullOrEmpty(key))
+                return null;
+
+            var resourceName = effectiveType.FullName + ".resources";
+            if (string.IsNullOrEmpty(resourceName))
+                return null;
+
+            var values = GetResourceValues(effectiveType.Assembly, resourceName);
+            return values != null && values.TryGetValue(key, out var value) ? value : null;
+        }
+
+        private Dictionary<string, string> GetResourceValues(Assembly assembly, string resourceName)
+        {
+            var cacheKey = (assembly?.FullName ?? string.Empty) + "|" + resourceName;
+            if (_resourceCache.TryGetValue(cacheKey, out var cached))
+                return cached;
+
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            try
+            {
+                using (var stream = assembly?.GetManifestResourceStream(resourceName))
+                {
+                    if (stream != null)
+                    {
+                        using (var reader = new System.Resources.ResourceReader(stream))
+                        {
+                            foreach (System.Collections.DictionaryEntry entry in reader)
+                            {
+                                var entryKey = entry.Key as string;
+                                if (entryKey == null)
+                                    continue;
+                                result[entryKey] = entry.Value as string;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Unreadable resource stream — fall back to the empty map.
+            }
+
+            _resourceCache[cacheKey] = result;
+            return result;
         }
 
         private static string ShortTypeName(string fullName)

@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
@@ -53,6 +54,7 @@ namespace RPAWriter2.Controls
         private ListCollectionView _listView;
         private string _filterText = string.Empty;
         private string _mwfFilterText = string.Empty;
+        private HashSet<string> _mappedMwfNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private ISet<string> _onlyActivityNames;
         private CancellationTokenSource _aiCts;
 
@@ -108,6 +110,7 @@ namespace RPAWriter2.Controls
         {
             LoadMwfActivities();
             LoadPixRows();
+            RefreshMwfActivitiesView();
             _listView?.Refresh();
 
             EmptyHint.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -149,7 +152,10 @@ namespace RPAWriter2.Controls
                 return;
 
             var existing = new HashSet<string>(_rows.Select(r => r.PixFullName), StringComparer.OrdinalIgnoreCase);
-            var toAdd = names.Where(n => !string.IsNullOrWhiteSpace(n) && !existing.Contains(n)).ToList();
+            var toAdd = names
+                .Where(n => !string.IsNullOrWhiteSpace(n) && !existing.Contains(n) &&
+                            !PixActivityLibrary.MappingExcludedActivities.Contains(n))
+                .ToList();
             if (toAdd.Count == 0)
                 return;
 
@@ -172,6 +178,10 @@ namespace RPAWriter2.Controls
                     mwfDescriptors,
                     RefreshMwfActivitiesView));
             }
+
+            // Newly added rows may already be mapped (from the store); keep their MWF
+            // activities visible in the drop-down while a filter is active.
+            RefreshMwfActivitiesView();
         }
         private void LoadMwfActivities()
         {
@@ -195,6 +205,7 @@ namespace RPAWriter2.Controls
             _rows.Clear();
             var library = new PixActivityLibrary();
             var descriptors = library.GetKnownActivityNames()
+                .Where(name => !PixActivityLibrary.MappingExcludedActivities.Contains(name))
                 .Select(library.Load)
                 .Where(d => d != null)
                 .OrderBy(StructuralPriority)
@@ -298,10 +309,16 @@ namespace RPAWriter2.Controls
                    row.PixDisplayName.IndexOf(_filterText, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>Rows currently visible in the table (folder filter + text filter).</summary>
+        private List<PixMwfMappingRow> GetFilteredRows()
+        {
+            return _rows.Where(FilterRow).ToList();
+        }
+
         private void OnMwfFilterTextChanged(object sender, TextChangedEventArgs e)
         {
             _mwfFilterText = MwfFilterBox?.Text ?? string.Empty;
-            CollectionViewSource.GetDefaultView(MwfActivities).Refresh();
+            RefreshMwfActivitiesView();
         }
 
         private void OnClearMwfFilter(object sender, RoutedEventArgs e)
@@ -309,7 +326,7 @@ namespace RPAWriter2.Controls
             if (MwfFilterBox != null)
                 MwfFilterBox.Text = string.Empty;
             _mwfFilterText = string.Empty;
-            CollectionViewSource.GetDefaultView(MwfActivities).Refresh();
+            RefreshMwfActivitiesView();
         }
 
         private bool FilterMwfActivity(object item)
@@ -323,8 +340,7 @@ namespace RPAWriter2.Controls
 
             // Keep already-assigned MWF activities visible in the drop-down, so filtering
             // the list never clears an existing PIX → MWF mapping.
-            if (_rows.Any(r => r.IsMapped &&
-                               string.Equals(r.MwfFullName, activity.ActivityFullName, StringComparison.OrdinalIgnoreCase)))
+            if (_mappedMwfNames.Contains(activity.ActivityFullName))
                 return true;
 
             return ContainsIgnoreCase(activity.ActivityFullName, _mwfFilterText) ||
@@ -334,7 +350,15 @@ namespace RPAWriter2.Controls
 
         private void RefreshMwfActivitiesView()
         {
+            RebuildMappedMwfNames();
             CollectionViewSource.GetDefaultView(MwfActivities).Refresh();
+        }
+
+        private void RebuildMappedMwfNames()
+        {
+            _mappedMwfNames = new HashSet<string>(
+                _rows.Where(r => r.IsMapped).Select(r => r.MwfFullName),
+                StringComparer.OrdinalIgnoreCase);
         }
 
         private static bool ContainsIgnoreCase(string text, string fragment)
@@ -402,6 +426,17 @@ namespace RPAWriter2.Controls
             row.AutoMatchArguments();
         }
 
+        private void OnTogglePixDescription(object sender, MouseButtonEventArgs e)
+        {
+            if (!((sender as FrameworkElement)?.DataContext is PixMwfMappingRow row) || !row.HasPixDescriptionOverflow)
+                return;
+
+            row.IsPixDescriptionExpanded = !row.IsPixDescriptionExpanded;
+            if (MapList.ItemContainerGenerator.ContainerFromItem(row) is DataGridRow container)
+                container.InvalidateMeasure();
+            e.Handled = true;
+        }
+
         private void OnMapListLoadingRow(object sender, DataGridRowEventArgs e)
         {
             if (e.Row.Item is PixMwfMappingRow row)
@@ -433,9 +468,10 @@ namespace RPAWriter2.Controls
                 return;
             }
 
-            if (_rows.Count == 0)
+            var rows = GetFilteredRows();
+            if (rows.Count == 0)
             {
-                SetStatus("No PIX activities to map.");
+                SetStatus("No PIX activities to map (current filter shows none).");
                 return;
             }
 
@@ -447,7 +483,7 @@ namespace RPAWriter2.Controls
 
             SetBusy(true);
             _aiCts = new CancellationTokenSource();
-            Log?.Invoke("AI mapping started for " + _rows.Count + " activities.");
+            Log?.Invoke("AI mapping started for " + rows.Count + " activities.");
             SetStatus("AI mapping in progress — see Converter output.");
             try
             {
@@ -455,7 +491,7 @@ namespace RPAWriter2.Controls
                 var tools = new List<ToolDefinition> { ToolSchemaConverter.ToToolDefinition(tool) };
                 var messages = new List<ChatMessageData>
                 {
-                    new ChatMessageData { Role = "user", Content = BuildMappingPrompt() }
+                    new ChatMessageData { Role = "user", Content = BuildMappingPrompt(rows) }
                 };
 
                 for (var i = 0; i < MaxAiIterations; i++)
@@ -511,7 +547,7 @@ namespace RPAWriter2.Controls
                 return;
             }
 
-            var mappedRows = _rows.Where(r => r.IsMapped).ToList();
+            var mappedRows = GetFilteredRows().Where(r => r.IsMapped).ToList();
             if (mappedRows.Count == 0)
             {
                 SetStatus("No mapped PIX activities to map arguments for — assign MWF activities first.");
@@ -534,7 +570,7 @@ namespace RPAWriter2.Controls
                 var tools = new List<ToolDefinition> { ToolSchemaConverter.ToToolDefinition(tool) };
                 var messages = new List<ChatMessageData>
                 {
-                    new ChatMessageData { Role = "user", Content = BuildArgumentMappingPrompt() }
+                    new ChatMessageData { Role = "user", Content = BuildArgumentMappingPrompt(mappedRows) }
                 };
 
                 for (var i = 0; i < MaxAiIterations; i++)
@@ -667,16 +703,17 @@ namespace RPAWriter2.Controls
                 });
         }
 
-        private string BuildMappingPrompt()
+        private string BuildMappingPrompt(IEnumerable<PixMwfMappingRow> rows)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Map the following PIX activities to MWF activities in the given order:");
             sb.AppendLine();
             sb.AppendLine("PIX activities:");
-            for (var i = 0; i < _rows.Count; i++)
+            var index = 0;
+            foreach (var row in rows)
             {
-                var row = _rows[i];
-                sb.Append(i + 1).Append(". ").Append(row.PixFullName).Append(" — ").Append(row.PixDisplayName);
+                index++;
+                sb.Append(index).Append(". ").Append(row.PixFullName).Append(" — ").Append(row.PixDisplayName);
                 if (!string.IsNullOrWhiteSpace(row.PixDescription))
                     sb.Append(" (").Append(row.PixDescription).Append(")");
                 sb.AppendLine();
@@ -695,11 +732,11 @@ namespace RPAWriter2.Controls
             return sb.ToString();
         }
 
-        private string BuildArgumentMappingPrompt()
+        private string BuildArgumentMappingPrompt(IEnumerable<PixMwfMappingRow> rows)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Map the arguments of the following already-mapped PIX activities to their MWF activity arguments:");
-            foreach (var row in _rows.Where(r => r.IsMapped))
+            foreach (var row in rows)
             {
                 sb.AppendLine();
                 sb.AppendLine("PIX activity: " + row.PixFullName + " (" + row.PixDisplayName + ")");

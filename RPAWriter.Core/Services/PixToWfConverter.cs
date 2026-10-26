@@ -15,6 +15,7 @@ namespace RPAWriter.Core.Services
     public class PixToWfConverter : IPixConverter
     {
         private const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
+        private const string ExecuteScriptActivityFullName = "BR.Core.Base.ExecuteScript";
 
         private readonly PixActivityLibrary _pixLibrary;
         private readonly SnippetWorkflowEmitter _emitter;
@@ -22,6 +23,23 @@ namespace RPAWriter.Core.Services
         private readonly IReadOnlyDictionary<string, string> _mappings;
         private readonly IReadOnlyDictionary<string, IReadOnlyList<PixMwfArgumentMapping>> _argumentMappings;
         private readonly List<string> _appliedMappings = new List<string>();
+        private int _logDepth;
+
+        /// <summary>
+        /// When true, conversion stops with a <see cref="PixConversionException"/> as soon as an
+        /// activity is encountered that has neither a PIX → MWF mapping entry nor a built-in WF
+        /// snippet (Assign/Delay/WriteLine/Throw/Return). Defaults to false for backwards compatibility.
+        /// </summary>
+        public bool FailOnUnmapped { get; set; }
+
+        /// <summary>
+        /// Optional sink for step-by-step conversion tracing. Each message describes a single
+        /// phase or activity decision so the whole conversion can be followed in the UI/log.
+        /// </summary>
+        public Action<string> Log { get; set; }
+
+        private void LogInfo(string message)
+            => Log?.Invoke(new string(' ', _logDepth * 2) + message);
 
         public PixToWfConverter() : this(new PixActivityLibrary(), new WfSnippetLibrary(), null, null)
         {
@@ -65,12 +83,25 @@ namespace RPAWriter.Core.Services
         public PixConversionResult Convert(string pixXml)
         {
             var warnings = new List<string>();
+
+            LogInfo("Parsing PIX script and building the activity tree...");
             var plan = ConvertToPlan(pixXml, warnings);
+
+            LogInfo("Activity tree:\n```mermaid\n" + RobotPlanMermaidRenderer.Render(plan) + "\n```");
+
+            LogInfo("Emitting Workflow Foundation XAML (" + CountActivities(plan.Root) + " activities)...");
+            var xaml = _emitter.EmitWorkflowXaml(plan);
+            LogInfo("Raw generated XAML:\n```xml\n" + xaml + "\n```");
+
+            LogInfo("Emitting C# helper code...");
+            var csharp = _generator.EmitHelperCode(plan);
+
+            LogInfo("Script converted: " + _appliedMappings.Count + " mapping(s) applied, " + warnings.Count + " warning(s).");
             return new PixConversionResult
             {
                 Plan = plan,
-                Xaml = _emitter.EmitWorkflowXaml(plan),
-                CSharpCode = _generator.EmitHelperCode(plan),
+                Xaml = xaml,
+                CSharpCode = csharp,
                 Warnings = warnings,
                 Mappings = new List<string>(_appliedMappings)
             };
@@ -82,6 +113,7 @@ namespace RPAWriter.Core.Services
                 throw new ArgumentNullException(nameof(pixXml));
 
             _appliedMappings.Clear();
+            _logDepth = 0;
 
             var doc = XDocument.Parse(pixXml);
             var root = doc.Root;
@@ -117,14 +149,55 @@ namespace RPAWriter.Core.Services
         private ActivityNode BuildStep(XElement step, IList<string> warnings)
         {
             if (string.Equals(GetInstanceType(step), "CommentStep", StringComparison.Ordinal))
+            {
+                LogInfo("Comment step → WriteLine.");
                 return BuildComment(step);
+            }
 
             var fullName = ReadChildValue(step, "_activityFullName") ?? "";
+            var displayName = ReadText(step);
+            LogInfo("Step " + (string.IsNullOrWhiteSpace(fullName) ? "(no activity full name)" : fullName) +
+                    (string.IsNullOrWhiteSpace(displayName) ? string.Empty : "  [\"" + displayName + "\"]"));
+
+            // Cross-script calls are handled structurally: the referenced script becomes a
+            // reusable workflow activity instead of an InvokeMethod stub.
+            if (string.Equals(fullName, ExecuteScriptActivityFullName, StringComparison.OrdinalIgnoreCase))
+            {
+                LogInfo("ExecuteScript → cross-script workflow reference.");
+                return BuildExecuteScript(step, warnings);
+            }
+
             var descriptor = _pixLibrary.Load(fullName);
             var node = new ActivityNode();
 
             if (descriptor == null)
             {
+                LogInfo("Activity is not present in the PIX library.");
+                // An activity unknown to the PIX library can still be converted when a PIX → MWF
+                // mapping assigns it a WF activity. Otherwise, in strict mode, it aborts.
+                if (TryGetMapping(fullName, out var mappedActivity))
+                {
+                    var mappedKind = MwfActivityTypeMapper.Resolve(mappedActivity);
+                    if (mappedKind.HasValue)
+                    {
+                        node.Kind = mappedKind.Value;
+                        node.MappedActivity = mappedActivity;
+                        node.Name = ReadText(step) ?? LastSegment(fullName);
+                        _appliedMappings.Add(fullName + " → " + mappedActivity);
+                        LogInfo("Mapped via PIX → MWF mapping → " + mappedActivity + " (" + mappedKind + ").");
+                        FillMappedFallback(node, step, fullName);
+                        ApplyArgumentMappings(node, fullName, warnings);
+                        LogNodeDetails(node);
+                        return node;
+                    }
+                }
+
+                if (FailOnUnmapped)
+                {
+                    LogInfo("Not mapped; aborting (FailOnUnmapped=true).");
+                    throw BuildUnmappedException(fullName);
+                }
+
                 node.Kind = ActivityNodeKind.InvokeMethod;
                 node.ClassName = "RpaActions";
                 node.MethodName = MapMethodName(LastSegment(fullName));
@@ -132,24 +205,30 @@ namespace RPAWriter.Core.Services
                 node.Arguments = ReadArguments(step);
                 ApplyArgumentMappings(node, fullName, warnings);
                 warnings.Add("Unknown PIX activity \"" + fullName + "\" mapped to InvokeMethod " + node.MethodName + ".");
+                LogInfo("Unknown activity → InvokeMethod RpaActions." + node.MethodName + " (fallback).");
+                LogNodeDetails(node);
                 return node;
             }
 
             node.Name = ReadText(step) ?? descriptor.DefaultDisplayName;
+            LogInfo("Library role: " + (descriptor.Role ?? "statement") + ".");
 
             switch (descriptor.Role)
             {
                 case "container":
                     node.Kind = ActivityNodeKind.Sequence;
+                    LogInfo("Container → Sequence; building children...");
                     node.Children = BuildChildren(step, warnings);
                     break;
                 case "if":
                     node.Kind = ActivityNodeKind.If;
                     node.Expression = ReadProperty(step, "Condition");
+                    LogInfo("If → building then/elseIf/else branches...");
                     BuildIfBranches(step, node, warnings);
                     break;
                 case "tryCatch":
                     node.Kind = ActivityNodeKind.TryCatch;
+                    LogInfo("TryCatch → building try/catch/finally sections...");
                     BuildTryCatchSections(step, node, warnings);
                     break;
                 case "then":
@@ -171,6 +250,7 @@ namespace RPAWriter.Core.Services
                 if (!string.IsNullOrWhiteSpace(w))
                     warnings.Add(w);
 
+            LogNodeDetails(node);
             return node;
         }
 
@@ -186,6 +266,7 @@ namespace RPAWriter.Core.Services
                     node.Kind = mappedKind.Value;
                     node.MappedActivity = mappedActivity;
                     _appliedMappings.Add(fullName + " → " + mappedActivity);
+                    LogInfo("Mapped via PIX → MWF mapping → " + mappedActivity + " (" + mappedKind + ").");
                     ApplyParameters(node, descriptor, step);
                     FillMappedFallback(node, step, fullName);
                     ApplyArgumentMappings(node, fullName, warnings);
@@ -196,6 +277,7 @@ namespace RPAWriter.Core.Services
                              "\" is not a supported WF activity; kept the built-in mapping.");
             }
 
+            LogInfo("Built-in snippet: " + (string.IsNullOrWhiteSpace(descriptor.WfSnippet) ? "InvokeMethod" : descriptor.WfSnippet) + ".");
             switch (descriptor.WfSnippet)
             {
                 case "Assign":
@@ -225,11 +307,18 @@ namespace RPAWriter.Core.Services
                     break;
                 case "InvokeMethod":
                 default:
+                    if (FailOnUnmapped)
+                    {
+                        LogInfo("No built-in WF snippet; aborting (FailOnUnmapped=true).");
+                        throw BuildUnmappedException(fullName);
+                    }
+
                     node.Kind = ActivityNodeKind.InvokeMethod;
                     node.ClassName = "RpaActions";
                     node.MethodName = MapMethodName(LastSegment(fullName));
                     node.Arguments = ReadArguments(step);
                     ApplyArgumentMappings(node, fullName, warnings);
+                    LogInfo("No built-in snippet → InvokeMethod RpaActions." + node.MethodName + " (fallback).");
                     break;
             }
         }
@@ -242,6 +331,10 @@ namespace RPAWriter.Core.Services
 
             return _mappings.TryGetValue(fullName, out mwfActivity) && !string.IsNullOrWhiteSpace(mwfActivity);
         }
+
+        private static PixConversionException BuildUnmappedException(string fullName)
+            => new PixConversionException(
+                "Activity \"" + fullName + "\" is not mapped: no PIX → MWF mapping entry and no built-in WF snippet (Assign/Delay/WriteLine/Throw/Return).");
 
         /// <summary>
         /// Fills the mapped node the same way the built-in snippet mapping does, so a mapped
@@ -324,8 +417,15 @@ namespace RPAWriter.Core.Services
                 if (mapping == null || string.IsNullOrWhiteSpace(mapping.MwfArgument))
                     continue;
 
+                var pixArgument = assignment.Parameter;
                 assignment.Parameter = mapping.MwfArgument;
                 assignment.Value = BuildConversionExpression(assignment.Value, mapping);
+
+                LogInfo("Argument mapping: " + pixArgument + " → " + mapping.MwfArgument +
+                        (mapping.Conversion == ConversionKind.None
+                            ? string.Empty
+                            : " (conversion " + mapping.Conversion + ")") +
+                        " = " + (assignment.Value ?? "(null)"));
 
                 if (mapping.Conversion != ConversionKind.None)
                     warnings.Add("Applied conversion " + mapping.Conversion + " to argument " +
@@ -408,12 +508,54 @@ namespace RPAWriter.Core.Services
             {
                 if (child.Name.LocalName != "AbstractStep")
                     continue;
-                var node = BuildStep(child, warnings);
-                if (node != null)
-                    result.Add(node);
+
+                _logDepth++;
+                try
+                {
+                    var node = BuildStep(child, warnings);
+                    if (node != null)
+                        result.Add(node);
+                }
+                finally
+                {
+                    _logDepth--;
+                }
             }
 
             return result;
+        }
+
+        private static int CountActivities(ActivityNode node)
+        {
+            if (node == null)
+                return 0;
+
+            var count = 1;
+            foreach (var child in node.Children ?? new List<ActivityNode>())
+                count += CountActivities(child);
+            foreach (var child in node.ElseChildren ?? new List<ActivityNode>())
+                count += CountActivities(child);
+            foreach (var child in node.CatchChildren ?? new List<ActivityNode>())
+                count += CountActivities(child);
+            foreach (var child in node.FinallyChildren ?? new List<ActivityNode>())
+                count += CountActivities(child);
+            return count;
+        }
+
+        private void LogNodeDetails(ActivityNode node)
+        {
+            if (node == null)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(node.ScriptRef))
+                LogInfo("ScriptRef: " + node.ScriptRef);
+            if (!string.IsNullOrWhiteSpace(node.Variable))
+                LogInfo("Variable: " + node.Variable);
+            if (!string.IsNullOrWhiteSpace(node.Expression))
+                LogInfo("Expression: " + node.Expression);
+
+            foreach (var a in node.Arguments ?? new List<ArgumentAssignment>())
+                LogInfo("Argument " + (a.Parameter ?? "(unnamed)") + " = " + (a.Value ?? "(null)"));
         }
 
         private ActivityNode BuildComment(XElement step)
@@ -428,6 +570,73 @@ namespace RPAWriter.Core.Services
                 Name = "Comment",
                 Expression = text
             };
+        }
+
+        /// <summary>
+        /// Converts a BR.Core.Base.ExecuteScript step into a reference to the generated child
+        /// workflow, or into an InvokeMethod fallback when the referenced script cannot be
+        /// resolved statically.
+        /// </summary>
+        private ActivityNode BuildExecuteScript(XElement step, IList<string> warnings)
+        {
+            var filePath = ReadProperty(step, "FilePath");
+            var scriptRef = ResolveScriptName(filePath);
+
+            if (!string.IsNullOrWhiteSpace(scriptRef))
+            {
+                var node = new ActivityNode
+                {
+                    Kind = ActivityNodeKind.InvokeWorkflow,
+                    Name = ReadText(step) ?? "Execute script",
+                    ScriptRef = scriptRef
+                };
+                LogNodeDetails(node);
+                return node;
+            }
+
+            warnings.Add("ExecuteScript has no resolvable FilePath; kept InvokeMethod RpaActions.ExecuteScript.");
+            var fallback = new ActivityNode
+            {
+                Kind = ActivityNodeKind.InvokeMethod,
+                ClassName = "RpaActions",
+                MethodName = "ExecuteScript",
+                Name = ReadText(step) ?? "Execute script",
+                Arguments = ReadArguments(step)
+            };
+            LogNodeDetails(fallback);
+            return fallback;
+        }
+
+        /// <summary>
+        /// Extracts a workflow class name from a C# string literal that names a .pix script,
+        /// e.g. "@\"newScript.pix\"" -> "newScript". Returns null for non-literal expressions.
+        /// </summary>
+        internal static string ResolveScriptName(string expression)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+                return null;
+
+            var value = expression.Trim();
+            string inner = null;
+
+            if (value.Length >= 3 && value.StartsWith("@\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal))
+                inner = value.Substring(2, value.Length - 3);
+            else if (value.Length >= 2 && value.StartsWith("\"", StringComparison.Ordinal) && value.EndsWith("\"", StringComparison.Ordinal))
+                inner = value.Substring(1, value.Length - 2);
+
+            if (string.IsNullOrWhiteSpace(inner))
+                return null;
+
+            inner = inner.Replace("\"\"", "\"").Trim();
+
+            // Strip a path and extension: "folder/NewScript.pix" -> "NewScript".
+            var slash = Math.Max(inner.LastIndexOf('/'), inner.LastIndexOf('\\'));
+            var baseName = slash >= 0 ? inner.Substring(slash + 1) : inner;
+            var dot = baseName.LastIndexOf('.');
+            if (dot >= 0)
+                baseName = baseName.Substring(0, dot);
+
+            return SafeClassName(baseName);
         }
 
         private static string ReadProperty(XElement step, string propertyName)
@@ -531,7 +740,7 @@ namespace RPAWriter.Core.Services
             return id;
         }
 
-        private static string SafeClassName(string name)
+        internal static string SafeClassName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return null;

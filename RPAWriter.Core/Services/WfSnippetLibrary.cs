@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace RPAWriter.Core.Services
@@ -47,5 +49,45 @@ namespace RPAWriter.Core.Services
 
             return fallback;
         }
+
+        /// <summary>
+        /// Enumerates every deployed WF snippet (name + trimmed XAML template), sorted by name.
+        /// </summary>
+        public IReadOnlyList<WfSnippet> GetAll()
+        {
+            var result = new List<WfSnippet>();
+            if (string.IsNullOrWhiteSpace(_directory) || !Directory.Exists(_directory))
+                return result;
+
+            foreach (var path in Directory.GetFiles(_directory, "*.xaml"))
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                var content = string.Empty;
+                try
+                {
+                    var text = File.ReadAllText(path, Encoding.UTF8);
+                    if (!string.IsNullOrWhiteSpace(text))
+                        content = text.Trim();
+                }
+                catch
+                {
+                    // ignore read errors
+                }
+
+                result.Add(new WfSnippet { Name = name, Content = content });
+            }
+
+            return result.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    /// <summary>A deployed Workflow Foundation activity snippet (XAML template).</summary>
+    public class WfSnippet
+    {
+        /// <summary>Snippet file name without the .xaml extension (e.g. "Assign").</summary>
+        public string Name { get; set; }
+
+        /// <summary>Trimmed XAML template content with {{placeholder}} markers.</summary>
+        public string Content { get; set; }
     }
 }

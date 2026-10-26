@@ -25,6 +25,12 @@ namespace RPAWriter.Core.Services
         private const string CoreAssemblyName = "mscorlib";
         private const string FrameworkAssemblyName = "System.Activities";
 
+        /// <summary>Base type of Flowchart's structural nodes (FlowStep, FlowDecision, FlowSwitch&lt;T&gt;).</summary>
+        private const string FlowNodeBaseFullName = "System.Activities.Statements.FlowNode";
+
+        /// <summary>Base type of TryCatch handlers (Catch&lt;TException&gt;).</summary>
+        private const string CatchBaseFullName = "System.Activities.Statements.Catch";
+
         /// <summary>
         /// Scans <paramref name="activitiesDirectory"/>, extracts every WF activity and rewrites
         /// the descriptor library in <paramref name="targetDirectory"/>. Existing display names and
@@ -76,22 +82,143 @@ namespace RPAWriter.Core.Services
             if (!string.IsNullOrWhiteSpace(systemActivitiesPath))
                 assemblies.Add(systemActivitiesPath);
 
+            ImportAssemblyPaths(assemblies, resolverPaths, targetDirectory, log, result);
+            return result;
+        }
+
+        /// <summary>
+        /// Discovers the built-in Workflow Foundation activities shipped inside
+        /// <c>System.Activities.dll</c> and returns their descriptors without writing anything to the
+        /// activity library. This is the read-only counterpart of <see cref="ImportFrameworkActivities"/>:
+        /// the Converter tool window caches the result so the user can pick which framework activities
+        /// to import.
+        /// </summary>
+        public IReadOnlyList<WfActivityDescriptor> DiscoverFrameworkActivities(Action<string> log = null)
+        {
+            var result = new List<WfActivityDescriptor>();
+            log = log ?? (message => { });
+
+            var resolverPaths = CollectFrameworkResolverPaths();
+            var systemActivitiesPath = FindSystemActivitiesPath(resolverPaths);
+            if (string.IsNullOrWhiteSpace(systemActivitiesPath))
+            {
+                log(FrameworkAssemblyName + ".dll was not found on this machine.");
+                return result;
+            }
+
+            try
+            {
+                using (var loadContext = new MetadataLoadContext(new PathAssemblyResolver(resolverPaths.ToList()), CoreAssemblyName))
+                {
+                    var activityBase = ResolveActivityBase(loadContext);
+                    if (activityBase == null)
+                    {
+                        log("Activity base type \"" + ActivityBaseFullName + "\" was not found in " + FrameworkAssemblyName + ".dll.");
+                        return result;
+                    }
+
+                    var assembly = loadContext.LoadFromAssemblyPath(systemActivitiesPath);
+                    var existing = new Dictionary<string, WfActivityDescriptor>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var type in GetConcreteActivities(assembly, activityBase, includeWorkflowElements: true))
+                        result.Add(BuildDescriptor(type, Path.GetFileName(systemActivitiesPath), existing));
+
+                    log("Discovered " + result.Count + " framework activities in " + Path.GetFileName(systemActivitiesPath) + ".");
+                }
+            }
+            catch (Exception ex)
+            {
+                log("Failed to discover framework activities: " + ex.Message);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Imports the built-in Workflow Foundation activities from <c>System.Activities.dll</c>.
+        /// When <paramref name="selectedFullNames"/> is null every framework activity is imported
+        /// (backwards-compatible behaviour); otherwise only the activities whose full names are in the
+        /// set are written, and stale <c>System.*</c> descriptors outside that set are removed. Used
+        /// together with <see cref="MwfActivitySourceImporter"/> when the selected folder contains C#
+        /// sources instead of compiled <c>Activities.*.dll</c> assemblies.
+        /// </summary>
+        public WfActivityLibraryImportResult ImportFrameworkActivities(string targetDirectory, ISet<string> selectedFullNames = null, Action<string> log = null)
+        {
+            var result = new WfActivityLibraryImportResult();
+            log = log ?? (message => { });
+
+            if (string.IsNullOrWhiteSpace(targetDirectory))
+            {
+                result.Errors.Add("Target library directory is empty.");
+                return result;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("Cannot create target directory " + targetDirectory + ": " + ex.Message);
+                return result;
+            }
+
+            var resolverPaths = CollectFrameworkResolverPaths();
+            var systemActivitiesPath = FindSystemActivitiesPath(resolverPaths);
+            if (string.IsNullOrWhiteSpace(systemActivitiesPath))
+            {
+                result.Errors.Add(FrameworkAssemblyName + ".dll was not found on this machine.");
+                return result;
+            }
+
+            Func<Type, bool> activityFilter = selectedFullNames == null
+                ? null
+                : type => selectedFullNames.Contains(type.FullName);
+
+            ImportAssemblyPaths(
+                new[] { systemActivitiesPath },
+                resolverPaths,
+                targetDirectory,
+                log,
+                result,
+                name => name.StartsWith("System.", StringComparison.OrdinalIgnoreCase),
+                activityFilter,
+                includeWorkflowElements: true);
+            return result;
+        }
+
+        /// <summary>
+        /// Reflects over the given assemblies in a single <see cref="MetadataLoadContext"/>, writes one
+        /// descriptor per concrete WF activity and removes stale descriptors afterwards. Obsolete-file
+        /// cleanup is skipped when any assembly failed to load, so a partial import never deletes
+        /// descriptors it could not refresh. <paramref name="obsoleteFilter"/> restricts cleanup to the
+        /// descriptors it returns true for; null removes every stale descriptor.
+        /// </summary>
+        private static void ImportAssemblyPaths(
+            IEnumerable<string> assemblyPaths,
+            IEnumerable<string> resolverPaths,
+            string targetDirectory,
+            Action<string> log,
+            WfActivityLibraryImportResult result,
+            Func<string, bool> obsoleteFilter = null,
+            Func<Type, bool> activityFilter = null,
+            bool includeWorkflowElements = false)
+        {
             var existing = LoadExistingDescriptors(targetDirectory);
             var serializer = CreateSerializerSettings();
             var importedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
-                using (var loadContext = new MetadataLoadContext(new PathAssemblyResolver(resolverPaths), CoreAssemblyName))
+                using (var loadContext = new MetadataLoadContext(new PathAssemblyResolver(resolverPaths.ToList()), CoreAssemblyName))
                 {
                     var activityBase = ResolveActivityBase(loadContext);
                     if (activityBase == null)
                     {
                         result.Errors.Add("Activity base type \"" + ActivityBaseFullName + "\" was not found in " + FrameworkAssemblyName + ".dll.");
-                        return result;
+                        return;
                     }
 
-                    foreach (var dll in assemblies)
+                    foreach (var dll in assemblyPaths)
                     {
                         var fileName = Path.GetFileName(dll);
                         result.DllsScanned++;
@@ -100,8 +227,11 @@ namespace RPAWriter.Core.Services
                         {
                             var assembly = loadContext.LoadFromAssemblyPath(dll);
                             var count = 0;
-                            foreach (var type in GetConcreteActivities(assembly, activityBase))
+                            foreach (var type in GetConcreteActivities(assembly, activityBase, includeWorkflowElements))
                             {
+                                if (activityFilter != null && !activityFilter(type))
+                                    continue;
+
                                 var descriptor = BuildDescriptor(type, fileName, existing);
                                 WriteDescriptor(targetDirectory, serializer, descriptor, result);
                                 importedNames.Add(descriptor.ActivityFullName);
@@ -122,14 +252,12 @@ namespace RPAWriter.Core.Services
             catch (Exception ex)
             {
                 result.Errors.Add("Reflection failed: " + ex.Message);
-                return result;
+                return;
             }
 
             // A partial import must not delete descriptors it failed to refresh.
             if (result.FailedAssemblies.Count == 0)
-                RemoveObsoleteDescriptors(targetDirectory, importedNames, result);
-
-            return result;
+                RemoveObsoleteDescriptors(targetDirectory, importedNames, obsoleteFilter ?? (name => true), result);
         }
 
         private static Type ResolveActivityBase(MetadataLoadContext loadContext)
@@ -160,7 +288,23 @@ namespace RPAWriter.Core.Services
         {
             var paths = new List<string>();
             paths.AddRange(Directory.GetFiles(activitiesDirectory, "*.dll"));
+            AddFrameworkAndReferencePaths(paths);
+            return DeduplicateByAssemblyName(paths);
+        }
 
+        /// <summary>
+        /// Collects resolver paths for the framework-only import (<see cref="FrameworkAssemblyName"/>.dll):
+        /// the .NET Framework runtime directory, its WPF subfolder and the reference-assemblies folder.
+        /// </summary>
+        private static List<string> CollectFrameworkResolverPaths()
+        {
+            var paths = new List<string>();
+            AddFrameworkAndReferencePaths(paths);
+            return DeduplicateByAssemblyName(paths);
+        }
+
+        private static void AddFrameworkAndReferencePaths(List<string> paths)
+        {
             var frameworkDir = FindFrameworkDirectory();
             if (!string.IsNullOrWhiteSpace(frameworkDir))
             {
@@ -174,8 +318,6 @@ namespace RPAWriter.Core.Services
             }
 
             AddReferenceAssemblies(paths);
-
-            return DeduplicateByAssemblyName(paths);
         }
 
         /// <summary>
@@ -241,7 +383,7 @@ namespace RPAWriter.Core.Services
             return null;
         }
 
-        private static IEnumerable<Type> GetConcreteActivities(Assembly assembly, Type activityBase)
+        private static IEnumerable<Type> GetConcreteActivities(Assembly assembly, Type activityBase, bool includeWorkflowElements = false)
         {
             Type[] types;
             try
@@ -271,9 +413,40 @@ namespace RPAWriter.Core.Services
             {
                 if (type.IsAbstract)
                     continue;
-                if (!DerivesFromActivity(type, activityBase))
+                if (DerivesFromActivity(type, activityBase))
+                {
+                    yield return type;
                     continue;
-                yield return type;
+                }
+                if (includeWorkflowElements && IsWorkflowElement(type))
+                    yield return type;
+            }
+        }
+
+        /// <summary>
+        /// True for non-abstract structural workflow elements that are not themselves
+        /// <c>System.Activities.Activity</c> but still appear in a workflow definition:
+        /// Flowchart nodes (FlowStep/FlowDecision/FlowSwitch&lt;T&gt;), StateMachine elements
+        /// (State/Transition), Pick's PickBranch and TryCatch's Catch&lt;TException&gt;.
+        /// </summary>
+        private static bool IsWorkflowElement(Type type)
+        {
+            if (type == null)
+                return false;
+
+            if (DerivesFrom(type, FlowNodeBaseFullName))
+                return true;
+            if (DerivesFrom(type, CatchBaseFullName))
+                return true;
+
+            switch (type.FullName)
+            {
+                case "System.Activities.Statements.State":
+                case "System.Activities.Statements.Transition":
+                case "System.Activities.Statements.PickBranch":
+                    return true;
+                default:
+                    return false;
             }
         }
 
@@ -284,9 +457,7 @@ namespace RPAWriter.Core.Services
                 if (activityBase != null && type == activityBase)
                     return false;
 
-                for (var current = type.BaseType; current != null; current = current.BaseType)
-                    if (string.Equals(current.FullName, ActivityBaseFullName, StringComparison.Ordinal))
-                        return true;
+                return DerivesFrom(type, ActivityBaseFullName);
             }
             catch
             {
@@ -297,18 +468,46 @@ namespace RPAWriter.Core.Services
             return false;
         }
 
+        private static bool DerivesFrom(Type type, string baseFullName)
+        {
+            if (type == null || string.IsNullOrEmpty(baseFullName))
+                return false;
+
+            try
+            {
+                for (var current = type.BaseType; current != null; current = current.BaseType)
+                    if (string.Equals(current.FullName, baseFullName, StringComparison.Ordinal))
+                        return true;
+            }
+            catch
+            {
+                // Base type resolution can fail when a dependency is missing; treat the type as
+                // not deriving from the requested base type.
+            }
+
+            return false;
+        }
+
         private static WfActivityDescriptor BuildDescriptor(Type type, string assemblyName, IDictionary<string, WfActivityDescriptor> existing)
         {
             var fullName = type.FullName ?? type.Name;
             existing.TryGetValue(fullName, out var previous);
 
+            var attributes = ActivityMetadata.ReadAttributes(type);
+            var reflectedDisplayName = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DisplayNameAttribute");
+            var reflectedDescription = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DescriptionAttribute");
+
             return new WfActivityDescriptor
             {
                 ActivityFullName = fullName,
-                DefaultDisplayName = previous != null && !string.IsNullOrEmpty(previous.DefaultDisplayName)
-                    ? previous.DefaultDisplayName
-                    : Humanize(ShortTypeName(fullName)),
-                Description = previous?.Description,
+                DefaultDisplayName = !string.IsNullOrEmpty(reflectedDisplayName)
+                    ? reflectedDisplayName
+                    : previous != null && !string.IsNullOrEmpty(previous.DefaultDisplayName)
+                        ? previous.DefaultDisplayName
+                        : Humanize(ShortTypeName(fullName)),
+                Description = !string.IsNullOrEmpty(reflectedDescription)
+                    ? reflectedDescription
+                    : previous?.Description,
                 BaseType = type.BaseType?.FullName,
                 AssemblyName = assemblyName,
                 Parameters = ExtractParameters(type)
@@ -329,7 +528,7 @@ namespace RPAWriter.Core.Services
                 result.Add(new WfActivityParameter
                 {
                     Name = property.Name,
-                    Type = SimplifyTypeName(property.PropertyType),
+                    Type = SimplifyTypeName(ActivityMetadata.ExtractValueType(property.PropertyType)),
                     DisplayName = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DisplayNameAttribute"),
                     Description = ActivityMetadata.ReadStringAttribute(attributes, "System.ComponentModel.DescriptionAttribute"),
                     Direction = ActivityMetadata.ExtractDirection(property.PropertyType),
@@ -411,11 +610,16 @@ namespace RPAWriter.Core.Services
         }
 
         private static void RemoveObsoleteDescriptors(string directory, ISet<string> keepNames, WfActivityLibraryImportResult result)
+            => RemoveObsoleteDescriptors(directory, keepNames, name => true, result);
+
+        private static void RemoveObsoleteDescriptors(string directory, ISet<string> keepNames, Func<string, bool> include, WfActivityLibraryImportResult result)
         {
             foreach (var file in Directory.GetFiles(directory, "*.json", SearchOption.TopDirectoryOnly))
             {
                 var name = Path.GetFileNameWithoutExtension(file);
                 if (keepNames.Contains(name))
+                    continue;
+                if (!include(name))
                     continue;
 
                 try

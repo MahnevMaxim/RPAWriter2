@@ -41,6 +41,9 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Highlighted tokens; for non-C# code this is a single plain token.</summary>
         public IReadOnlyList<CodeToken> Tokens { get; }
+
+        /// <summary>True when this is a Mermaid diagram block, rendered as a live diagram.</summary>
+        public bool IsMermaid => string.Equals(Language, "mermaid", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Splits a chat message into text and code blocks based on Markdown fenced code blocks.</summary>

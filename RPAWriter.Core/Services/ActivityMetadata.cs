@@ -28,6 +28,21 @@ namespace RPAWriter.Core.Services
             }
         }
 
+        public static IList<CustomAttributeData> ReadAttributes(Type type)
+        {
+            if (type == null)
+                return new List<CustomAttributeData>();
+
+            try
+            {
+                return type.GetCustomAttributesData();
+            }
+            catch
+            {
+                return new List<CustomAttributeData>();
+            }
+        }
+
         /// <summary>Reads the first constructor argument of an attribute as a string.</summary>
         public static string ReadStringAttribute(IList<CustomAttributeData> attributes, string attributeFullName)
         {
@@ -83,6 +98,36 @@ namespace RPAWriter.Core.Services
                 case "OutArgument": return "Out";
                 case "InOutArgument": return "InOut";
                 default: return "Property";
+            }
+        }
+
+        /// <summary>
+        /// Returns the value type carried by a WF argument wrapper
+        /// (<c>InArgument</c>/<c>OutArgument</c>/<c>InOutArgument</c>), or the property
+        /// type itself for plain properties.
+        /// </summary>
+        public static Type ExtractValueType(Type propertyType)
+        {
+            if (propertyType == null || !propertyType.IsGenericType)
+                return propertyType;
+
+            var args = propertyType.GetGenericArguments();
+            if (args.Length != 1)
+                return propertyType;
+
+            var name = propertyType.Name;
+            var tick = name.IndexOf('`');
+            if (tick >= 0)
+                name = name.Substring(0, tick);
+
+            switch (name)
+            {
+                case "InArgument":
+                case "OutArgument":
+                case "InOutArgument":
+                    return args[0];
+                default:
+                    return propertyType;
             }
         }
     }

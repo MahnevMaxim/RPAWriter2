@@ -238,7 +238,8 @@ namespace RPAWriter.Core.Models
         Delay,
         TryCatch,
         Throw,
-        Return
+        Return,
+        InvokeWorkflow
     }
 
     /// <summary>Argument for InvokeMethod.</summary>
@@ -258,6 +259,9 @@ namespace RPAWriter.Core.Models
 
         /// <summary>Full MWF activity type chosen by a user/AI-managed mapping, when one was applied.</summary>
         public string MappedActivity { get; set; }
+
+        /// <summary>Name of the workflow class referenced by an <see cref="ActivityNodeKind.InvokeWorkflow"/> node.</summary>
+        public string ScriptRef { get; set; }
 
         public List<ArgumentAssignment> Arguments { get; set; } = new List<ArgumentAssignment>();
         public string Variable { get; set; }
@@ -346,6 +350,47 @@ namespace RPAWriter.Core.Models
         public List<string> Mappings { get; set; } = new List<string>();
     }
 
+    /// <summary>Result of converting a single PIX script (.pix) into a Workflow Foundation .xaml workflow.</summary>
+    public class PixScriptConversionResult
+    {
+        /// <summary>Source .pix file name (e.g. main.pix).</summary>
+        public string SourceFileName { get; set; }
+
+        /// <summary>Target .xaml file name inside the MWF robot folder (e.g. Main.xaml).</summary>
+        public string OutputFileName { get; set; }
+
+        /// <summary>Generated Workflow Foundation XAML.</summary>
+        public string Xaml { get; set; }
+
+        /// <summary>Generated C# helper code for this script.</summary>
+        public string CSharpCode { get; set; }
+
+        /// <summary>Warnings collected while converting this script.</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
+
+        /// <summary>PIX to MWF mappings applied while converting this script.</summary>
+        public List<string> Mappings { get; set; } = new List<string>();
+    }
+
+    /// <summary>Result of converting a whole PIX robot folder into a Workflow Foundation (MWF) robot.</summary>
+    public class PixRobotConversionResult
+    {
+        /// <summary>Robot name taken from the .pixproj file (or the folder name).</summary>
+        public string RobotName { get; set; }
+
+        /// <summary>Per-script conversion results, in generation order (Main first).</summary>
+        public List<PixScriptConversionResult> Scripts { get; set; } = new List<PixScriptConversionResult>();
+
+        /// <summary>Combined C# helper code for all scripts (Robots.RpaActions).</summary>
+        public string AggregateCSharpCode { get; set; }
+
+        /// <summary>All warnings collected across scripts.</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
+
+        /// <summary>All applied PIX to MWF mappings across scripts.</summary>
+        public List<string> AppliedMappings { get; set; } = new List<string>();
+    }
+
     /// <summary>Result of importing PIX activities from the installed PIX assemblies.</summary>
     public class PixActivityLibraryImportResult
     {
@@ -374,7 +419,7 @@ namespace RPAWriter.Core.Models
         /// <summary>Property name.</summary>
         public string Name { get; set; }
 
-        /// <summary>.NET type of the property (e.g. System.Activities.InArgument&lt;System.String&gt;).</summary>
+        /// <summary>Value type of the argument (inner generic type, e.g. System.String).</summary>
         public string Type { get; set; }
 
         /// <summary>Human-readable argument name shown in the mapping UI.</summary>
@@ -435,6 +480,9 @@ namespace RPAWriter.Core.Models
 
         /// <summary>Assembly names that failed to load (obsolete-file cleanup is skipped when this is non-empty).</summary>
         public List<string> FailedAssemblies { get; set; } = new List<string>();
+        /// <summary>Number of C# source files scanned (used only by the source importer).</summary>
+        public int SourceFilesScanned { get; set; }
+
     }
 
     /// <summary>Knowledge-base record: task + solution (XAML/C#) + source robot + documentation.</summary>

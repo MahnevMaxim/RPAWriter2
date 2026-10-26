@@ -77,6 +77,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="PixRobotConversionRow" Height="0"/>
             <RowDefinition x:Name="PixMwfMapRow" Height="0"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*" MinHeight="80"/>
@@ -84,22 +85,31 @@
         <WrapPanel Grid.Row="0" Margin="0,0,0,8">
             <Button Content="UiPath → MWF" Click="OnConvertUiPath" Margin="0,5,8,0"/>
             <Button Content="Convert PIX to MWF" Click="OnConvertPix" Margin="0,5,8,0"/>
-            <Button Content="Get All Activities From PIX Folder" Click="OnGetAllActivitiesFromPix" Margin="0,5,8,0"/>
+            <Button Content="Parse All Activities From PIX" Click="OnParseAllActivitiesFromPix" Margin="0,5,8,0"/>
             <Button Content="Import PIX activities (rewrite library)" Click="OnImportPixActivities" Margin="0,5,8,0"/>
             <Button Content="Get All MWF Activities" Click="OnGetAllMwfActivities" Margin="0,5,8,0"/>
+            <Button Content="View WF snippets" Click="OnViewWfSnippets" Margin="0,5,8,0"/>
+            <Button Content="Get System Activities" Click="OnGetSystemActivities" Margin="0,5,8,0"/>
+            <Button Content="Select System Activities" Click="OnSelectSystemActivities" Margin="0,5,8,0"/>
             <Button Content="PIX to MWF map" Click="OnOpenPixMwfMap" Margin="0,5,8,0"/>
             <Button Content="Clear" Click="OnClearConverter" Margin="0,5,8,0"/>
         </WrapPanel>
-        <Border x:Name="PixMwfMapHost" Grid.Row="1" Margin="0,0,0,8"
+        <Border x:Name="PixRobotConversionHost" Grid.Row="1" Margin="0,0,0,8"
+                BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
+                Background="{StaticResource Dark.Panel}" Padding="8,6" Visibility="Collapsed">
+            <controls:PixRobotConversionControl x:Name="PixRobotConversionPanel"/>
+        </Border>
+        <Border x:Name="PixMwfMapHost" Grid.Row="2" Margin="0,0,0,8"
                 BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
                 Background="{StaticResource Dark.Panel}" Padding="8,6" Visibility="Collapsed">
             <controls:PixMwfMappingControl x:Name="PixMwfMapControl"/>
         </Border>
-        <GridSplitter x:Name="PixMwfMapSplitter" Grid.Row="2" Height="5"
+        <GridSplitter x:Name="PixMwfMapSplitter" Grid.Row="3" Height="5"
                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                      Background="{StaticResource Dark.Border}"
                       Visibility="Collapsed"/>
-        <Grid Grid.Row="3" Margin="0,0,0,4">
+        <Grid Grid.Row="4" Margin="0,0,0,4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>

@@ -3910,6 +3910,71 @@ namespace RPAWriter2
             }
         }
 
+        private void OnExportDocumentation(object sender, RoutedEventArgs e)
+        {
+            ExportDirectory(HelpDocumentation.ResolveDocsDirectory(), "Docs", "Documentation");
+        }
+
+        private void OnExportPrompts(object sender, RoutedEventArgs e)
+        {
+            ExportDirectory(PromptPaths.ResolvePromptsDirectory(), "Prompts", "Prompts");
+        }
+
+        private void ExportDirectory(string sourceDir, string targetSubFolder, string label)
+        {
+            if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+            {
+                AppendExtensionError(label + " directory not found.");
+                return;
+            }
+
+            var initial = GetOpenSolutionDirectory() ?? string.Empty;
+            var targetRoot = FolderPicker.PickFolder("Select a folder to export " + label + " to", initial, GetOwner());
+            if (string.IsNullOrWhiteSpace(targetRoot))
+                return;
+
+            try
+            {
+                var targetDir = Path.Combine(targetRoot, targetSubFolder);
+                CopyDirectory(sourceDir, targetDir);
+                var message = label + " exported to " + targetDir;
+                ShowSettingsToast(message);
+                AppendChat(message);
+            }
+            catch (Exception ex)
+            {
+                AppendExtensionError("Failed to export " + label + ": " + ex.Message);
+                LogService.Error(ex, "Failed to export " + label + ".");
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string targetDir)
+        {
+            Directory.CreateDirectory(targetDir);
+
+            foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = dir.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                Directory.CreateDirectory(Path.Combine(targetDir, relative));
+            }
+
+            foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = file.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var dest = Path.Combine(targetDir, relative);
+                var destDir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrWhiteSpace(destDir))
+                    Directory.CreateDirectory(destDir);
+                File.Copy(file, dest, true);
+            }
+        }
+
+        private IntPtr GetOwner()
+        {
+            var window = System.Windows.Window.GetWindow(this);
+            return window == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        }
+
         private const double SettingsToastMaxHeight = 160.0;
 
         private void ShowSettingsToast(string text)

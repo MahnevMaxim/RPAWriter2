@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using RPAWriter.Core.Services;
 
@@ -53,6 +54,32 @@ namespace RPAWriter.Tests
             Assert.That(result.Errors, Is.Not.Empty);
             Assert.That(result.ActivitiesImported, Is.EqualTo(0));
         }
+
+        [Test]
+        public void DiscoverFrameworkActivities_ReturnsStandardActivities()
+        {
+            var frameworkDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Microsoft.NET", "Framework64", "v4.0.30319");
+            var systemActivities = Path.Combine(frameworkDir, "System.Activities.dll");
+            if (!File.Exists(systemActivities))
+                Assert.Ignore("System.Activities.dll not available on this machine.");
+
+            var activities = new MwfActivityLibraryImporter().DiscoverFrameworkActivities();
+
+            Assert.That(activities, Is.Not.Empty);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.Sequence"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.FlowDecision"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.FlowStep"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.FlowSwitch`1"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.State"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.Transition"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.PickBranch"), Is.True);
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.Catch`1"), Is.True);
+            // Service types must not leak into the activity list.
+            Assert.That(activities.Any(a => a.ActivityFullName == "System.Activities.Statements.WorkflowTerminatedException"), Is.False);
+        }
+
 
         [Test]
         public void Load_And_GetKnownActivityNames_WorkFromDescriptorDirectory()
