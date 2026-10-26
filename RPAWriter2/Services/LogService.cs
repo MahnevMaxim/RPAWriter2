@@ -4,13 +4,14 @@ using System.IO;
 using NLog;
 using NLog.Config;
 using NLog.Targets;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
     /// <summary>
     /// Central application logging via NLog. Writes to a rolling file. The file path
     /// is configurable (see Settings); when empty it defaults to the extension
-    /// installation folder (with a %AppData%\RPAWriter2\Logs fallback).
+    /// installation folder (with a %AppData%\RPAWriter2\&lt;version&gt;\Logs fallback).
     /// </summary>
     public static class LogService
     {
@@ -139,10 +140,7 @@ namespace RPAWriter2.Services
                 // Fall through to the safe default.
             }
 
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "RPAWriter2",
-                "Logs");
+            return AppDataPaths.Resolve("Logs");
         }
 
         public static void Debug(string message) => Log.Debug(message);

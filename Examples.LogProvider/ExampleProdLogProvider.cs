@@ -15,7 +15,7 @@ namespace Examples.LogProvider
     ///
     /// To use it: build this project and copy the resulting Examples.LogProvider.dll
     /// into the folder configured as "Log providers directory" (default
-    /// %AppData%\RPAWriter2\Providers). The extension discovers it via reflection.
+    /// %AppData%\RPAWriter2\<17|18>\Providers). The extension discovers it via reflection.
     /// </summary>
     public class ExampleProdLogProvider : IProdLogProvider
     {

@@ -1748,9 +1748,7 @@ namespace RPAWriter2
             var configured = (_settings?.LogProvidersPath ?? "").Trim();
             if (!string.IsNullOrWhiteSpace(configured))
                 return configured;
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "RPAWriter2", "Providers");
+            return AppDataPaths.Resolve("Providers");
         }
 
         private void RefreshProviderCombo()
@@ -3924,7 +3922,7 @@ namespace RPAWriter2
         {
             if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
             {
-                AppendExtensionError(label + " directory not found.");
+                LogService.Warn(label + " directory not found.");
                 return;
             }
 
@@ -3939,11 +3937,10 @@ namespace RPAWriter2
                 CopyDirectory(sourceDir, targetDir);
                 var message = label + " exported to " + targetDir;
                 ShowSettingsToast(message);
-                AppendChat(message);
+                LogService.Info(message);
             }
             catch (Exception ex)
             {
-                AppendExtensionError("Failed to export " + label + ": " + ex.Message);
                 LogService.Error(ex, "Failed to export " + label + ".");
             }
         }

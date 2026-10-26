@@ -19,7 +19,7 @@ namespace RPAWriter.Core.Services
         /// <summary>
         /// Returns the deployed activity library directory. Candidates, in order:
         /// 1) next to this (Core) assembly, 2) next to the entry assembly,
-        /// 3) %AppData%\RPAWriter2\ActivityLibrary.
+        /// 3) %AppData%\RPAWriter2\&lt;version&gt;\ActivityLibrary.
         /// </summary>
         public static string ResolveActivityLibraryDirectory()
         {
@@ -28,10 +28,7 @@ namespace RPAWriter.Core.Services
             {
                 CombineDir(coreDir),
                 CombineDir(EntryAssemblyDir()),
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "RPAWriter2",
-                    ActivityLibraryFolderName)
+                AppDataPaths.Resolve(ActivityLibraryFolderName)
             };
 
             foreach (var candidate in candidates)

@@ -117,7 +117,7 @@ namespace RPAWriter2.Services
         /// <summary>Full path to the chat log file; empty uses the default location next to the extension.</summary>
         public string ChatLogFilePath { get; set; } = "";
 
-        /// <summary>Directory scanned for third-party IProdLogProvider DLLs; empty uses %AppData%\RPAWriter2\Providers.</summary>
+        /// <summary>Directory scanned for third-party IProdLogProvider DLLs; empty uses %AppData%\RPAWriter2\&lt;version&gt;\Providers.</summary>
         public string LogProvidersPath { get; set; } = "";
 
         /// <summary>Speech recognition provider: "Auto", "OpenAiWhisper" or "Vosk".</summary>
@@ -139,11 +139,10 @@ namespace RPAWriter2.Services
         public List<string> RobotNameHistory { get; set; } = new List<string>();
     }
 
-    /// <summary>Loads/saves settings at %AppData%\RPAWriter2\settings.json.</summary>
+    /// <summary>Loads/saves settings at %AppData%\RPAWriter2\&lt;version&gt;\settings.json.</summary>
     public static class SettingsStore
     {
-        public static string SettingsDirectory =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPAWriter2");
+        public static string SettingsDirectory => AppDataPaths.Resolve();
 
         public static string SettingsFile => Path.Combine(SettingsDirectory, "settings.json");
 

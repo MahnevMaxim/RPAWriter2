@@ -23,15 +23,12 @@ namespace RPAWriter.Core.Services
 
     /// <summary>
     /// Loads/saves the System.Activities discovery and selection at
-    /// <c>%AppData%\RPAWriter2\system-activities.json</c> so both survive Visual Studio sessions.
+    /// <c>%AppData%\RPAWriter2\&lt;version&gt;\system-activities.json</c> so both survive Visual Studio sessions.
     /// </summary>
     public class SystemActivitiesStore
     {
         /// <summary>Default on-disk location of the discovery/selection document.</summary>
-        public static string DefaultFilePath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "RPAWriter2",
-            "system-activities.json");
+        public static string DefaultFilePath => AppDataPaths.Resolve("system-activities.json");
 
         private readonly string _filePath;
 

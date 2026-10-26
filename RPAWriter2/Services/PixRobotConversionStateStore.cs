@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Newtonsoft.Json;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -13,14 +14,11 @@ namespace RPAWriter2.Services
 
     /// <summary>
     /// Loads/saves the last used PIX → MWF conversion folders at
-    /// %AppData%\RPAWriter2\pix-robot-conversion.json so they survive Visual Studio sessions.
+    /// %AppData%\RPAWriter2\&lt;version&gt;\pix-robot-conversion.json so they survive Visual Studio sessions.
     /// </summary>
     public static class PixRobotConversionStateStore
     {
-        public static string StateFile => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "RPAWriter2",
-            "pix-robot-conversion.json");
+        public static string StateFile => AppDataPaths.Resolve("pix-robot-conversion.json");
 
         public static PixRobotConversionState Load()
         {

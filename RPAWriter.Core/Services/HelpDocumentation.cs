@@ -18,7 +18,7 @@ namespace RPAWriter.Core.Services
         /// <summary>
         /// Returns the deployed documentation directory. Candidates, in order:
         /// 1) next to this (Core) assembly, 2) next to the entry assembly,
-        /// 3) %AppData%\RPAWriter2\Docs. Returns the first existing folder;
+        /// 3) %AppData%\RPAWriter2\&lt;version&gt;\Docs. Returns the first existing folder;
         /// otherwise the Core-adjacent path (best-effort default).
         /// </summary>
         public static string ResolveDocsDirectory()
@@ -28,10 +28,7 @@ namespace RPAWriter.Core.Services
             {
                 CombineDir(coreDir),
                 CombineDir(EntryAssemblyDir()),
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "RPAWriter2",
-                    DocsFolderName)
+                AppDataPaths.Resolve(DocsFolderName)
             };
 
             foreach (var candidate in candidates)

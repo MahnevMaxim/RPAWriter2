@@ -80,7 +80,7 @@ namespace RPAWriter2.Controls
         {
             try
             {
-                var folder = Path.Combine(Path.GetTempPath(), "RPAWriter2", "Assets");
+                var folder = AppDataPaths.ResolveTemp("Assets");
                 Directory.CreateDirectory(folder);
                 var file = Path.Combine(folder, MermaidFileName);
 
@@ -109,10 +109,7 @@ namespace RPAWriter2.Controls
 
         private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
         {
-            var userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "RPAWriter2",
-                "WebView2");
+            var userDataFolder = AppDataPaths.ResolveLocal("WebView2");
             Directory.CreateDirectory(userDataFolder);
 
             LogService.Info("MermaidDiagramControl: creating WebView2 environment (userDataFolder=" + userDataFolder + ").");

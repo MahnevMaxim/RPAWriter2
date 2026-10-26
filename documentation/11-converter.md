@@ -12,7 +12,7 @@
 | **Import PIX activities (rewrite library)** | Пересобирает библиотеку активностей PIX: рефлексией по установленным сборкам PIX (`Core.dll` + `Activities.*.dll`) создаёт JSON-дескрипторы в `ActivityLibrary/pix`. |
 | **Get All MWF Activities** | Импортирует WF-активности из C#-исходников выбранной папки (если они есть) в библиотеку `ActivityLibrary/mwf`, а встроенные активности из `System.Activities.dll` — только выбранные в фильтре **Select System Activities**. Сборки `Activities.*.dll` не сканируются. |
 | **View WF snippets** | Открывает окно **WF Snippets** — просмотр XAML-сниппетов WF из `ActivityLibrary/wf` (шаблоны с плейсхолдерами `{{…}}`). |
-| **Get System Activities** | Рефлексией по `System.Activities.dll` собирает список встроенных активностей WF и сохраняет его (вместе с выбором) в `%AppData%\RPAWriter2\system-activities.json`. |
+| **Get System Activities** | Рефлексией по `System.Activities.dll` собирает список встроенных активностей WF и сохраняет его (вместе с выбором) в `%AppData%\RPAWriter2\<17|18>\system-activities.json`. |
 | **Select System Activities** | Открывает список собранных системных активностей с чекбоксами — отметить, какие активности `System.Activities` должны импортироваться кнопкой **Get All MWF Activities**. |
 | **PIX to MWF map** | Открывает таблицу маппинга активностей PIX на активности WF (см. ниже). |
 | **Clear** | Очищает область вывода конвертера. |
@@ -30,7 +30,7 @@
 1. Нажмите **Convert PIX to MWF** — раскроется панель конвертации с полями **PIX robot folder** и **MWF target folder** (и кнопкой **Close**).
    - поле **PIX robot folder** при первом открытии предзаполняется из настройки **Robot solutions directory**;
    - поле **MWF target folder** — каталогом открытого решения;
-   - введённые папки сохраняются между сессиями (`%AppData%\RPAWriter2\pix-robot-conversion.json`).
+   - введённые папки сохраняются между сессиями (`%AppData%\RPAWriter2\<17|18>\pix-robot-conversion.json`).
 2. Задайте папку робота PIX и целевую папку MWF (кнопки **Browse…**).
 3. Нажмите **Start conversion**.
 4. Определяется набор «задействованных скриптов»:
@@ -51,7 +51,7 @@
 ## Импорт библиотек активностей
 
 - **Import PIX activities (rewrite library)** — определяет каталог установки PIX (`Program Files\PIX` или `Program Files (x86)\PIX`; если не найден — запрашивает вручную), рефлексией по `Core.dll` и `Activities.*.dll` извлекает конкретные активности `BR.Core.Activity` и перезаписывает JSON-дескрипторы в `ActivityLibrary/pix` (при открытом решении также обновляется исходная библиотека решения).
-- **Get System Activities** — рефлексией по встроенной `System.Activities.dll` собирает стандартные активности Workflow Foundation (названия и описания) и сохраняет список в `%AppData%\RPAWriter2\system-activities.json`. При первом сборе выбираются все активности.
+- **Get System Activities** — рефлексией по встроенной `System.Activities.dll` собирает стандартные активности Workflow Foundation (названия и описания) и сохраняет список в `%AppData%\RPAWriter2\<17|18>\system-activities.json`. При первом сборе выбираются все активности.
 - **Select System Activities** — открывает окно со списком собранных системных активностей, где можно отметить (чекбоксами), какие из них импортировать; выбор сохраняется в тот же файл.
 - **Get All MWF Activities** — запрашивает папку с WF-активностями. Если в папке есть C#-исходники (`*.cs`), парсит их. Активности `System.Activities` добавляются только из фильтра, настроенного в **Select System Activities** (если список ещё не собирался — добавляются все). Сборки `Activities.*.dll` не сканируются. Перезаписывает JSON-дескрипторы в `ActivityLibrary/mwf`.
 
@@ -95,7 +95,7 @@
 
 Поля фильтров: **PIX activities filter** фильтрует строки таблицы по полному или отображаемому имени активности PIX (по мере ввода); **MWF activities filter** (ниже) фильтрует выпадающий список в колонке **MWF Activity** по полному/отображаемому имени или описанию активности WF. Кнопки **Clear filter** сбрасывают соответствующий фильтр. После парсинга папки (**Parse All Activities From PIX**) таблица автоматически открывается с фильтром «только найденные активности».
 
-Маппинг (активности и аргументы) хранится в `%AppData%\RPAWriter2\pix-mwf-map.json` и используется конвертером **Convert PIX to MWF**.
+Маппинг (активности и аргументы) хранится в `%AppData%\RPAWriter2\<17|18>\pix-mwf-map.json` и используется конвертером **Convert PIX to MWF**.
 
 ### Типичный сценарий
 

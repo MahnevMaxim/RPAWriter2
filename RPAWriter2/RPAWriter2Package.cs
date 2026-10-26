@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.Shell.Interop;
 using EnvDTE80;
 using RPAWriter2.Services;
+using RPAWriter.Core.Services;
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -57,6 +58,12 @@ namespace RPAWriter2
             // disable the "Inconsistent Line Endings" dialog). Failures are logged and surfaced
             // in the tool window as a warning banner.
             var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+
+            // Separate per-user state per Visual Studio major version (17 vs 18) so VS 2022 and
+            // VS 2026 do not share settings/history, then copy any legacy data into the new folder.
+            AppDataPaths.InitializeScope(dte?.Version);
+            AppDataPaths.MigrateLegacyData();
+
             VsOptionsService.ApplyRequiredDocumentOptions(dte);
 
             await ToolWindow1Command.InitializeAsync(this);

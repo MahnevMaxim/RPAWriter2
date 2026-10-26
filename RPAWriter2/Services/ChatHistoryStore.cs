@@ -4,6 +4,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using RPAWriter.Core.Models;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -49,14 +50,13 @@ namespace RPAWriter2.Services
     }
 
     /// <summary>
-    /// SQLite-backed chat history. The database lives at %AppData%\RPAWriter2\chat_history.db.
+    /// SQLite-backed chat history. The database lives at %AppData%\RPAWriter2\&lt;version&gt;\chat_history.db.
     /// </summary>
     public static class ChatHistoryStore
     {
         private const int MaxStoredConversations = 50;
 
-        public static string DirectoryPath =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPAWriter2");
+        public static string DirectoryPath => AppDataPaths.Resolve();
 
         public static string DatabasePath => Path.Combine(DirectoryPath, "chat_history.db");
 

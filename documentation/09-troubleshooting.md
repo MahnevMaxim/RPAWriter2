@@ -50,17 +50,19 @@
 
 ## Где хранятся данные
 
+Данные хранятся раздельно по версии Visual Studio: `17` — VS 2022 (17.x), `18` — VS 2026 (18.x).
+
 | Данные | Расположение |
 |---|---|
-| Настройки | `%AppData%\RPAWriter2\settings.json` |
-| Состояние UI | `%AppData%\RPAWriter2\ui_state.json` |
-| Промпты | папка `Prompts` рядом со сборкой расширения (или `%AppData%\RPAWriter2\Prompts`) |
-| Документация (Help) | папка `Docs` рядом со сборкой расширения (или `%AppData%\RPAWriter2\Docs`) |
+| Настройки | `%AppData%\RPAWriter2\<17|18>\settings.json` |
+| Состояние UI | `%AppData%\RPAWriter2\<17|18>\ui_state.json` |
+| Промпты | папка `Prompts` рядом со сборкой расширения (или `%AppData%\RPAWriter2\<17|18>\Prompts`) |
+| Документация (Help) | папка `Docs` рядом со сборкой расширения (или `%AppData%\RPAWriter2\<17|18>\Docs`) |
 | База знаний | каталог из настройки **KB directory** (`index.json`) |
-| История чата | локальная SQLite-база |
-| Маппинг PIX → MWF | `%AppData%\RPAWriter2\pix-mwf-map.json` |
-| Системные активности WF (список и фильтр) | `%AppData%\RPAWriter2\system-activities.json` |
-| Папки конвертера PIX → MWF | `%AppData%\RPAWriter2\pix-robot-conversion.json` |
+| История чата | локальная SQLite-база (`%AppData%\RPAWriter2\<17|18>\chat_history.db`) |
+| Маппинг PIX → MWF | `%AppData%\RPAWriter2\<17|18>\pix-mwf-map.json` |
+| Системные активности WF (список и фильтр) | `%AppData%\RPAWriter2\<17|18>\system-activities.json` |
+| Папки конвертера PIX → MWF | `%AppData%\RPAWriter2\<17|18>\pix-robot-conversion.json` |
 
 ## Полезные команды чата
 
@@ -73,7 +75,7 @@
 Чтобы вернуть настройки по умолчанию, закройте Visual Studio и удалите файл:
 
 ```
-%AppData%\RPAWriter2\settings.json
+%AppData%\RPAWriter2\<17|18>\settings.json
 ```
 
 При следующем запуске расширение создаст его заново со значениями по умолчанию.

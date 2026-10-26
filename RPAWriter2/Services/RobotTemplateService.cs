@@ -10,6 +10,7 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -223,8 +224,7 @@ namespace RPAWriter2.Services
 
             Report(progress, "Template is packed in .zip, extracting: " + templatePath);
 
-            var extractDir = Path.Combine(Path.GetTempPath(), "RPAWriter2", "Templates",
-                Path.GetFileNameWithoutExtension(templatePath));
+            var extractDir = AppDataPaths.ResolveTemp("Templates", Path.GetFileNameWithoutExtension(templatePath));
             try
             {
                 if (Directory.Exists(extractDir))

@@ -4,6 +4,7 @@ using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using RPAWriter.Core.Models;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -59,11 +60,10 @@ namespace RPAWriter2.Services
         public MainTab ActiveTab { get; set; }
     }
 
-    /// <summary>Loads/saves the UI state JSON at %AppData%\RPAWriter2\ui_state.json.</summary>
+    /// <summary>Loads/saves the UI state JSON at %AppData%\RPAWriter2\&lt;version&gt;\ui_state.json.</summary>
     public static class UiStateStore
     {
-        public static string StateFile => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPAWriter2", "ui_state.json");
+        public static string StateFile => AppDataPaths.Resolve("ui_state.json");
 
         public static UiStateData Load()
         {

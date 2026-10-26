@@ -10,7 +10,7 @@ namespace RPAWriter.Core.Services
 {
     /// <summary>
     /// Loads/saves the PIX → MWF activity mapping document at
-    /// %AppData%\RPAWriter2\pix-mwf-map.json. After construction the store is a
+    /// %AppData%\RPAWriter2\&lt;version&gt;\pix-mwf-map.json. After construction the store is a
     /// plain in-memory dictionary; call <see cref="Save"/> to persist changes.
     /// </summary>
     public class PixMwfMappingStore
@@ -32,10 +32,7 @@ namespace RPAWriter.Core.Services
         }
 
         /// <summary>Default on-disk location of the mapping document.</summary>
-        public static string DefaultFilePath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "RPAWriter2",
-            "pix-mwf-map.json");
+        public static string DefaultFilePath => AppDataPaths.Resolve("pix-mwf-map.json");
 
         /// <summary>
         /// Process-wide shared store used by both the Converter tool window (manual mapping UI)

@@ -22,7 +22,7 @@ reproduced in this file as required by the respective licenses.
 
 | Component | Version | License |
 |---|---|---|
-| Microsoft.VisualStudio.SDK | 17.14.40265 | Microsoft (Visual Studio extension SDK terms) |
+| Microsoft.VisualStudio.SDK | 17.0.32112.339 | Microsoft (Visual Studio extension SDK terms) |
 | Microsoft.VSSDK.BuildTools | 18.9.820 | Microsoft |
 | Microsoft.NET.Test.Sdk | 17.11.1 | MIT |
 | NUnit | 3.14.0 | MIT |
