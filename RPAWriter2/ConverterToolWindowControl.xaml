@@ -5,6 +5,10 @@
              Background="#2D2D30"
              Foreground="#F1F1F1">
     <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/DarkScrollBars.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         <!-- Self-contained dark theme brushes (kept local so the window does not depend on the host's resources). -->
         <SolidColorBrush x:Key="Dark.Window" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
@@ -72,6 +76,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid>

@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using RPAWriter2;
 
 namespace RPAWriter2.Controls
@@ -160,12 +161,29 @@ namespace RPAWriter2.Controls
 
         private void OnQuestionOptionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is Button { DataContext: ChatMessage message, Tag: string option } && !string.IsNullOrEmpty(option))
+            if (sender is not Button button || string.IsNullOrEmpty(button.Tag as string))
+                return;
+
+            var option = (string)button.Tag;
+            var message = FindVisualAncestor<ItemsControl>(button)?.DataContext as ChatMessage;
+            if (message == null)
+                return;
+
+            if (message.Payload is QuestionPayload q)
+                q.Answer = option;
+
+            QuestionAnswered?.Invoke(this, message);
+        }
+
+        private static T? FindVisualAncestor<T>(DependencyObject? current) where T : DependencyObject
+        {
+            while (current != null)
             {
-                if (message.Payload is QuestionPayload q)
-                    q.Answer = option;
-                QuestionAnswered?.Invoke(this, message);
+                if (current is T match)
+                    return match;
+                current = VisualTreeHelper.GetParent(current);
             }
+            return null;
         }
 
         private void OnQuestionSkip(object sender, RoutedEventArgs e)

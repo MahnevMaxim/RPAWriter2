@@ -7,6 +7,10 @@
         WindowStartupLocation="CenterOwner"
         Background="#2D2D30" Foreground="#F1F1F1">
     <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/DarkScrollBars.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         <!-- Self-contained dark theme brushes (kept local so the dialog does not depend on the host's resources). -->
         <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
         <SolidColorBrush x:Key="Dark.Control" Color="#333337"/>
@@ -28,6 +32,7 @@
             <Setter Property="CaretBrush" Value="{StaticResource Dark.Text}"/>
             <Setter Property="SelectionBrush" Value="{StaticResource Dark.Accent}"/>
         </Style>
+        </ResourceDictionary>
     </Window.Resources>
 
     <Grid Margin="12">

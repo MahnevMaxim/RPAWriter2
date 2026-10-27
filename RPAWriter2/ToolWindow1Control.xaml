@@ -15,6 +15,10 @@
              Name="MyToolWindow">
     
     <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/DarkScrollBars.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         <SolidColorBrush x:Key="Dark.Window" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
         <SolidColorBrush x:Key="Dark.Control" Color="#333337"/>
@@ -677,12 +681,17 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-                    <Button Grid.Column="1" VerticalAlignment="Top" Margin="8,0,0,0"
-                            Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
-                            ToolTip="Copy message" Click="OnCopyMessage">
-                        <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                              Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
-                    </Button>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Orientation="Horizontal" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding TimestampLocal, StringFormat=HH:mm}"
+                                   Foreground="#9A9A9A" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
+                                   ToolTip="{Binding TimestampLocal, StringFormat=g}"/>
+                        <Button VerticalAlignment="Top"
+                                Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
+                                ToolTip="Copy message" Click="OnCopyMessage">
+                            <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
             <DataTemplate.Triggers>
@@ -737,6 +746,7 @@
                 </Border>
             </StackPanel>
         </DataTemplate>
+        </ResourceDictionary>
     </UserControl.Resources>
     <TabControl x:Name="MainTabs" Margin="8">
         <TabItem Header="Chat">
