@@ -4,7 +4,7 @@ using System.IO;
 using Newtonsoft.Json;
 using RPAWriter.Core.Services;
 
-namespace RPAWriter2.Services
+namespace RPAWriter.Core.Services
 {
     /// <summary>Extension settings persisted locally as JSON.</summary>
     public class SettingsData
@@ -154,7 +154,7 @@ namespace RPAWriter2.Services
                 {
                     var json = File.ReadAllText(SettingsFile);
                     var settings = JsonConvert.DeserializeObject<SettingsData>(json) ?? new SettingsData();
-                    EnsureDefaults(settings);
+                    Normalize(settings);
                     return settings;
                 }
             }
@@ -163,11 +163,11 @@ namespace RPAWriter2.Services
                 // ignore read errors — fall back to defaults
             }
             var defaults = new SettingsData();
-            EnsureDefaults(defaults);
+            Normalize(defaults);
             return defaults;
         }
 
-        private static void EnsureDefaults(SettingsData settings)
+        public static void Normalize(SettingsData settings)
         {
             if (settings == null) return;
             if (string.IsNullOrWhiteSpace(settings.RulesPath))

@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -16,7 +17,6 @@ namespace RPAWriter2.Services
     public sealed class GitService
     {
         private const string GitExecutable = "git";
-        private const int MaxLoggedOutputChars = 20000;
 
         /// <summary>
         /// Resolves the repository root for the given directory by delegating to git.
@@ -65,11 +65,12 @@ namespace RPAWriter2.Services
             LogService.Info("GetDiffForMessage: status=" + status.Length + " chars, diff=" + diff.Length + " chars");
 
             var changed = new List<string>();
-            foreach (var line in SplitLines(status))
+            foreach (var line in GitOutputParser.SplitLines(status))
             {
                 // Porcelain format: two status characters followed by a space and the path.
-                if (line.Length > 3)
-                    changed.Add(line.Substring(3));
+                var path = GitOutputParser.ExtractChangedPath(line);
+                if (path != null)
+                    changed.Add(path);
             }
 
             LogService.Info("GetDiffForMessage: changed=" + changed.Count);
@@ -163,9 +164,9 @@ namespace RPAWriter2.Services
                 LogService.Info("git " + arguments + " -> exit=" + process.ExitCode + ", stdout=" + stdout.Length + " chars, stderr=" + stderr.Length + " chars");
 
                 if (!string.IsNullOrWhiteSpace(stdout))
-                    LogService.Info("git " + arguments + " stdout:" + Environment.NewLine + FormatLoggedOutput(stdout));
+                    LogService.Info("git " + arguments + " stdout:" + Environment.NewLine + GitOutputParser.FormatLoggedOutput(stdout));
                 if (!string.IsNullOrWhiteSpace(stderr))
-                    LogService.Info("git " + arguments + " stderr:" + Environment.NewLine + FormatLoggedOutput(stderr));
+                    LogService.Info("git " + arguments + " stderr:" + Environment.NewLine + GitOutputParser.FormatLoggedOutput(stderr));
 
                 if (process.ExitCode != 0)
                 {
@@ -182,10 +183,11 @@ namespace RPAWriter2.Services
         {
             var status = await RunAsync(repositoryRoot, "status --porcelain --untracked-files=all", cancellationToken).ConfigureAwait(false);
             var changed = new List<string>();
-            foreach (var line in SplitLines(status))
+            foreach (var line in GitOutputParser.SplitLines(status))
             {
-                if (line.Length > 3)
-                    changed.Add(line.Substring(3));
+                var path = GitOutputParser.ExtractChangedPath(line);
+                if (path != null)
+                    changed.Add(path);
             }
             return changed;
         }
@@ -195,21 +197,5 @@ namespace RPAWriter2.Services
             return await RunAsync(repositoryRoot, "diff HEAD -- " + relativePath, cancellationToken).ConfigureAwait(false);
         }
 
-        private static string FormatLoggedOutput(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return string.Empty;
-
-            var trimmed = text.TrimEnd();
-            if (trimmed.Length <= MaxLoggedOutputChars)
-                return trimmed;
-
-            return trimmed.Substring(0, MaxLoggedOutputChars) + Environment.NewLine + "... (output truncated, " + trimmed.Length + " chars total)";
-        }
-
-        private static IEnumerable<string> SplitLines(string text)
-        {
-            return text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        }
     }
 }

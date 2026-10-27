@@ -3,7 +3,7 @@ using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
 
-namespace RPAWriter2.Services
+namespace RPAWriter.Core.Services
 {
     /// <summary>Creates an AI provider from settings: no API key → stub, otherwise OpenAI-compatible.</summary>
     public static class AiProviderFactory
