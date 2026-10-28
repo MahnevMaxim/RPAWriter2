@@ -103,7 +103,9 @@ namespace RPAWriter.Core.Models
         /// <summary>An interactive question asked by the agent, with answer options.</summary>
         Question,
         /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
-        Subagent
+        Subagent,
+        /// <summary>A saved file checkpoint (shadow git snapshot) with Compare/Restore actions.</summary>
+        Checkpoint
     }
 
     /// <summary>How knowledge-base formation should treat a previous run.</summary>

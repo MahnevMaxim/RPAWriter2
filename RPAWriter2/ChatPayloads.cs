@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -206,5 +207,43 @@ namespace RPAWriter2
     {
         /// <summary>The single sub-agent tracked by this card (v1 spawns one sub-agent at a time).</summary>
         public SubagentStatusItem Item { get; set; } = new SubagentStatusItem();
+    }
+
+    /// <summary>Payload for a <see cref="ChatMessageKind.Checkpoint"/> indicator with Compare/Restore actions.</summary>
+    public sealed class CheckpointPayload : ChatPayload
+    {
+        /// <summary>Commit hash in the shadow repository.</summary>
+        public string CommitHash { get; set; } = "";
+
+        /// <summary>Human-readable checkpoint message.</summary>
+        public string Message { get; set; } = "";
+
+        /// <summary>Task/conversation id owning the shadow repository.</summary>
+        public string TaskId { get; set; } = "";
+
+        /// <summary>Workspace directory the checkpoint belongs to.</summary>
+        public string WorkspaceDir { get; set; } = "";
+
+        /// <summary>1-based sequence of the checkpoint within the task.</summary>
+        public int Sequence { get; set; }
+
+        /// <summary>When the checkpoint was created (UTC).</summary>
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>Shortened commit hash for display.</summary>
+        public string ShortHash
+        {
+            get
+            {
+                var hash = CommitHash ?? "";
+                return hash.Length > 8 ? hash.Substring(0, 8) : hash;
+            }
+        }
+
+        /// <summary>Title line shown in the indicator.</summary>
+        public string DisplayTitle => string.IsNullOrWhiteSpace(Message) ? "Checkpoint" : Message;
+
+        /// <summary>Secondary line shown in the indicator.</summary>
+        public string Detail => "checkpoint " + ShortHash + " · " + CreatedAtUtc.ToLocalTime().ToString("HH:mm:ss");
     }
 }

@@ -12,8 +12,10 @@ using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
+using RPAWriter.Core.Checkpoints;
 using RPAWriter2.Services;
 using RPAWriter2.Services.AgentTools;
+using RPAWriter2.Services.Checkpoints;
 using RPAWriter2.Controls;
 using RPAWriter2.Markdown;
 using Microsoft.VisualStudio.Shell;
@@ -57,6 +59,7 @@ namespace RPAWriter2
         private RobotTemplateService _robotTemplate;
         private OutputWindowService _outputWindow;
         private readonly GitService _git = new GitService();
+        private readonly CheckpointServiceFactory _checkpoints = new CheckpointServiceFactory();
         private AgentMode _mode = AgentMode.Plan;
         private AgentPhase _phase = AgentPhase.Idle;
         private AgentToolRegistry? _toolRegistry;
@@ -153,6 +156,8 @@ namespace RPAWriter2
             ChatMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
             ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
+            ChatMessages.CheckpointCompareRequested += OnCheckpointCompareRequested;
+            ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
             AttachmentsList.ItemsSource = _attachments;
             SpecMessages.Messages = _specMessages;
             SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
@@ -215,6 +220,7 @@ namespace RPAWriter2
             SkillsPathBox.Text = _settings.SkillsPath ?? "";
             AddressByNameCheckBox.IsChecked = _settings.AddressByName;
             AllowSubagentsCheckBox.IsChecked = _settings.AllowSubagents;
+            CheckpointsEnabledCheckBox.IsChecked = _settings.CheckpointsEnabled;
             SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
             SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
             LoadRobotNameHistory();
@@ -373,8 +379,7 @@ namespace RPAWriter2
         {
             if (ex == null) return;
             LogService.Error(ex);
-            AppendExtensionError(ex.Message);
-            AppendExtensionError(ex.ToString());
+            AppendExtensionError(ExceptionFormatter.Format(ex));
         }
 
         private void AppendChatMessage(ChatMessage message)
@@ -389,6 +394,149 @@ namespace RPAWriter2
                 RefreshPinnedMessage();
             if (!_loadingHistory)
                 ScheduleHistorySave();
+        }
+
+        // ------------------------------------------------------------------
+        // Checkpoints (shadow git snapshots)
+        // ------------------------------------------------------------------
+
+        /// <summary>Fire-and-forget baseline snapshot at the start of a run (errors are logged, never thrown).</summary>
+        private void TrySaveBaselineCheckpoint()
+        {
+            _ = SaveCheckpointAsync("task start", allowEmpty: true, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Saves a checkpoint for the current conversation + solution and appends an indicator
+        /// to the chat when a new snapshot is created. Returns the commit hash, or null when
+        /// disabled/unavailable/empty. Never throws.
+        /// </summary>
+        private async Task<string?> SaveCheckpointAsync(string message, bool allowEmpty, CancellationToken ct)
+        {
+            if (!_settings.CheckpointsEnabled) return null;
+
+            var ws = GetOpenSolutionDirectory();
+            if (string.IsNullOrWhiteSpace(ws)) return null;
+
+            var taskId = _currentConversation?.Id ?? Guid.NewGuid().ToString("N");
+            try
+            {
+                var result = await Task.Run(async () =>
+                {
+                    var service = _checkpoints.GetOrCreate(taskId, ws);
+                    if (!service.IsInitialized)
+                        await service.InitializeAsync(ct).ConfigureAwait(false);
+                    return await service.SaveAsync(message, allowEmpty, ct).ConfigureAwait(false);
+                }, ct).ConfigureAwait(false);
+
+                if (result != null && !result.IsEmpty && !string.IsNullOrWhiteSpace(result.CommitHash))
+                {
+                    var service = _checkpoints.GetOrCreate(taskId, ws);
+                    AppendCheckpointIndicator(taskId, ws, result.CommitHash, message, service.Checkpoints.Count);
+                }
+
+                return result?.CommitHash;
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("Checkpoint save failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private void AppendCheckpointIndicator(string taskId, string workspaceDir, string commitHash, string message, int sequence)
+        {
+            AppendChatMessage(new ChatMessage
+            {
+                Kind = ChatMessageKind.Checkpoint,
+                Payload = new CheckpointPayload
+                {
+                    TaskId = taskId,
+                    WorkspaceDir = workspaceDir,
+                    CommitHash = commitHash,
+                    Message = message,
+                    Sequence = sequence,
+                    CreatedAtUtc = DateTime.UtcNow,
+                }
+            });
+        }
+
+        private async void OnCheckpointCompareRequested(object? sender, ChatMessage message)
+        {
+            if (message.Payload is not CheckpointPayload payload) return;
+            try
+            {
+                var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
+                var diffs = await Task.Run(() => service.GetDiffAsync(payload.CommitHash, null)).ConfigureAwait(true);
+                AppendCheckpointDiff(payload, diffs);
+            }
+            catch (Exception ex)
+            {
+                AppendSystemMessage("Checkpoint compare failed: " + ex.Message);
+            }
+        }
+
+        private async void OnCheckpointRestoreRequested(object? sender, ChatMessage message)
+        {
+            if (message.Payload is not CheckpointPayload payload) return;
+
+            var confirm = MessageBox.Show(
+                "Restore files to checkpoint " + payload.ShortHash + "?",
+                "Restore checkpoint",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
+                await Task.Run(() => service.RestoreAsync(payload.CommitHash)).ConfigureAwait(true);
+                AppendSystemMessage("Restored files to checkpoint " + payload.ShortHash + ".");
+            }
+            catch (Exception ex)
+            {
+                AppendSystemMessage("Checkpoint restore failed: " + ex.Message);
+            }
+        }
+
+        private async Task<ICheckpointService> GetCheckpointServiceAsync(CheckpointPayload payload)
+        {
+            var ws = string.IsNullOrWhiteSpace(payload.WorkspaceDir) ? GetOpenSolutionDirectory() : payload.WorkspaceDir;
+            if (string.IsNullOrWhiteSpace(ws))
+                throw new InvalidOperationException("No solution is open.");
+
+            var service = _checkpoints.GetOrCreate(payload.TaskId, ws);
+            if (!service.IsInitialized)
+                await service.InitializeAsync(CancellationToken.None).ConfigureAwait(false);
+            return service;
+        }
+
+        private void AppendCheckpointDiff(CheckpointPayload payload, IReadOnlyList<CheckpointDiff> diffs)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Diff since checkpoint " + payload.ShortHash + ":");
+            if (diffs == null || diffs.Count == 0)
+            {
+                sb.AppendLine("(no changes)");
+            }
+            else
+            {
+                foreach (var diff in diffs)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("File: " + diff.RelativePath);
+                    var lineDiff = TextDiff.Diff(diff.Before ?? "", diff.After ?? "");
+                    var shown = 0;
+                    foreach (var line in lineDiff.Lines)
+                    {
+                        if (line.Kind == DiffLineKind.Equal) continue;
+                        if (shown >= 200) { sb.AppendLine("… (truncated)"); break; }
+                        sb.AppendLine((line.Kind == DiffLineKind.Add ? "+ " : "- ") + (line.Text ?? ""));
+                        shown++;
+                    }
+                }
+            }
+            AppendSystemMessage(sb.ToString());
         }
 
         private void AppendSpecMessage(ChatMessage message)
@@ -2775,6 +2923,8 @@ namespace RPAWriter2
             if (_chatCts != null) return; // already awaiting the agent's reply
             if (_agentRunner == null) return;
 
+            TrySaveBaselineCheckpoint();
+
             var images = new List<ChatImagePart>();
             var attachmentNotes = new List<string>();
             var fileBlocks = new StringBuilder();
@@ -3364,7 +3514,9 @@ namespace RPAWriter2
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
-                () => _mode);
+                () => _mode,
+                SaveCheckpointAsync,
+                _settings.CheckpointsEnabled);
             factory.PixMwfStore = PixMwfMappingStore.Shared;
             return factory.CreateRegistry();
         }
@@ -4142,6 +4294,7 @@ namespace RPAWriter2
             _settings.UserName = UserNameBox.Text.Trim();
             _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
             _settings.AllowSubagents = AllowSubagentsCheckBox?.IsChecked ?? false;
+            _settings.CheckpointsEnabled = CheckpointsEnabledCheckBox?.IsChecked ?? true;
             _settings.ShowControls = ShowControlsCheckBox?.IsChecked ?? false;
             _settings.SubagentMaxIterations = ParsePositiveInt(SubagentMaxIterationsBox?.Text, 4);
             _settings.SubagentMaxDepth = ParsePositiveInt(SubagentMaxDepthBox?.Text, 2);

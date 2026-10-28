@@ -1,0 +1,28 @@
+<UserControl x:Class="RPAWriter2.Controls.Chat.CheckpointMessageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/ChatResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <chat:ChatMessageCard>
+        <StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="🔖" Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" FontSize="14"/>
+                <StackPanel Margin="8,0,0,0">
+                    <TextBlock Text="{Binding Payload.DisplayTitle}" FontWeight="SemiBold"
+                               Foreground="{StaticResource Dark.Text}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Payload.Detail}" Foreground="#9A9A9A" FontFamily="Consolas" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <Button Content="Compare" Click="OnCompare" Style="{StaticResource Question.OptionButtonStyle}"/>
+                <Button Content="Restore" Click="OnRestore" Margin="8,0,0,0" Style="{StaticResource Question.OptionButtonStyle}"/>
+            </StackPanel>
+        </StackPanel>
+    </chat:ChatMessageCard>
+</UserControl>

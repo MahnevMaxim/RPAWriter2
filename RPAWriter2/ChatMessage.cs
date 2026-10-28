@@ -254,6 +254,12 @@ namespace RPAWriter2
                     return "⚙ spawn_agent → " + (string.IsNullOrWhiteSpace(prompt) ? "(sub-agent)" : prompt);
                 }
 
+                if (Kind == ChatMessageKind.Checkpoint)
+                {
+                    var c = Payload as CheckpointPayload;
+                    return "🔖 Checkpoint " + (c?.ShortHash ?? "") + (string.IsNullOrWhiteSpace(c?.Message) ? "" : " — " + c.Message);
+                }
+
                 var t = Text ?? "";
                 return string.IsNullOrEmpty(Label) ? t : Label + t;
             }

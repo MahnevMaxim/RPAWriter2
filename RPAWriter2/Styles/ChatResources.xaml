@@ -14,9 +14,9 @@
     <!-- Chat message accent brushes. -->
     <SolidColorBrush x:Key="Chat.UserBorder" Color="#CC64B5F6"/>
     <SolidColorBrush x:Key="Chat.UserBackground" Color="#3364B5F6"/>
-    <SolidColorBrush x:Key="Chat.LastActBackground" Color="#334CAF50"/>
+    <SolidColorBrush x:Key="Chat.LastActBackground" Color="#1A4CAF50"/>
     <SolidColorBrush x:Key="Chat.LastActBorder" Color="#4CAF50"/>
-    <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#4DFF8C00"/>
+    <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#27FF8C00"/>
     <SolidColorBrush x:Key="Chat.LastPlanBorder" Color="#FF8C00"/>
     <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
     <SolidColorBrush x:Key="Question.OptionBorder" Color="#FFFFFF"/>
@@ -260,6 +260,9 @@
                 <Setter Property="IsExpanded" Value="True"/>
             </DataTrigger>
             <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding KindName}" Value="Checkpoint">
                 <Setter Property="IsExpanded" Value="True"/>
             </DataTrigger>
         </Style.Triggers>

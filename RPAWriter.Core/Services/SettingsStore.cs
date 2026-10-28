@@ -138,6 +138,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Automatically send runtime exceptions that break the debugger to the agent chat.</summary>
         public bool AutoCaptureRuntimeExceptions { get; set; } = true;
 
+        /// <summary>Automatically snapshot files into a shadow git repository before edits (checkpoints).</summary>
+        public bool CheckpointsEnabled { get; set; } = true;
+
         /// <summary>Recently used production robot names (most recent first).</summary>
         public List<string> RobotNameHistory { get; set; } = new List<string>();
     }
