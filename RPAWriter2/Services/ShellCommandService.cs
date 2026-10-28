@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,6 +17,15 @@ namespace RPAWriter2.Services
     {
         private const int MaxOutputChars = 12000;
 
+        /// <summary>
+        /// Matches the CLIXML block that powershell.exe writes to the output stream when it is
+        /// redirected (progress/verbose/warning records serialized as XML). The second branch
+        /// covers a header without a closing tag (e.g. truncated output).
+        /// </summary>
+        private static readonly Regex ClixmlRegex = new Regex(
+            @"#<\s*CLIXML[\s\S]*?<Objs[^>]*>[\s\S]*?</Objs>|#<\s*CLIXML[\s\S]*",
+            RegexOptions.Compiled);
+
         public async Task<ShellCommandResult> RunAsync(
             string command,
             string workingDirectory,
@@ -26,7 +36,11 @@ namespace RPAWriter2.Services
                 throw new ArgumentException("command is required.", nameof(command));
 
             // Base64-encoded UTF-16 command avoids all quoting/escaping issues.
-            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
+            // Suppress the PowerShell progress stream so module auto-loading (e.g. the
+            // "Preparing modules for first use." Write-Progress record) does not serialize
+            // CLIXML into stdout and pollute the tool result seen by the agent.
+            var commandWithSuppression = "$ProgressPreference = 'SilentlyContinue'; " + command;
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(commandWithSuppression));
 
             var psi = new ProcessStartInfo
             {
@@ -73,7 +87,7 @@ namespace RPAWriter2.Services
                     var combined = new StringBuilder();
                     if (stdout.Length > 0) combined.AppendLine(stdout.ToString());
                     if (stderr.Length > 0) combined.AppendLine(stderr.ToString());
-                    var text = Truncate(combined.ToString().TrimEnd());
+                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd());
 
                     LogService.Info("powershell -Command -> exit=" + code + ", output=" + text.Length + " chars");
 
@@ -146,7 +160,7 @@ namespace RPAWriter2.Services
                     var combined = new StringBuilder();
                     if (stdout.Length > 0) combined.AppendLine(stdout.ToString());
                     if (stderr.Length > 0) combined.AppendLine(stderr.ToString());
-                    var text = Truncate(combined.ToString().TrimEnd());
+                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd());
                     LogService.Info(Path.GetFileName(fileName) + " -> exit=" + code + ", output=" + text.Length + " chars");
                     if (code != 0)
                         return new ShellCommandResult { ExitCode = code, Output = text, Success = false };
@@ -166,6 +180,18 @@ namespace RPAWriter2.Services
             {
                 return ShellCommandResult.Failed("Command failed to run: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Removes CLIXML serialization artifacts from captured output so the agent never sees
+        /// raw XML as a command result. Suppressing the progress stream is the primary fix;
+        /// this is a defensive fallback for any other CLIXML stream.
+        /// </summary>
+        private static string StripClixml(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+            return ClixmlRegex.Replace(text, string.Empty);
         }
 
         private static string Truncate(string text)

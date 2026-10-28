@@ -70,6 +70,8 @@ namespace RPAWriter2
             await ConverterToolWindowCommand.InitializeAsync(this);
             await SendErrorToChatCommand.InitializeAsync(this);
             await SendSelectionToMessageboxCommand.InitializeAsync(this);
+            await DebuggerExceptionWatcher.InitializeAsync(this);
+            await SendExceptionToChatCommand.InitializeAsync(this);
         }
 
         #endregion

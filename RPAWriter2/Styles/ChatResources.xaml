@@ -123,8 +123,23 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Button x:Name="ToggleButton" Grid.Column="0" Style="{StaticResource IconButtonStyle}" Width="18" Height="18"
+                                <Button x:Name="ToggleButton" Grid.Column="0" Width="18" Height="18"
                                         VerticalAlignment="Center" ToolTip="Expand/collapse message">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerPlan">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerAct">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="Question">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
                                     <Viewbox Width="12" Height="12">
                                         <Polyline x:Name="Chevron" Points="6,9 12,15 18,9"
                                                   Stroke="{StaticResource Dark.Text}" StrokeThickness="2"
@@ -132,6 +147,23 @@
                                                   Fill="Transparent"/>
                                     </Viewbox>
                                 </Button>
+                                <TextBlock Grid.Column="1" Text="{Binding ToolName}" FontWeight="SemiBold"
+                                           Foreground="{StaticResource Dark.Text}" TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" Margin="8,0,8,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ToolCall">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ToolBlocked">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <TextBlock Grid.Column="2" Text="{Binding TimestampLocal, StringFormat=HH:mm}"
                                            Foreground="#9A9A9A" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
                                            ToolTip="{Binding TimestampLocal, StringFormat=g}"

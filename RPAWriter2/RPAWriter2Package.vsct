@@ -82,6 +82,12 @@
           <ButtonText>RPA Writer Converter</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidRPAWriter2PackageCmdSet" id="cmdidSendExceptionToChat" priority="0x0100" type="Button">
+        <Parent guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" />
+        <Strings>
+          <ButtonText>Send exception to RPA Writer</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
 
     <!--The bitmaps section is used to define the bitmaps that are used for the commands.-->
@@ -107,6 +113,7 @@
       <IDSymbol value="4132" name="cmdidSendSelectionToMessagebox" />
       <IDSymbol value="4133" name="grpidEditorContextMenu" />
       <IDSymbol value="4134" name="cmdidConverterToolWindowCommand" />
+      <IDSymbol value="4135" name="cmdidSendExceptionToChat" />
     </GuidSymbol>
 
 

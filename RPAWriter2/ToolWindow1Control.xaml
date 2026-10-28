@@ -1332,6 +1332,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1375,6 +1376,9 @@
 
                                 <Button Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Click="OnExportPrompts"/>
+
+                                <CheckBox Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox"
+                                          Content="Auto-capture runtime exceptions" Margin="0,12,0,0" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>

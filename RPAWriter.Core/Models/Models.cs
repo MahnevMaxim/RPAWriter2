@@ -593,6 +593,32 @@ namespace RPAWriter.Core.Models
         public string Category { get; set; }
     }
 
+    /// <summary>
+    /// A snapshot of an exception captured from the Visual Studio debugger while it is
+    /// stopped on the exception. Stored as plain text so it can be handed to the agent
+    /// without any dependency on EnvDTE.
+    /// </summary>
+    public class DebuggerExceptionSnapshot
+    {
+        /// <summary>Fully qualified exception type, e.g. "System.NullReferenceException".</summary>
+        public string TypeName { get; set; } = "";
+
+        /// <summary>Short message of the top-level exception.</summary>
+        public string Message { get; set; } = "";
+
+        /// <summary>
+        /// Full exception dump produced by <c>Exception.ToString()</c>: type, message, stack
+        /// trace and the complete chain of nested <c>InnerException</c> values.
+        /// </summary>
+        public string ExceptionDump { get; set; } = "";
+
+        /// <summary>Reason the debugger entered break mode (e.g. "dbgEventReasonExceptionThrown").</summary>
+        public string BreakReason { get; set; } = "";
+
+        /// <summary>Current stack frame / function name at the stop location, when available.</summary>
+        public string Location { get; set; } = "";
+    }
+
     /// <summary>Log entry.</summary>
     public class LogEntry
     {

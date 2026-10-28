@@ -225,6 +225,7 @@ namespace RPAWriter2
             SpeechToTextLanguageBox.Text = _settings.SpeechToTextLanguage ?? "ru";
             VoskModelPathBox.Text = _settings.VoskModelPath ?? "";
             SpeechAutoSendCheckBox.IsChecked = _settings.SpeechAutoSend;
+            AutoCaptureRuntimeExceptionsCheckBox.IsChecked = _settings.AutoCaptureRuntimeExceptions;
         }
 
         private void OnTemperatureChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -4107,6 +4108,7 @@ namespace RPAWriter2
             _settings.SpeechToTextLanguage = (SpeechToTextLanguageBox?.Text ?? "").Trim();
             _settings.VoskModelPath = (VoskModelPathBox?.Text ?? "").Trim();
             _settings.SpeechAutoSend = SpeechAutoSendCheckBox?.IsChecked ?? false;
+            _settings.AutoCaptureRuntimeExceptions = AutoCaptureRuntimeExceptionsCheckBox?.IsChecked ?? true;
             SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();

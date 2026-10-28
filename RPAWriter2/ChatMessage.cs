@@ -60,6 +60,7 @@ namespace RPAWriter2
                     OnPropertyChanged(nameof(DisplayText));
                     OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
+                    OnPropertyChanged(nameof(ToolName));
                 }
             }
         }
@@ -154,6 +155,9 @@ namespace RPAWriter2
                 }
             }
         }
+
+        /// <summary>Tool name for tool-call entries; empty otherwise. Shown in the message header.</summary>
+        public string ToolName => (Payload as ToolCallPayload)?.ToolName ?? "";
 
         public string DisplayText
         {
