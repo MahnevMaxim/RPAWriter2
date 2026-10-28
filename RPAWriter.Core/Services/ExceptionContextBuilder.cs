@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using RPAWriter.Core.Models;
 
 namespace RPAWriter.Core.Services
@@ -48,10 +49,32 @@ namespace RPAWriter.Core.Services
             sb.AppendLine();
             sb.AppendLine("Полный дамп исключения (включая все вложенные InnerException):");
             sb.AppendLine("```");
-            sb.AppendLine(string.IsNullOrEmpty(exceptionDump) ? "(no exception dump available)" : exceptionDump);
+            sb.AppendLine(string.IsNullOrEmpty(exceptionDump) ? "(no exception dump available)" : NormalizeDebuggerDump(exceptionDump));
             sb.AppendLine("```");
 
             return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// The Visual Studio debugger returns a multi-line expression value (such as
+        /// <c>$exception.ToString()</c>) with C-style escapes: line breaks come back as the
+        /// literal sequences <c>\r\n</c>/<c>\n</c>/<c>\r</c> and backslashes as <c>\\</c>.
+        /// Unescape them so the dump renders as real lines inside the chat code block.
+        /// </summary>
+        private static string NormalizeDebuggerDump(string dump)
+        {
+            if (string.IsNullOrEmpty(dump))
+                return dump;
+
+            try
+            {
+                return Regex.Unescape(dump);
+            }
+            catch
+            {
+                // Malformed escape sequence — keep the raw dump rather than losing it.
+                return dump;
+            }
         }
     }
 }

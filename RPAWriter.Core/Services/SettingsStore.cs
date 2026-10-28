@@ -18,6 +18,9 @@ namespace RPAWriter.Core.Services
         public string KnowledgeBasePath { get; set; } = "";
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
+
+        /// <summary>Show the in-chat robot creation control (robot number + Create robot button).</summary>
+        public bool ShowRobotCreator { get; set; } = true;
         public string PackagesPath { get; set; } = "";
         public string RulesPath { get; set; } = PromptPaths.ResolveRulesDirectory();
 
@@ -138,7 +141,7 @@ namespace RPAWriter.Core.Services
         /// <summary>Automatically send runtime exceptions that break the debugger to the agent chat.</summary>
         public bool AutoCaptureRuntimeExceptions { get; set; } = true;
 
-        /// <summary>Automatically snapshot files into a shadow git repository before edits (checkpoints).</summary>
+        /// <summary>Automatically snapshot workspace files into a shadow git repository per iteration (checkpoints).</summary>
         public bool CheckpointsEnabled { get; set; } = true;
 
         /// <summary>Recently used production robot names (most recent first).</summary>

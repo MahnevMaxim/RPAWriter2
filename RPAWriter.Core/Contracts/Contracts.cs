@@ -173,11 +173,17 @@ namespace RPAWriter.Core.Contracts
         /// <summary>Human-readable provider name shown in the UI (e.g. "Orchestrator logs").</summary>
         string Name { get; }
 
-        /// <summary>Returns the completed tasks executed by the given robot (e.g. "RPA-1212").</summary>
-        Task<IReadOnlyList<ProdTask>> GetTasksAsync(string robotName, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Returns the completed tasks executed by the given robot (e.g. "RPA-1212"),
+        /// filtered by the supplied query (run date range). The provider applies the filter.
+        /// </summary>
+        Task<IReadOnlyList<ProdTask>> GetTasksAsync(string robotName, ProdLogQuery query, CancellationToken cancellationToken = default);
 
-        /// <summary>Returns the log entries (objects) of the selected task.</summary>
-        Task<IReadOnlyList<IProdLog>> GetLogsAsync(ProdTask task, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Returns the log entries (objects) of the selected task, filtered by the supplied
+        /// query (minimum severity). The provider applies the filter.
+        /// </summary>
+        Task<IReadOnlyList<IProdLog>> GetLogsAsync(ProdTask task, ProdLogQuery query, CancellationToken cancellationToken = default);
     }
 
     /// <summary>One structured log entry supplied by a production-log provider.</summary>
@@ -190,6 +196,9 @@ namespace RPAWriter.Core.Contracts
 
         /// <summary>Optional original raw text; null/empty when the provider keeps no raw line.</summary>
         string RawLine { get; }
+
+        /// <summary>Optional key/value parameters of the log line; empty when none.</summary>
+        IReadOnlyList<LogParameter> Parameters { get; }
     }
 
     /// <summary>

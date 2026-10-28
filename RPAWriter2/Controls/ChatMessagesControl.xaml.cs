@@ -38,6 +38,7 @@ namespace RPAWriter2.Controls
             AddHandler(ChatMessageCard.QuestionSkippedEvent, new RoutedEventHandler(OnQuestionSkipped));
             AddHandler(ChatMessageCard.CheckpointCompareRequestedEvent, new RoutedEventHandler(OnCheckpointCompareRequested));
             AddHandler(ChatMessageCard.CheckpointRestoreRequestedEvent, new RoutedEventHandler(OnCheckpointRestoreRequested));
+            AddHandler(ChatMessageCard.DiffOpenRequestedEvent, new RoutedEventHandler(OnDiffOpenRequested));
         }
 
         /// <summary>
@@ -86,6 +87,9 @@ namespace RPAWriter2.Controls
 
         /// <summary>Raised when the user clicks the Restore button of a checkpoint indicator.</summary>
         public event EventHandler<ChatMessage>? CheckpointRestoreRequested;
+
+        /// <summary>Raised when the user clicks the button of a diff indicator.</summary>
+        public event EventHandler<ChatMessage>? DiffOpenRequested;
 
         /// <summary>Appends a message and, when auto-scroll is enabled, scrolls to the end.</summary>
         public void Append(ChatMessage message)
@@ -193,6 +197,12 @@ namespace RPAWriter2.Controls
         {
             if (e is ChatMessageRoutedEventArgs args && args.Message != null)
                 CheckpointRestoreRequested?.Invoke(this, args.Message);
+        }
+
+        private void OnDiffOpenRequested(object sender, RoutedEventArgs e)
+        {
+            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
+                DiffOpenRequested?.Invoke(this, args.Message);
         }
     }
 }

@@ -23,7 +23,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task Stub_GetTasksAsync_ReturnsTasksTaggedWithRobot()
         {
-            var tasks = await new StubProdLogProvider().GetTasksAsync("RPA-1212");
+            var tasks = await new StubProdLogProvider().GetTasksAsync("RPA-1212", null);
 
             Assert.That(tasks, Is.Not.Empty);
             Assert.That(tasks.All(t => t.RobotName == "RPA-1212"), Is.True);
@@ -35,7 +35,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task Stub_GetLogsAsync_ReturnsStructuredEntries()
         {
-            var logs = await new StubProdLogProvider().GetLogsAsync(new ProdTask());
+            var logs = await new StubProdLogProvider().GetLogsAsync(new ProdTask(), null);
 
             Assert.That(logs, Is.Not.Empty);
             Assert.That(logs.All(l => l.Timestamp.HasValue), Is.True);
@@ -48,6 +48,42 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task Stub_GetLogsAsync_MinLevelError_ReturnsOnlyErrorAndAbove()
+        {
+            var query = new ProdLogQuery { MinLevel = LogLevel.Error };
+            var logs = await new StubProdLogProvider().GetLogsAsync(new ProdTask(), query);
+
+            Assert.That(logs, Is.Not.Empty);
+            Assert.That(logs.All(l => l.Level >= LogLevel.Error), Is.True);
+            Assert.That(logs.Any(l => l.Level == LogLevel.Error), Is.True);
+            Assert.That(logs.Any(l => l.Level == LogLevel.Fatal), Is.True);
+        }
+
+        [Test]
+        public async Task Stub_GetLogsAsync_ReturnsParameters()
+        {
+            var logs = await new StubProdLogProvider().GetLogsAsync(new ProdTask(), null);
+
+            Assert.That(logs.Any(l => l.Parameters != null && l.Parameters.Count > 0), Is.True);
+        }
+
+        [Test]
+        public async Task Stub_GetTasksAsync_DateRange_FiltersRuns()
+        {
+            var now = DateTime.UtcNow;
+            var query = new ProdLogQuery
+            {
+                FromUtc = now.AddHours(-2).AddMinutes(-1),
+                ToUtc = now.AddMinutes(-1)
+            };
+
+            var tasks = await new StubProdLogProvider().GetTasksAsync("RPA-1212", query);
+
+            Assert.That(tasks, Is.Not.Empty);
+            Assert.That(tasks.All(t => t.StartedAtUtc >= query.FromUtc && t.StartedAtUtc <= query.ToUtc), Is.True);
+        }
+
+        [Test]
         public void Stub_GetTasksAsync_Cancelled_Throws()
         {
             using (var cts = new CancellationTokenSource())
@@ -55,7 +91,7 @@ namespace RPAWriter.Tests
                 cts.Cancel();
                 Assert.ThrowsAsync<OperationCanceledException>(async () =>
                 {
-                    await new StubProdLogProvider().GetTasksAsync("RPA-1212", cts.Token);
+                    await new StubProdLogProvider().GetTasksAsync("RPA-1212", null, cts.Token);
                 });
             }
         }
@@ -68,7 +104,7 @@ namespace RPAWriter.Tests
                 cts.Cancel();
                 Assert.ThrowsAsync<OperationCanceledException>(async () =>
                 {
-                    await new StubProdLogProvider().GetLogsAsync(new ProdTask(), cts.Token);
+                    await new StubProdLogProvider().GetLogsAsync(new ProdTask(), null, cts.Token);
                 });
             }
         }
@@ -168,12 +204,12 @@ namespace RPAWriter.Tests
     {
         public string Name => "Test provider";
 
-        public Task<IReadOnlyList<ProdTask>> GetTasksAsync(string robotName, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ProdTask>> GetTasksAsync(string robotName, ProdLogQuery query, CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyList<ProdTask>>(Array.Empty<ProdTask>());
         }
 
-        public Task<IReadOnlyList<IProdLog>> GetLogsAsync(ProdTask task, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<IProdLog>> GetLogsAsync(ProdTask task, ProdLogQuery query, CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyList<IProdLog>>(Array.Empty<IProdLog>());
         }

@@ -32,6 +32,7 @@ namespace RPAWriter2
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(ToolWindow1))]
     [ProvideToolWindow(typeof(ConverterToolWindow), Style = VsDockStyle.MDI)]
+    [ProvideToolWindow(typeof(DiffToolWindow), Style = VsDockStyle.MDI)]
     public sealed class RPAWriter2Package : AsyncPackage
     {
         /// <summary>
@@ -68,6 +69,7 @@ namespace RPAWriter2
 
             await ToolWindow1Command.InitializeAsync(this);
             await ConverterToolWindowCommand.InitializeAsync(this);
+            await DiffToolWindowCommand.InitializeAsync(this);
             await SendErrorToChatCommand.InitializeAsync(this);
             await SendSelectionToMessageboxCommand.InitializeAsync(this);
             await DebuggerExceptionWatcher.InitializeAsync(this);

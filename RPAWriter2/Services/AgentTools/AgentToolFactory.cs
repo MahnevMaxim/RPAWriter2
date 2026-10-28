@@ -42,8 +42,6 @@ namespace RPAWriter2.Services.AgentTools
         private readonly bool _enableSubagents;
         private readonly int _subagentMaxDepth;
         private readonly Func<AgentMode> _getMode;
-        private readonly Func<string, bool, CancellationToken, Task<string?>> _saveCheckpointAsync;
-        private readonly bool _checkpointsEnabled;
         private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
@@ -62,9 +60,7 @@ namespace RPAWriter2.Services.AgentTools
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
             int subagentMaxDepth,
-            Func<AgentMode> getMode,
-            Func<string, bool, CancellationToken, Task<string?>> saveCheckpointAsync = null,
-            bool checkpointsEnabled = true)
+            Func<AgentMode> getMode)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSpec = getSpec ?? throw new ArgumentNullException(nameof(getSpec));
@@ -82,8 +78,6 @@ namespace RPAWriter2.Services.AgentTools
             _enableSubagents = enableSubagents;
             _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
             _getMode = getMode ?? throw new ArgumentNullException(nameof(getMode));
-            _saveCheckpointAsync = saveCheckpointAsync;
-            _checkpointsEnabled = checkpointsEnabled && saveCheckpointAsync != null;
         }
 
         /// <summary>
@@ -1461,9 +1455,6 @@ namespace RPAWriter2.Services.AgentTools
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             if (string.IsNullOrWhiteSpace(p)) return "Missing \"path\" argument.";
 
-            // Snapshot the current file state before mutating it, so the edit is reversible.
-            await SaveCheckpointBeforeEditAsync(p, ct).ConfigureAwait(false);
-
             var newText = args["new_text"]?.Value<string>() ?? "";
             var oldText = args["old_text"]?.Value<string>();
             int? insertLine = null;
@@ -1536,21 +1527,6 @@ namespace RPAWriter2.Services.AgentTools
         {
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             return Task.FromResult(string.IsNullOrWhiteSpace(p) ? "file" : p);
-        }
-
-        /// <summary>Best-effort snapshot of the workspace before an edit; failures never block the edit.</summary>
-        private async Task SaveCheckpointBeforeEditAsync(string path, CancellationToken ct)
-        {
-            if (!_checkpointsEnabled || _saveCheckpointAsync == null) return;
-
-            try
-            {
-                await _saveCheckpointAsync("editor: " + path, false, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                LogService.Warn("Checkpoint save failed: " + ex.Message);
-            }
         }
 
         private static string ReadDiskText(string path)

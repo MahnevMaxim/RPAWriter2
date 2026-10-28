@@ -49,6 +49,15 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Build_UnescapesDebuggerLineBreaks()
+        {
+            var text = ExceptionContextBuilder.Build("System.Exception: boom\\r\\n   at App.Main()");
+
+            Assert.That(text, Does.Not.Contain("\\r\\n"));
+            Assert.That(text, Does.Contain("boom\r\n   at App.Main()"));
+        }
+
+        [Test]
         public void Build_EmptyDump_UsesPlaceholder_DoesNotThrow()
         {
             var text = ExceptionContextBuilder.Build("", "", "", "");

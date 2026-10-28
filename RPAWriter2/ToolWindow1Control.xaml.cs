@@ -143,9 +143,14 @@ namespace RPAWriter2
         // half-initialized checkbox states back over the real settings).
         private bool _suppressPermissionEvents;
 
+        private bool _baselineCheckpointCreated;
+        private string? _lastCheckpointHash;
+        private int _iterationNumber;
+
         public ToolWindow1Control()
         {
             this.InitializeComponent();
+            InitializeMinLevelCombo();
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
             _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
@@ -158,6 +163,7 @@ namespace RPAWriter2
             ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
             ChatMessages.CheckpointCompareRequested += OnCheckpointCompareRequested;
             ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
+            ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
             AttachmentsList.ItemsSource = _attachments;
             SpecMessages.Messages = _specMessages;
             SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
@@ -193,6 +199,7 @@ namespace RPAWriter2
             KbPathBox.Text = _settings.KnowledgeBasePath ?? "";
             RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
             RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
+            ShowRobotCreatorCheckBox.IsChecked = _settings.ShowRobotCreator;
             PackagesPathBox.Text = _settings.PackagesPath ?? "";
             RulesPathBox.Text = _settings.RulesPath ?? "";
             ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600).ToString();
@@ -361,6 +368,13 @@ namespace RPAWriter2
             catch { /* clipboard busy — ignore */ }
         }
 
+        private void OnCopyPinnedMessage(object sender, RoutedEventArgs e)
+        {
+            if (_pinnedMessage == null) return;
+            try { Clipboard.SetText(FormatMessageForCopy(_pinnedMessage)); }
+            catch { /* clipboard busy — ignore */ }
+        }
+
         private void OnChatMessageQuestionAnswered(object? sender, ChatMessage message)
         {
             if (_questionTcs == null) return;
@@ -400,10 +414,45 @@ namespace RPAWriter2
         // Checkpoints (shadow git snapshots)
         // ------------------------------------------------------------------
 
-        /// <summary>Fire-and-forget baseline snapshot at the start of a run (errors are logged, never thrown).</summary>
-        private void TrySaveBaselineCheckpoint()
+        /// <summary>Creates the immutable "task start" baseline once per chat session.</summary>
+        private async Task EnsureBaselineCheckpointAsync()
         {
-            _ = SaveCheckpointAsync("task start", allowEmpty: true, CancellationToken.None);
+            if (_baselineCheckpointCreated) return;
+            _baselineCheckpointCreated = true;
+            _lastCheckpointHash = await SaveCheckpointAsync("task start", allowEmpty: true, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Snapshots the just-finished iteration and, when it changed files, appends a Diff
+        /// indicator whose button opens the iteration diff in the diff tool window.
+        /// </summary>
+        private async Task SaveIterationCheckpointAndDiffAsync()
+        {
+            _iterationNumber++;
+            var newHash = await SaveCheckpointAsync("iteration " + _iterationNumber, allowEmpty: false, CancellationToken.None);
+
+            var fromHash = _lastCheckpointHash;
+            if (string.IsNullOrWhiteSpace(newHash) || string.IsNullOrWhiteSpace(fromHash))
+                return;
+
+            try
+            {
+                var service = await GetCheckpointServiceForCurrentTaskAsync();
+                var diffs = await Task.Run(() => service.GetDiffAsync(fromHash!, newHash!));
+                var files = CheckpointDiffBuilder.Build(diffs);
+                _lastCheckpointHash = newHash;
+
+                AppendChatMessage(new ChatMessage
+                {
+                    Kind = ChatMessageKind.Diff,
+                    Payload = new DiffPayload { CommitHash = newHash!, Files = files }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("Iteration diff failed: " + ex.Message);
+                _lastCheckpointHash = newHash;
+            }
         }
 
         /// <summary>
@@ -446,6 +495,23 @@ namespace RPAWriter2
 
         private void AppendCheckpointIndicator(string taskId, string workspaceDir, string commitHash, string message, int sequence)
         {
+            // SaveCheckpointAsync continues on a thread-pool thread; touch _messages on the UI thread only.
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => AppendCheckpointIndicator(taskId, workspaceDir, commitHash, message, sequence)));
+                return;
+            }
+
+            // A new snapshot means the previous latest checkpoint now has changes after it.
+            for (int i = _messages.Count - 1; i >= 0; i--)
+            {
+                if (_messages[i].Kind == ChatMessageKind.Checkpoint && _messages[i].Payload is CheckpointPayload previous)
+                {
+                    previous.HasChanges = true;
+                    break;
+                }
+            }
+
             AppendChatMessage(new ChatMessage
             {
                 Kind = ChatMessageKind.Checkpoint,
@@ -457,6 +523,7 @@ namespace RPAWriter2
                     Message = message,
                     Sequence = sequence,
                     CreatedAtUtc = DateTime.UtcNow,
+                    HasChanges = false,
                 }
             });
         }
@@ -468,12 +535,19 @@ namespace RPAWriter2
             {
                 var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
                 var diffs = await Task.Run(() => service.GetDiffAsync(payload.CommitHash, null)).ConfigureAwait(true);
-                AppendCheckpointDiff(payload, diffs);
+                var files = await Task.Run(() => CheckpointDiffBuilder.Build(diffs)).ConfigureAwait(true);
+                DiffToolWindowCommand.Instance?.ShowWindow(files, "Diff since checkpoint " + payload.ShortHash);
             }
             catch (Exception ex)
             {
-                AppendSystemMessage("Checkpoint compare failed: " + ex.Message);
+                MessageBox.Show("Checkpoint compare failed: " + ex.Message, "Compare checkpoint", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void OnDiffOpenRequested(object? sender, ChatMessage message)
+        {
+            if (message.Payload is not DiffPayload payload) return;
+            DiffToolWindowCommand.Instance?.ShowWindow(payload.Files, "Diff " + payload.ShortHash);
         }
 
         private async void OnCheckpointRestoreRequested(object? sender, ChatMessage message)
@@ -491,11 +565,13 @@ namespace RPAWriter2
             {
                 var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
                 await Task.Run(() => service.RestoreAsync(payload.CommitHash)).ConfigureAwait(true);
-                AppendSystemMessage("Restored files to checkpoint " + payload.ShortHash + ".");
+                payload.HasChanges = false;
+                LogService.Info("Restored files to checkpoint " + payload.ShortHash + ".");
             }
             catch (Exception ex)
             {
-                AppendSystemMessage("Checkpoint restore failed: " + ex.Message);
+                LogService.Error(ex, "Checkpoint restore failed.");
+                ShowCheckpointRestoreError("Checkpoint restore failed: " + ex.Message);
             }
         }
 
@@ -511,32 +587,18 @@ namespace RPAWriter2
             return service;
         }
 
-        private void AppendCheckpointDiff(CheckpointPayload payload, IReadOnlyList<CheckpointDiff> diffs)
+        /// <summary>Returns the checkpoint service for the current conversation and open solution.</summary>
+        private async Task<ICheckpointService> GetCheckpointServiceForCurrentTaskAsync()
         {
-            var sb = new StringBuilder();
-            sb.AppendLine("Diff since checkpoint " + payload.ShortHash + ":");
-            if (diffs == null || diffs.Count == 0)
-            {
-                sb.AppendLine("(no changes)");
-            }
-            else
-            {
-                foreach (var diff in diffs)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("File: " + diff.RelativePath);
-                    var lineDiff = TextDiff.Diff(diff.Before ?? "", diff.After ?? "");
-                    var shown = 0;
-                    foreach (var line in lineDiff.Lines)
-                    {
-                        if (line.Kind == DiffLineKind.Equal) continue;
-                        if (shown >= 200) { sb.AppendLine("… (truncated)"); break; }
-                        sb.AppendLine((line.Kind == DiffLineKind.Add ? "+ " : "- ") + (line.Text ?? ""));
-                        shown++;
-                    }
-                }
-            }
-            AppendSystemMessage(sb.ToString());
+            var ws = GetOpenSolutionDirectory();
+            if (string.IsNullOrWhiteSpace(ws))
+                throw new InvalidOperationException("No solution is open.");
+
+            var taskId = _currentConversation?.Id ?? Guid.NewGuid().ToString("N");
+            var service = _checkpoints.GetOrCreate(taskId, ws);
+            if (!service.IsInitialized)
+                await service.InitializeAsync(CancellationToken.None);
+            return service;
         }
 
         private void AppendSpecMessage(ChatMessage message)
@@ -894,18 +956,19 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(UpdateCreateRobotVisibility));
                 return;
             }
-            bool visible;
+            bool noSolution;
             try
             {
                 var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
-                visible = dte?.Solution == null || !dte.Solution.IsOpen;
+                noSolution = dte?.Solution == null || !dte.Solution.IsOpen;
             }
             catch
             {
-                visible = true;
+                noSolution = true;
             }
-            CreateRobotPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-            RestorePackagesPanel.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
+            var showRobotCreator = noSolution && (_settings?.ShowRobotCreator ?? true);
+            CreateRobotPanel.Visibility = showRobotCreator ? Visibility.Visible : Visibility.Collapsed;
+            RestorePackagesPanel.Visibility = noSolution ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ShowImportProgress(string status)
@@ -1921,7 +1984,7 @@ namespace RPAWriter2
 
                 ProdLogsStatusText.Text = "Loading tasks…";
                 LogsGrid.ItemsSource = null;
-                var tasks = await _selectedLogProvider.GetTasksAsync(robotName);
+                var tasks = await _selectedLogProvider.GetTasksAsync(robotName, BuildProdLogQuery());
                 TasksGrid.ItemsSource = tasks;
                 ProdLogsStatusText.Text = tasks.Count + " task(s) loaded. Select a task to see its logs.";
             }
@@ -1966,6 +2029,24 @@ namespace RPAWriter2
 
         private async void OnTaskSelected(object sender, SelectionChangedEventArgs e)
         {
+            await ReloadSelectedTaskLogsAsync();
+        }
+
+        private async void OnMinLevelChanged(object sender, SelectionChangedEventArgs e)
+        {
+            await ReloadSelectedTaskLogsAsync();
+        }
+
+        private async void OnDateRangeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ProdLogsPanel.Visibility != Visibility.Visible) return;
+            var robotName = (RobotNameBox?.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(robotName)) return;
+            await LoadProdTasksAsync();
+        }
+
+        private async Task ReloadSelectedTaskLogsAsync()
+        {
             try
             {
                 var task = TasksGrid.SelectedItem as ProdTask;
@@ -1976,7 +2057,7 @@ namespace RPAWriter2
                 }
 
                 ProdLogsStatusText.Text = "Loading logs…";
-                var logs = await _selectedLogProvider.GetLogsAsync(task);
+                var logs = await _selectedLogProvider.GetLogsAsync(task, BuildProdLogQuery());
                 LogsGrid.ItemsSource = logs;
                 ProdLogsStatusText.Text = logs.Count + " log entry/entries loaded.";
             }
@@ -1985,6 +2066,30 @@ namespace RPAWriter2
                 ProdLogsStatusText.Text = "Failed to load logs: " + ex.Message;
                 ShowError(ex);
             }
+        }
+
+        private void InitializeMinLevelCombo()
+        {
+            MinLevelCombo.Items.Add(new ComboBoxItem { Content = "All", Tag = null });
+            foreach (LogLevel level in Enum.GetValues(typeof(LogLevel)))
+                MinLevelCombo.Items.Add(new ComboBoxItem { Content = level.ToString(), Tag = level });
+            MinLevelCombo.SelectedIndex = 0;
+        }
+
+        private ProdLogQuery BuildProdLogQuery()
+        {
+            var query = new ProdLogQuery();
+
+            if (MinLevelCombo.SelectedItem is ComboBoxItem item && item.Tag is LogLevel level)
+                query.MinLevel = level;
+
+            if (FromDatePicker.SelectedDate.HasValue)
+                query.FromUtc = DateTime.SpecifyKind(FromDatePicker.SelectedDate.Value.Date, DateTimeKind.Utc);
+
+            if (ToDatePicker.SelectedDate.HasValue)
+                query.ToUtc = DateTime.SpecifyKind(ToDatePicker.SelectedDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+
+            return query;
         }
 
         private async void OnAnalyzeProdLogs(object sender, RoutedEventArgs e)
@@ -2022,7 +2127,8 @@ namespace RPAWriter2
                 Level = log.Level.ToString(),
                 Source = log.Source,
                 Message = log.Message,
-                RawLine = string.IsNullOrWhiteSpace(log.RawLine) ? log.Message : log.RawLine
+                RawLine = string.IsNullOrWhiteSpace(log.RawLine) ? log.Message : log.RawLine,
+                Parameters = log.Parameters?.ToList() ?? new List<LogParameter>()
             };
         }
 
@@ -2052,7 +2158,7 @@ namespace RPAWriter2
 
             sb.AppendLine("Full log:");
             foreach (var log in logs.Take(200))
-                sb.AppendLine("  [" + FormatTimestamp(log.Timestamp) + "] [" + log.Level + "] " + (log.Source ?? "") + ": " + (log.Message ?? ""));
+                sb.AppendLine("  [" + FormatTimestamp(log.Timestamp) + "] [" + log.Level + "] " + (log.Source ?? "") + ": " + (log.Message ?? "") + FormatParameters(log.Parameters));
 
             var text = sb.ToString();
             if (text.Length > ProdLogMaxChars)
@@ -2063,6 +2169,15 @@ namespace RPAWriter2
         private static string FormatTimestamp(DateTime? timestamp)
         {
             return timestamp?.ToString("yyyy-MM-dd HH:mm:ss") ?? "?";
+        }
+
+        private static string FormatParameters(IReadOnlyList<LogParameter> parameters)
+        {
+            if (parameters == null || parameters.Count == 0) return "";
+            var pairs = new List<string>();
+            foreach (var parameter in parameters)
+                pairs.Add((parameter.Key ?? "") + "=" + (parameter.Value ?? ""));
+            return "  parameters: " + string.Join(", ", pairs);
         }
 
         private void OnConvertMarkdownToDocx(object sender, RoutedEventArgs e)
@@ -2923,8 +3038,6 @@ namespace RPAWriter2
             if (_chatCts != null) return; // already awaiting the agent's reply
             if (_agentRunner == null) return;
 
-            TrySaveBaselineCheckpoint();
-
             var images = new List<ChatImagePart>();
             var attachmentNotes = new List<string>();
             var fileBlocks = new StringBuilder();
@@ -3011,6 +3124,8 @@ namespace RPAWriter2
                             reasoningTimer.Start();
                     }
                 });
+                await EnsureBaselineCheckpointAsync();
+
                 var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
 
                 reasoningTimer.Stop();
@@ -3036,6 +3151,8 @@ namespace RPAWriter2
                     // No reasoning to show — drop the empty placeholder.
                     _messages.Remove(thinking);
                 }
+
+                await SaveIterationCheckpointAndDiffAsync();
 
                 // Emit the final answer as a new message so it appears after the tool calls.
                 if (!string.IsNullOrWhiteSpace(result.FinalText))
@@ -3514,9 +3631,7 @@ namespace RPAWriter2
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
-                () => _mode,
-                SaveCheckpointAsync,
-                _settings.CheckpointsEnabled);
+                () => _mode);
             factory.PixMwfStore = PixMwfMappingStore.Shared;
             return factory.CreateRegistry();
         }
@@ -3746,6 +3861,10 @@ namespace RPAWriter2
                 _loadingHistory = false;
             }
 
+            _baselineCheckpointCreated = false;
+            _lastCheckpointHash = null;
+            _iterationNumber = 0;
+
             RefreshPinnedMessage();
             ShowConversationView();
             if (markDirty)
@@ -3790,6 +3909,10 @@ namespace RPAWriter2
             {
                 _loadingHistory = false;
             }
+
+            _baselineCheckpointCreated = false;
+            _lastCheckpointHash = null;
+            _iterationNumber = 0;
 
             if (markDirty)
                 ScheduleHistorySave();
@@ -3928,6 +4051,10 @@ namespace RPAWriter2
             {
                 _loadingHistory = false;
             }
+
+            _baselineCheckpointCreated = false;
+            _lastCheckpointHash = null;
+            _iterationNumber = 0;
 
             RefreshPinnedMessage();
             PersistUiState();
@@ -4244,6 +4371,25 @@ namespace RPAWriter2
             VoiceErrorToast.Visibility = Visibility.Collapsed;
         }
 
+        private void ShowCheckpointRestoreError(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowCheckpointRestoreError(text)));
+                return;
+            }
+
+            CheckpointRestoreErrorToast.Kind = NotificationKind.Error;
+            CheckpointRestoreErrorToast.Message = text ?? "";
+            CheckpointRestoreErrorToast.Visibility = Visibility.Visible;
+            // No auto-hide: the error banner stays until the user closes it.
+        }
+
+        private void OnCheckpointRestoreErrorClose(object sender, RoutedEventArgs e)
+        {
+            CheckpointRestoreErrorToast.Visibility = Visibility.Collapsed;
+        }
+
         private void SlideDeployToast(double from, double to, Action? onCompleted = null)
         {
             DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
@@ -4265,6 +4411,7 @@ namespace RPAWriter2
             _settings.KnowledgeBasePath = KbPathBox.Text.Trim();
             _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
+            _settings.ShowRobotCreator = ShowRobotCreatorCheckBox?.IsChecked ?? true;
             _settings.PackagesPath = PackagesPathBox.Text.Trim();
             _settings.RulesPath = RulesPathBox.Text.Trim();
             _settings.SkillsPath = SkillsPathBox.Text.Trim();
@@ -4310,6 +4457,7 @@ namespace RPAWriter2
             _stt = SpeechToTextFactory.Create(_settings);
             RebuildAgentTools();
             ApplyControlsVisibility();
+            UpdateCreateRobotVisibility();
             ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
         }
 

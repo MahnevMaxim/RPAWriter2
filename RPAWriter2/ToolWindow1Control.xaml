@@ -588,20 +588,23 @@
                     <controls:NotificationBanner x:Name="VoiceErrorToast" Margin="0,0,0,6" Visibility="Collapsed"
                                                   CloseRequested="OnVoiceErrorClose"
                                                   SendToChatRequested="OnNotificationSendToChat"/>
-                    <WrapPanel Margin="0,5,0,6" TextElement.FontSize="14">
-                        <Button Content="New chat" Click="OnNewChat" Margin="0,0,8,4"/>
-                        <Button Content="history" Click="OnShowHistory" Margin="0,0,8,4"/>
-                        <Button Content="commit" Click="OnCommit" Margin="0,0,8,4"/>
-                        <Button Content="deploy" Click="OnDeploy" Margin="0,0,8,4"/>
-                        <Button Content="Analyze logs" Click="OnAnalyzeLogs" Margin="0,0,8,4"/>
-                        <Button Content="send errors" Click="OnSendErrors" Margin="0,0,8,4"/>
-                        <Button Content="copy" Click="OnCopyConversation" Margin="0,0,8,4"/>
+                    <WrapPanel Margin="0,5,0,6">
+                        <Button Content="New chat" Click="OnNewChat" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="History" Click="OnShowHistory" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="Commit" Click="OnCommit" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="Deploy" Click="OnDeploy" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="Analyze logs" Click="OnAnalyzeLogs" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="Send errors" Click="OnSendErrors" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="Copy" Click="OnCopyConversation" Padding="8,2" Margin="0,0,8,4"/>
                     </WrapPanel>
                     <controls:NotificationBanner x:Name="OptionsWarningToast" Margin="0,0,0,6" Visibility="Collapsed"
                                                   CloseRequested="OnOptionsWarningClose"
                                                   SendToChatRequested="OnNotificationSendToChat"/>
                     <controls:NotificationBanner x:Name="CommitResultBar" Margin="0,0,0,6" Visibility="Collapsed"
                                                   CloseRequested="OnCloseCommitResult"
+                                                  SendToChatRequested="OnNotificationSendToChat"/>
+                    <controls:NotificationBanner x:Name="CheckpointRestoreErrorToast" Margin="0,0,0,6" Visibility="Collapsed"
+                                                  CloseRequested="OnCheckpointRestoreErrorClose"
                                                   SendToChatRequested="OnNotificationSendToChat"/>
                     <Border x:Name="CreateRobotPanel" Margin="0,0,0,6"
                             Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
@@ -668,6 +671,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Button Grid.Column="0" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
                                     VerticalAlignment="Top" Click="OnPinnedExpandToggle"
@@ -700,7 +704,13 @@
                                 </ItemsControl>
                             </ScrollViewer>
                             <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                                    VerticalAlignment="Top" Margin="8,0,0,0"
+                                    VerticalAlignment="Top" Margin="0,0,10,0"
+                                    ToolTip="Copy message" Click="OnCopyPinnedMessage">
+                                <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                            </Button>
+                            <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                    VerticalAlignment="Top"
                                     ToolTip="Close chat (show history)" Click="OnCloseChat">
                                 <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
                             </Button>
@@ -986,9 +996,22 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="Min level:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <ComboBox x:Name="MinLevelCombo" Width="110" VerticalAlignment="Center" Margin="0,0,12,0"
+                                                  SelectionChanged="OnMinLevelChanged"/>
+                                        <TextBlock Text="From:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <DatePicker x:Name="FromDatePicker" Width="130" VerticalAlignment="Center" Margin="0,0,12,0"
+                                                    SelectedDateChanged="OnDateRangeChanged"/>
+                                        <TextBlock Text="To:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <DatePicker x:Name="ToDatePicker" Width="130" VerticalAlignment="Center"
+                                                    SelectedDateChanged="OnDateRangeChanged"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,4">
                                         <TextBlock Text="Robot name:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <ComboBox x:Name="RobotNameBox" Width="160" VerticalAlignment="Center" Margin="0,0,8,0"
                                                   IsEditable="True" Style="{StaticResource EditableComboBoxStyle}"
@@ -998,15 +1021,15 @@
                                                   SelectionChanged="OnProviderChanged" Visibility="Collapsed"/>
                                     </StackPanel>
 
-                                    <TextBlock Grid.Row="1" x:Name="ProdLogsStatusText" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                    <TextBlock Grid.Row="2" x:Name="ProdLogsStatusText" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="0,0,0,4"/>
 
-                                    <TextBlock Grid.Row="2" Text="Tasks:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
-                                    <DataGrid Grid.Row="3" x:Name="TasksGrid" AutoGenerateColumns="True" IsReadOnly="True"
+                                    <TextBlock Grid.Row="3" Text="Tasks:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
+                                    <DataGrid Grid.Row="4" x:Name="TasksGrid" AutoGenerateColumns="True" IsReadOnly="True"
                                               SelectionMode="Single" SelectionChanged="OnTaskSelected"
                                               CanUserAddRows="False" MinHeight="80" MaxHeight="160" Margin="0,0,0,6"/>
 
-                                    <TextBlock Grid.Row="4" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
-                                    <DataGrid Grid.Row="5" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                    <TextBlock Grid.Row="5" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
+                                    <DataGrid Grid.Row="6" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                               SelectionMode="Single" CanUserAddRows="False"
                                               MinHeight="80" MaxHeight="180" Margin="0,0,0,6">
                                         <DataGrid.Columns>
@@ -1014,10 +1037,25 @@
                                             <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="90"/>
                                             <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="120"/>
                                             <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
+                                            <DataGridTemplateColumn Header="Parameters" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <ItemsControl ItemsSource="{Binding Parameters}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <TextBlock TextWrapping="Wrap">
+                                                                        <Run Text="{Binding Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Value, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
                                         </DataGrid.Columns>
                                     </DataGrid>
 
-                                    <Button Grid.Row="6" Content="Analyze logs" Click="OnAnalyzeProdLogs" HorizontalAlignment="Left" Padding="10,2"/>
+                                    <Button Grid.Row="7" Content="Analyze logs" Click="OnAnalyzeProdLogs" HorizontalAlignment="Left" Padding="10,2"/>
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>
@@ -1264,7 +1302,7 @@
                                 <TextBox Grid.Row="23" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
 
                                 <CheckBox Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckpointsEnabledCheckBox"
-                                          Content="Enable checkpoints (auto-snapshot files before edits)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+                                          Content="Enable checkpoints (auto-snapshot by iteration diffs)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>
@@ -1277,6 +1315,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
@@ -1314,6 +1353,9 @@
                                     <ComboBoxItem Content="Full (all areas)"/>
                                     <ComboBoxItem Content="Passwords &amp; logins only"/>
                                 </ComboBox>
+
+                                <CheckBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox"
+                                          Content="Show robot creation control in chat" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>

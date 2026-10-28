@@ -20,7 +20,7 @@
                 </StackPanel>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                <Button Content="Compare" Click="OnCompare" Style="{StaticResource Question.OptionButtonStyle}"/>
+                <Button Content="Compare" Click="OnCompare" Visibility="{Binding Payload.HasChanges, Converter={StaticResource BoolToVis}}" Style="{StaticResource Question.OptionButtonStyle}"/>
                 <Button Content="Restore" Click="OnRestore" Margin="8,0,0,0" Style="{StaticResource Question.OptionButtonStyle}"/>
             </StackPanel>
         </StackPanel>

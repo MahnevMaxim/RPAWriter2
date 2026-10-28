@@ -105,7 +105,9 @@ namespace RPAWriter.Core.Models
         /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
         Subagent,
         /// <summary>A saved file checkpoint (shadow git snapshot) with Compare/Restore actions.</summary>
-        Checkpoint
+        Checkpoint,
+        /// <summary>A per-iteration diff indicator: a button that opens the diff tool window.</summary>
+        Diff
     }
 
     /// <summary>How knowledge-base formation should treat a previous run.</summary>
@@ -567,6 +569,29 @@ namespace RPAWriter.Core.Models
         public string Notes { get; set; }
     }
 
+    /// <summary>A single key/value parameter attached to a production log entry.</summary>
+    public class LogParameter
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
+    }
+
+    /// <summary>
+    /// Filter passed to a production-log provider. The provider applies it and returns
+    /// only the matching tasks and log entries.
+    /// </summary>
+    public class ProdLogQuery
+    {
+        /// <summary>Minimum log severity to return (inclusive); null returns all levels.</summary>
+        public LogLevel? MinLevel { get; set; }
+
+        /// <summary>Inclusive lower bound of the run start time (UTC); null means unbounded.</summary>
+        public DateTime? FromUtc { get; set; }
+
+        /// <summary>Inclusive upper bound of the run start time (UTC); null means unbounded.</summary>
+        public DateTime? ToUtc { get; set; }
+    }
+
     /// <summary>Robot server access configuration.</summary>
     public class RobotDeploymentConfig
     {
@@ -629,6 +654,7 @@ namespace RPAWriter.Core.Models
         public string Source { get; set; }
         public string Message { get; set; }
         public string RawLine { get; set; }
+        public List<LogParameter> Parameters { get; set; } = new List<LogParameter>();
     }
 
     /// <summary>Log analysis result.</summary>

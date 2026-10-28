@@ -260,6 +260,12 @@ namespace RPAWriter2
                     return "🔖 Checkpoint " + (c?.ShortHash ?? "") + (string.IsNullOrWhiteSpace(c?.Message) ? "" : " — " + c.Message);
                 }
 
+                if (Kind == ChatMessageKind.Diff)
+                {
+                    var d = Payload as DiffPayload;
+                    return "🔀 Diff " + (d?.ShortHash ?? "");
+                }
+
                 var t = Text ?? "";
                 return string.IsNullOrEmpty(Label) ? t : Label + t;
             }

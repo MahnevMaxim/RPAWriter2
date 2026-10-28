@@ -39,6 +39,9 @@ namespace RPAWriter2.Controls.Chat
         public static readonly RoutedEvent CheckpointRestoreRequestedEvent =
             EventManager.RegisterRoutedEvent("CheckpointRestoreRequested", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));
 
+        public static readonly RoutedEvent DiffOpenRequestedEvent =
+            EventManager.RegisterRoutedEvent("DiffOpenRequested", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));
+
         /// <summary>Whether the message body is visible. Defaults to true (expanded).</summary>
         public bool IsExpanded
         {

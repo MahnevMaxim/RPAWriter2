@@ -41,7 +41,7 @@
 | **Enable sub-agents (spawn_agent)** | Разрешить запуск субагентов | выкл. |
 | **Sub-agent max iterations** | Максимум итераций субагента | `4` |
 | **Sub-agent max depth** | Максимальная глубина вложенности субагентов (1–5) | `2` |
-| **Enable checkpoints (auto-snapshot files before edits)** | Автоматически делать снимки файлов в теневой git-репозиторий перед правками (чекпоинты) | вкл. |
+| **Enable checkpoints (auto-snapshot by iteration diffs)** | Автоматически делать снимки файлов в теневой git-репозиторий по итогам каждой итерации (чекпоинты) | вкл. |
 
 ### Сеть и повторы
 
@@ -76,6 +76,7 @@
 | **Log providers directory** | Каталог провайдеров логов | пусто |
 | **Skills directory** | Каталог навыков (каждый навык — подпапка с `SKILL.md`) | пусто |
 | **Security audit mode** | Режим аудита робота: **Full (all areas)** или **Passwords & logins only** | Full |
+| **Show robot creation control in chat** | Показывать контрол создания робота (номер робота + кнопка **Create robot**) в верхней части чата, когда решение не открыто | вкл. |
 
 ## General
 
