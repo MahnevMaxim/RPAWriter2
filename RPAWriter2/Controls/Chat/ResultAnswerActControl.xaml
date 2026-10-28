@@ -14,7 +14,7 @@
             <Expander Header="{Binding ReasoningHeader, Mode=OneWay}" IsExpanded="{Binding IsThinking, Mode=OneWay}"
                       Foreground="{StaticResource Dark.Text}"
                       Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}">
-                <TextBox Text="{Binding Reasoning, Mode=OneWay}" TextWrapping="Wrap"
+                <TextBox Text="{Binding ReasoningDisplayText, Mode=OneWay}" TextWrapping="Wrap"
                          Foreground="#C8C8C8" FontStyle="Italic"
                          IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0"/>
             </Expander>

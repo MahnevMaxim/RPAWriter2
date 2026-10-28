@@ -38,6 +38,8 @@ namespace RPAWriter2
                     OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
                     OnPropertyChanged(nameof(KindName));
+                    OnPropertyChanged(nameof(MessageTitle));
+                    OnPropertyChanged(nameof(TimestampToolTip));
                 }
             }
         }
@@ -60,7 +62,7 @@ namespace RPAWriter2
                     OnPropertyChanged(nameof(DisplayText));
                     OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
-                    OnPropertyChanged(nameof(ToolName));
+                    OnPropertyChanged(nameof(MessageTitle));
                 }
             }
         }
@@ -80,6 +82,7 @@ namespace RPAWriter2
                         OnPropertyChanged(nameof(DisplayText));
                         OnPropertyChanged(nameof(SingleLineDisplayText));
                         OnPropertyChanged(nameof(Blocks));
+                        OnPropertyChanged(nameof(MessageTitle));
                     }
                 }
                 else
@@ -92,7 +95,7 @@ namespace RPAWriter2
         public string Reasoning
         {
             get => _reasoning;
-            set { if (_reasoning != value) { _reasoning = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasReasoning)); OnPropertyChanged(nameof(ShowReasoning)); } }
+            set { if (_reasoning != value) { _reasoning = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasReasoning)); OnPropertyChanged(nameof(ShowReasoning)); OnPropertyChanged(nameof(ReasoningDisplayText)); } }
         }
 
         /// <summary>Agent mode ("Plan"/"Act") this message was produced in; used for the UI label.</summary>
@@ -114,6 +117,7 @@ namespace RPAWriter2
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(ReasoningHeader));
                     OnPropertyChanged(nameof(ShowReasoning));
+                    OnPropertyChanged(nameof(ReasoningDisplayText));
                 }
             }
         }
@@ -131,6 +135,9 @@ namespace RPAWriter2
         /// <summary>When this entry was created, converted to local time for display.</summary>
         public DateTime TimestampLocal => TimestampUtc.ToLocalTime();
 
+        /// <summary>Tooltip shown when hovering the message timestamp: the message kind plus the full local time.</summary>
+        public string TimestampToolTip => KindName + " · " + TimestampLocal.ToString("g");
+
         public bool HasReasoning => !string.IsNullOrWhiteSpace(Reasoning);
 
         /// <summary>True when the reasoning expander should be visible: while thinking or when reasoning exists.</summary>
@@ -138,6 +145,29 @@ namespace RPAWriter2
 
         /// <summary>Header of the reasoning expander: "Thinking…" while streaming, "Reasoning" when done.</summary>
         public string ReasoningHeader => IsThinking ? "Thinking…" : "Reasoning";
+
+        /// <summary>
+        /// Number of characters kept visible in the reasoning box while the model is still
+        /// streaming. Showing only this trailing window keeps WPF from re-laying out an
+        /// ever-growing wrapped block on every flush; the full text is shown once done.
+        /// </summary>
+        public const int ReasoningStreamTailLength = 8000;
+
+        /// <summary>
+        /// Text rendered in the reasoning expander. While <see cref="IsThinking"/> is true,
+        /// only the trailing <see cref="ReasoningStreamTailLength"/> characters are exposed
+        /// (prefixed with an ellipsis); the complete reasoning is shown once streaming ends.
+        /// </summary>
+        public string ReasoningDisplayText
+        {
+            get
+            {
+                var text = Reasoning;
+                if (!IsThinking || string.IsNullOrEmpty(text) || text.Length <= ReasoningStreamTailLength)
+                    return text;
+                return "…" + text.Substring(text.Length - ReasoningStreamTailLength);
+            }
+        }
 
         public string Label
         {
@@ -156,8 +186,46 @@ namespace RPAWriter2
             }
         }
 
-        /// <summary>Tool name for tool-call entries; empty otherwise. Shown in the message header.</summary>
-        public string ToolName => (Payload as ToolCallPayload)?.ToolName ?? "";
+        /// <summary>
+        /// Text shown in the message header ("top" line): tool name for tool calls, the mode
+        /// text for mode switches, the first message line for user/system notices, and a fixed
+        /// "Reasoning" label for agent text; empty otherwise.
+        /// </summary>
+        public string MessageTitle
+        {
+            get
+            {
+                switch (Kind)
+                {
+                    case ChatMessageKind.ToolCall:
+                    case ChatMessageKind.ToolBlocked:
+                        return (Payload as ToolCallPayload)?.ToolName ?? "";
+                    case ChatMessageKind.ModeSwitch:
+                    case ChatMessageKind.SystemNotice:
+                    case ChatMessageKind.User:
+                        return FirstLine(Text);
+                    case ChatMessageKind.AgentText:
+                        return "Reasoning";
+                    default:
+                        return "";
+                }
+            }
+        }
+
+        private static string FirstLine(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "";
+
+            foreach (var line in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length > 0)
+                    return trimmed;
+            }
+
+            return "";
+        }
 
         public string DisplayText
         {
@@ -199,6 +267,25 @@ namespace RPAWriter2
 
         /// <summary>Raw message text (without the role label) split into text and code blocks.</summary>
         public IReadOnlyList<MessageBlock> TextBlocks => ChatMarkdown.SplitBlocks(Text);
+
+        /// <summary>
+        /// Tool call body text without the duplicated tool-name prefix: the raw result for
+        /// executed calls, or the Plan-mode notice for blocked calls.
+        /// </summary>
+        public string ToolBodyText
+        {
+            get
+            {
+                if (Kind == ChatMessageKind.ToolBlocked)
+                    return "blocked in Plan mode.";
+                if (Kind == ChatMessageKind.ToolCall)
+                    return (Payload as ToolCallPayload)?.Result ?? "";
+                return Text ?? "";
+            }
+        }
+
+        /// <summary>Tool call body split into text and code blocks (for syntax-highlighted rendering).</summary>
+        public IReadOnlyList<MessageBlock> ToolBodyBlocks => ChatMarkdown.SplitBlocks(ToolBodyText);
 
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {

@@ -20,7 +20,8 @@
     <SolidColorBrush x:Key="Chat.LastPlanBorder" Color="#FF8C00"/>
     <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
     <SolidColorBrush x:Key="Question.OptionBorder" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="Question.AnswerBorder" Color="#4CAF50"/>
+    <SolidColorBrush x:Key="Question.AnswerBorder" Color="#9A9A9A"/>
+    <SolidColorBrush x:Key="Question.AnswerBackground" Color="#339A9A9A"/>
 
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>
@@ -47,6 +48,41 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.3"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Stealth option buttons for the question control: white text, transparent
+         background and a barely visible hover so the options don't pop sharply. -->
+    <Style x:Key="Question.OptionButtonStyle" TargetType="Button">
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="2"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#1AFFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -94,7 +130,7 @@
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding KindName}" Value="Question">
                                         <Setter Property="BorderBrush" Value="#4A6B9A"/>
-                                        <Setter Property="Background" Value="#1E2733"/>
+                                        <Setter Property="Background" Value="Transparent"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding KindName}" Value="Subagent">
                                         <Setter Property="BorderBrush" Value="#4A6B9A"/>
@@ -137,6 +173,9 @@
                                                 <DataTrigger Binding="{Binding KindName}" Value="Question">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Button.Style>
@@ -147,7 +186,7 @@
                                                   Fill="Transparent"/>
                                     </Viewbox>
                                 </Button>
-                                <TextBlock Grid.Column="1" Text="{Binding ToolName}" FontWeight="SemiBold"
+                                <TextBlock Grid.Column="1" Text="{Binding MessageTitle}" FontWeight="SemiBold"
                                            Foreground="{StaticResource Dark.Text}" TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center" Margin="8,0,8,0">
                                     <TextBlock.Style>
@@ -160,13 +199,25 @@
                                                 <DataTrigger Binding="{Binding KindName}" Value="ToolBlocked">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="User">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="SystemNotice">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="AgentText">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Grid.Column="2" Text="{Binding TimestampLocal, StringFormat=HH:mm}"
+                                <TextBlock Grid.Column="2" Text="{Binding TimestampLocal, StringFormat=HH.mm.ss}"
                                            Foreground="#9A9A9A" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
-                                           ToolTip="{Binding TimestampLocal, StringFormat=g}"
+                                           ToolTip="{Binding TimestampToolTip}"
                                            Visibility="{Binding ShowTimestamp, RelativeSource={RelativeSource AncestorType=controls:ChatMessagesControl}, Converter={StaticResource BoolToVis}}"/>
                                 <Button x:Name="CopyButton" Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="16" Height="16"
                                         VerticalAlignment="Center" ToolTip="Copy message">
@@ -175,7 +226,17 @@
                                 </Button>
                             </Grid>
                             <ContentPresenter x:Name="Body" Grid.Row="1" Margin="0,6,0,0"
-                                              Content="{TemplateBinding Content}"/>
+                                              Content="{TemplateBinding Content}">
+                                <ContentPresenter.Style>
+                                    <Style TargetType="ContentPresenter">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ContentPresenter.Style>
+                            </ContentPresenter>
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -187,6 +248,21 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <!-- Messages whose chevron is hidden have no way to expand, so keep them expanded. -->
+            <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerPlan">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding KindName}" Value="ResultAnswerAct">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding KindName}" Value="Question">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Selects the per-kind message control for each ChatMessage. -->

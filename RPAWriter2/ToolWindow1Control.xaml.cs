@@ -339,7 +339,10 @@ namespace RPAWriter2
                 finally
                 {
                     if (tcs.Task.IsCanceled && _activeQuestion?.Payload is QuestionPayload q && string.IsNullOrEmpty(q.Answer))
-                        q.Answer = "Cancelled.";
+                    {
+                        q.Answer = ChatMessagesControl.SkipAnswerText;
+                        q.IsSkipped = true;
+                    }
                     _activeQuestion = null;
                     _questionTcs = null;
                 }
@@ -2756,6 +2759,19 @@ namespace RPAWriter2
 
         private async Task SendChatTextAsync(string text, IReadOnlyList<ChatAttachment> attachments)
         {
+            // If the agent is waiting for an answer to an interactive question, treat the
+            // typed chat message as the answer instead of dropping it while the agent is busy.
+            if (_questionTcs != null
+                && _activeQuestion?.Payload is QuestionPayload pendingQuestion
+                && !string.IsNullOrWhiteSpace(text))
+            {
+                pendingQuestion.Answer = text;
+                pendingQuestion.IsSkipped = false;
+                AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = text });
+                _questionTcs.TrySetResult(text);
+                return;
+            }
+
             if (_chatCts != null) return; // already awaiting the agent's reply
             if (_agentRunner == null) return;
 
@@ -2822,18 +2838,37 @@ namespace RPAWriter2
             _chatCts = cts;
             StartChatStatus();
             LogService.ChatInfo("Agent chat request started (mode=" + modeName + ", input chars=" + promptText.Length + ", images=" + images.Count + ").");
+
+            // Accumulate reasoning in a buffer and flush it to the bound property on a timer.
+            // Writing every delta straight into the property would reallocate the string and
+            // force a WPF re-layout on every chunk (O(n^2) for long thoughts); the timer caps
+            // UI updates while the model streams.
+            var reasoningBuffer = new StringBuilder();
+            var reasoningTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            reasoningTimer.Tick += (_, __) =>
+            {
+                thinking.Reasoning = reasoningBuffer.ToString();
+                reasoningTimer.Stop();
+            };
             try
             {
                 var progress = new Progress<ChatStreamDelta>(delta =>
                 {
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
-                        thinking.Reasoning += delta.ReasoningDelta;
+                    {
+                        reasoningBuffer.Append(delta.ReasoningDelta);
+                        if (!reasoningTimer.IsEnabled)
+                            reasoningTimer.Start();
+                    }
                 });
                 var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
+
+                reasoningTimer.Stop();
 
                 // Finalize the "Thinking…" placeholder in place: it keeps its streamed
                 // reasoning (so the thoughts stay visible) and the final answer is appended
                 // as a NEW message after any tool calls.
+                thinking.Reasoning = reasoningBuffer.ToString();
                 thinking.IsThinking = false;
                 thinking.IsPartial = false;
 
@@ -2868,6 +2903,8 @@ namespace RPAWriter2
             }
             catch (OperationCanceledException)
             {
+                reasoningTimer.Stop();
+                thinking.Reasoning = reasoningBuffer.ToString();
                 thinking.IsThinking = false;
                 if (_messages.Contains(thinking))
                     AppendChat("Request cancelled.");
@@ -2876,6 +2913,8 @@ namespace RPAWriter2
             }
             catch (Exception ex)
             {
+                reasoningTimer.Stop();
+                thinking.Reasoning = reasoningBuffer.ToString();
                 thinking.IsThinking = false;
                 AppendExtensionError(ex);
                 ShowChatStatusError(ex.Message);
@@ -2883,6 +2922,7 @@ namespace RPAWriter2
             }
             finally
             {
+                reasoningTimer.Stop();
                 _chatCts = null;
                 cts.Dispose();
             }
@@ -3783,6 +3823,7 @@ namespace RPAWriter2
                     Kind = message.Kind,
                     Text = question.Question ?? "",
                     ToolName = question.Answer ?? "",
+                    Options = question.Options?.ToList() ?? new List<string>(),
                     Reasoning = message.Reasoning,
                     Mode = message.Mode
                 };
@@ -3810,7 +3851,8 @@ namespace RPAWriter2
                     {
                         Question = m.Text ?? "",
                         Answer = m.ToolName ?? "",
-                        IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal)
+                        IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal),
+                        Options = m.Options ?? new List<string>()
                     }
                 };
             }

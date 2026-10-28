@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace RPAWriter2
@@ -65,12 +66,20 @@ namespace RPAWriter2
                     _answer = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsAnswered));
+                    OnPropertyChanged(nameof(IsFreeTextAnswer));
                 }
             }
         }
 
         /// <summary>True once the user answered (or skipped/cancelled) the question.</summary>
         public bool IsAnswered => !string.IsNullOrEmpty(Answer);
+
+        /// <summary>
+        /// True when the question was answered with free text that does not match any offered
+        /// option (e.g. the user typed the answer in the chat instead of clicking a button).
+        /// Drives the distinct "answer" line in the question card.
+        /// </summary>
+        public bool IsFreeTextAnswer => IsAnswered && !IsSkipped && !(Options?.Contains(Answer) ?? false);
 
         /// <summary>True when the user explicitly skipped the question.</summary>
         public bool IsSkipped
@@ -82,6 +91,7 @@ namespace RPAWriter2
                 {
                     _isSkipped = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsFreeTextAnswer));
                 }
             }
         }

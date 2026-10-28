@@ -10,12 +10,17 @@
         </ResourceDictionary>
     </UserControl.Resources>
     <chat:ChatMessageCard>
-        <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <ContentControl Content="{Binding}"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <ScrollViewer MaxHeight="200"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Background="Black">
+            <ItemsControl ItemsSource="{Binding ToolBodyBlocks, Mode=OneWay}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <ContentControl Content="{Binding}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
     </chat:ChatMessageCard>
 </UserControl>

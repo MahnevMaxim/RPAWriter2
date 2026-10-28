@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
+using Newtonsoft.Json;
 
 namespace RPAWriter2.Services
 {
@@ -16,6 +17,7 @@ namespace RPAWriter2.Services
         public string Reasoning { get; set; } = "";
         public string Mode { get; set; } = "";
         public string ToolName { get; set; } = "";
+        public List<string> Options { get; set; } = new List<string>();
     }
 
     /// <summary>A saved chat conversation with its messages.</summary>
@@ -72,6 +74,7 @@ CREATE TABLE IF NOT EXISTS messages (
     mode TEXT NULL,
     kind TEXT NULL,
     tool_name TEXT NULL,
+    options TEXT NULL,
     PRIMARY KEY (conversation_id, position),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS conversations (
             {
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
+                EnsureColumn(connection, "messages", "options", "TEXT NULL");
 
                 if (HasColumn(connection, "messages", "role"))
                 {
@@ -154,7 +158,7 @@ LIMIT @limit;";
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-SELECT text, reasoning, mode, kind, tool_name
+SELECT text, reasoning, mode, kind, tool_name, options
 FROM messages
 WHERE conversation_id = @id
 ORDER BY position;";
@@ -169,7 +173,8 @@ ORDER BY position;";
                                 Text = reader["text"] as string ?? "",
                                 Reasoning = reader["reasoning"] as string ?? "",
                                 Mode = reader["mode"] as string ?? "",
-                                ToolName = reader["tool_name"] as string ?? ""
+                                ToolName = reader["tool_name"] as string ?? "",
+                                Options = DeserializeOptions(reader["options"] as string)
                             });
                         }
                     }
@@ -222,8 +227,8 @@ VALUES (@id, @title, @created, @updated);";
                 {
                     insert.Transaction = transaction;
                     insert.CommandText = @"
-INSERT INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name)
-VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name);";
+INSERT INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options)
+VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);";
                     var idParam = insert.Parameters.Add("@id", System.Data.DbType.String);
                     var positionParam = insert.Parameters.Add("@position", System.Data.DbType.Int64);
                     var textParam = insert.Parameters.Add("@text", System.Data.DbType.String);
@@ -231,6 +236,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name);";
                     var modeParam = insert.Parameters.Add("@mode", System.Data.DbType.String);
                     var kindParam = insert.Parameters.Add("@kind", System.Data.DbType.String);
                     var toolNameParam = insert.Parameters.Add("@tool_name", System.Data.DbType.String);
+                    var optionsParam = insert.Parameters.Add("@options", System.Data.DbType.String);
 
                     idParam.Value = conversation.Id;
                     for (var i = 0; i < conversation.Messages.Count; i++)
@@ -242,6 +248,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name);";
                         modeParam.Value = message.Mode;
                         kindParam.Value = message.Kind.ToString();
                         toolNameParam.Value = message.ToolName ?? "";
+                        optionsParam.Value = SerializeOptions(message.Options);
                         insert.ExecuteNonQuery();
                     }
                 }
@@ -272,6 +279,28 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name);";
             {
                 command.CommandText = "DELETE FROM messages; DELETE FROM conversations;";
                 command.ExecuteNonQuery();
+            }
+        }
+
+        private static string SerializeOptions(IReadOnlyList<string>? options)
+        {
+            if (options == null || options.Count == 0)
+                return "[]";
+            return JsonConvert.SerializeObject(options);
+        }
+
+        private static List<string> DeserializeOptions(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<string>();
+
+            try
+            {
+                return JsonConvert.DeserializeObject<List<string>>(json) ?? new List<string>();
+            }
+            catch
+            {
+                return new List<string>();
             }
         }
 

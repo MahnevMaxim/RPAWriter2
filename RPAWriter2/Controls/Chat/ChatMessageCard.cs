@@ -22,7 +22,7 @@ namespace RPAWriter2.Controls.Chat
                 nameof(IsExpanded),
                 typeof(bool),
                 typeof(ChatMessageCard),
-                new PropertyMetadata(true));
+                new PropertyMetadata(false));
 
         public static readonly RoutedEvent CopyRequestedEvent =
             EventManager.RegisterRoutedEvent("CopyRequested", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));

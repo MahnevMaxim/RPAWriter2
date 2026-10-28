@@ -29,11 +29,7 @@
                             <Button Content="{Binding}" Tag="{Binding}" Click="OnQuestionOptionClick"
                                     Margin="0,0,6,4">
                                 <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Setter Property="Padding" Value="10,4"/>
+                                    <Style TargetType="Button" BasedOn="{StaticResource Question.OptionButtonStyle}">
                                         <Style.Triggers>
                                             <DataTrigger Value="True">
                                                 <DataTrigger.Binding>
@@ -43,6 +39,7 @@
                                                     </MultiBinding>
                                                 </DataTrigger.Binding>
                                                 <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                                <Setter Property="Background" Value="{StaticResource Question.AnswerBackground}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -54,20 +51,30 @@
                 <Button Content="Skip" Click="OnQuestionSkip" HorizontalAlignment="Left"
                         Margin="0,4,0,0">
                     <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
-                            <Setter Property="BorderThickness" Value="1"/>
-                            <Setter Property="Padding" Value="10,4"/>
+                        <Style TargetType="Button" BasedOn="{StaticResource Question.OptionButtonStyle}">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Payload.IsSkipped}" Value="True">
                                     <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                    <Setter Property="Background" Value="{StaticResource Question.AnswerBackground}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
             </StackPanel>
+
+            <Border Margin="0,8,0,0"
+                    Background="{StaticResource Chat.LastActBackground}"
+                    BorderBrush="{StaticResource Chat.LastActBorder}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="8,4"
+                    Visibility="{Binding Payload.IsFreeTextAnswer, Converter={StaticResource BoolToVis}}">
+                <TextBlock TextWrapping="Wrap">
+                    <Run Text="Answer: " FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
+                    <Run Text="{Binding Payload.Answer}" Foreground="{StaticResource Dark.Text}"/>
+                </TextBlock>
+            </Border>
         </StackPanel>
     </chat:ChatMessageCard>
 </UserControl>
