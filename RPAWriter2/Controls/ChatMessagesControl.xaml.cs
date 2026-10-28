@@ -7,6 +7,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using RPAWriter2;
+using RPAWriter2.Controls.Chat;
 
 namespace RPAWriter2.Controls
 {
@@ -32,6 +33,9 @@ namespace RPAWriter2.Controls
         {
             InitializeComponent();
             AttachView(_messages);
+            AddHandler(ChatMessageCard.CopyRequestedEvent, new RoutedEventHandler(OnCopyRequested));
+            AddHandler(ChatMessageCard.QuestionAnsweredEvent, new RoutedEventHandler(OnQuestionAnswered));
+            AddHandler(ChatMessageCard.QuestionSkippedEvent, new RoutedEventHandler(OnQuestionSkipped));
         }
 
         /// <summary>
@@ -153,50 +157,22 @@ namespace RPAWriter2.Controls
             });
         }
 
-        private void OnCopyMessage(object sender, RoutedEventArgs e)
+        private void OnCopyRequested(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { DataContext: ChatMessage message })
-                CopyMessageRequested?.Invoke(this, message);
+            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
+                CopyMessageRequested?.Invoke(this, args.Message);
         }
 
-        private void OnQuestionOptionClick(object sender, RoutedEventArgs e)
+        private void OnQuestionAnswered(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button button || string.IsNullOrEmpty(button.Tag as string))
-                return;
-
-            var option = (string)button.Tag;
-            var message = FindVisualAncestor<ItemsControl>(button)?.DataContext as ChatMessage;
-            if (message == null)
-                return;
-
-            if (message.Payload is QuestionPayload q)
-                q.Answer = option;
-
-            QuestionAnswered?.Invoke(this, message);
+            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
+                QuestionAnswered?.Invoke(this, args.Message);
         }
 
-        private static T? FindVisualAncestor<T>(DependencyObject? current) where T : DependencyObject
+        private void OnQuestionSkipped(object sender, RoutedEventArgs e)
         {
-            while (current != null)
-            {
-                if (current is T match)
-                    return match;
-                current = VisualTreeHelper.GetParent(current);
-            }
-            return null;
-        }
-
-        private void OnQuestionSkip(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button { DataContext: ChatMessage message })
-            {
-                if (message.Payload is QuestionPayload q)
-                {
-                    q.Answer = SkipAnswerText;
-                    q.IsSkipped = true;
-                }
-                QuestionSkipped?.Invoke(this, message);
-            }
+            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
+                QuestionSkipped?.Invoke(this, args.Message);
         }
     }
 }

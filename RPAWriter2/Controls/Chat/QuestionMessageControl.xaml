@@ -1,0 +1,73 @@
+<UserControl x:Class="RPAWriter2.Controls.Chat.QuestionMessageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/ChatResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <chat:ChatMessageCard>
+        <StackPanel>
+            <TextBlock Text="{Binding Payload.Question}" TextWrapping="Wrap" FontWeight="SemiBold"
+                       Foreground="{StaticResource Dark.Text}"/>
+            <StackPanel Margin="0,8,0,0">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Payload.IsAnswered}" Value="True">
+                                <Setter Property="IsEnabled" Value="False"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <ItemsControl ItemsSource="{Binding Payload.Options}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding}" Tag="{Binding}" Click="OnQuestionOptionClick"
+                                    Margin="0,0,6,4">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Setter Property="Padding" Value="10,4"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Value="True">
+                                                <DataTrigger.Binding>
+                                                    <MultiBinding Converter="{StaticResource OptionEqualsAnswerConverter}">
+                                                        <Binding/>
+                                                        <Binding Path="DataContext.Payload.Answer" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                                                    </MultiBinding>
+                                                </DataTrigger.Binding>
+                                                <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Skip" Click="OnQuestionSkip" HorizontalAlignment="Left"
+                        Margin="0,4,0,0">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderBrush" Value="{StaticResource Question.OptionBorder}"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="Padding" Value="10,4"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Payload.IsSkipped}" Value="True">
+                                    <Setter Property="BorderBrush" Value="{StaticResource Question.AnswerBorder}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+        </StackPanel>
+    </chat:ChatMessageCard>
+</UserControl>

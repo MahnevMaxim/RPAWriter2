@@ -1,0 +1,21 @@
+<UserControl x:Class="RPAWriter2.Controls.Chat.CompactionMessageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/ChatResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <chat:ChatMessageCard>
+        <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <ContentControl Content="{Binding}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </chat:ChatMessageCard>
+</UserControl>

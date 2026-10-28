@@ -345,29 +345,6 @@ namespace RPAWriter2
             }
         }
 
-        private void OnQuestionOptionClick(object sender, RoutedEventArgs e)
-        {
-            if (_questionTcs == null) return;
-            var option = (sender as Button)?.Tag as string;
-            if (string.IsNullOrEmpty(option)) return;
-            if (_activeQuestion?.Payload is QuestionPayload q)
-                q.Answer = option;
-            ScheduleHistorySave();
-            _questionTcs.TrySetResult(option);
-        }
-
-        private void OnQuestionSkip(object sender, RoutedEventArgs e)
-        {
-            if (_questionTcs == null) return;
-            if (_activeQuestion?.Payload is QuestionPayload q)
-            {
-                q.Answer = SkipAnswerText;
-                q.IsSkipped = true;
-            }
-            ScheduleHistorySave();
-            _questionTcs.TrySetResult(SkipAnswerText);
-        }
-
         private void OnChatMessageCopyRequested(object? sender, ChatMessage message)
         {
             try { Clipboard.SetText(FormatMessageForCopy(message)); }
@@ -431,15 +408,6 @@ namespace RPAWriter2
             var message = new ChatMessage { Kind = ChatMessageKind.SystemNotice, IsThinking = true, Text = "Thinking\u2026" };
             AppendSpecMessage(message);
             return message;
-        }
-
-        private void OnCopyMessage(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: ChatMessage message })
-            {
-                try { Clipboard.SetText(FormatMessageForCopy(message)); }
-                catch { /* clipboard busy — ignore */ }
-            }
         }
 
         private void OnCopyMessageSample(object sender, RoutedEventArgs e)
