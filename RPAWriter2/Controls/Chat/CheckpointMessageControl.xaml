@@ -9,7 +9,7 @@
         </ResourceDictionary>
     </UserControl.Resources>
     <StackPanel Orientation="Horizontal" Margin="8,4,0,7">
-        <TextBlock Text="checkpoint" Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+        <TextBlock Text="Checkpoint" Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
         <StackPanel Orientation="Horizontal" Visibility="{Binding Payload.HasDiff, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="diff:" Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center" Margin="8,0,0,0"/>
             <Button Click="OnOpenDiff"

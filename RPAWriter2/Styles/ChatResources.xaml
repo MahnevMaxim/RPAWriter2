@@ -4,6 +4,12 @@
                     xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat"
                     xmlns:controls="clr-namespace:RPAWriter2.Controls">
 
+    <!-- Dark scrollbar styling: shared by every control that merges this dictionary
+         (ChatMessagesControl, MessageQueueControl and all message controls). -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/DarkScrollBars.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
     <!-- Dark theme brushes used by the message controls. Kept here so every message
          control can merge this dictionary and stay self-contained. -->
     <SolidColorBrush x:Key="Dark.Text" Color="#F1F1F1"/>
@@ -22,6 +28,11 @@
     <SolidColorBrush x:Key="Question.OptionBorder" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="Question.AnswerBorder" Color="#9A9A9A"/>
     <SolidColorBrush x:Key="Question.AnswerBackground" Color="#339A9A9A"/>
+
+    <!-- Agent mode accent brushes (same colors as the mode toggle under the input box). -->
+    <SolidColorBrush x:Key="Mode.PlanBrush" Color="#64B5F6"/>
+    <SolidColorBrush x:Key="Mode.ActBrush" Color="#4CAF50"/>
+    <SolidColorBrush x:Key="Mode.HelpBrush" Color="#F44336"/>
 
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>

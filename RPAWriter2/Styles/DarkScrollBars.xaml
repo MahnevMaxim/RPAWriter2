@@ -2,12 +2,12 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- Global scrollbar thickness: 6 px in both orientations.
+    <!-- Global scrollbar thickness: 10 px in both orientations.
          The ScrollViewer, TextBox, ListBox and DataGrid templates size their scrollbars
          through these DynamicResource system keys, so overriding them here makes every
          scrollbar in the application thin regardless of the hosting control. -->
-    <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarWidthKey}">6</sys:Double>
-    <sys:Double x:Key="{x:Static SystemParameters.HorizontalScrollBarHeightKey}">6</sys:Double>
+    <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarWidthKey}">10</sys:Double>
+    <sys:Double x:Key="{x:Static SystemParameters.HorizontalScrollBarHeightKey}">10</sys:Double>
 
     <!-- Transparent page up/down button: keeps the Track layout stable without drawing arrows. -->
     <Style x:Key="ScrollBarPageButton" TargetType="RepeatButton">
@@ -25,24 +25,29 @@
     </Style>
 
     <!-- Thumb: the color lives on the Thumb.Background property so the hover/drag triggers
-         can drive it cleanly; the template binds to it instead of hardcoding a brush. -->
+         can drive it cleanly; the template binds to it instead of hardcoding a brush.
+         The minimum size (and removal of the inner margin) matters: on very long content
+         the Track computes a tiny thumb, and a Margin/CornerRadius can then clip it down to
+         a zero/negative render size, making it invisible regardless of its color. -->
     <Style x:Key="ScrollBarThumb" TargetType="Thumb">
         <Setter Property="OverridesDefaultStyle" Value="True"/>
         <Setter Property="IsTabStop" Value="False"/>
-        <Setter Property="Background" Value="#BFBFBF"/>
+        <Setter Property="Background" Value="#D0D0D0"/>
+        <Setter Property="MinWidth" Value="10"/>
+        <Setter Property="MinHeight" Value="10"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="1"/>
+                    <Border Background="{TemplateBinding Background}" CornerRadius="2"/>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#D9D9D9"/>
+                <Setter Property="Background" Value="#E8E8E8"/>
             </Trigger>
             <Trigger Property="IsDragging" Value="True">
-                <Setter Property="Background" Value="#F0F0F0"/>
+                <Setter Property="Background" Value="#FFFFFF"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -50,8 +55,8 @@
     <!-- Implicit dark, thin scrollbar style: applies to every ScrollBar in the UI. -->
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="#2E2E30"/>
-        <Setter Property="MinWidth" Value="6"/>
-        <Setter Property="MinHeight" Value="6"/>
+        <Setter Property="MinWidth" Value="10"/>
+        <Setter Property="MinHeight" Value="10"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
@@ -80,11 +85,11 @@
         </Setter>
         <Style.Triggers>
             <Trigger Property="Orientation" Value="Vertical">
-                <Setter Property="Width" Value="6"/>
+                <Setter Property="Width" Value="10"/>
                 <Setter Property="HorizontalAlignment" Value="Right"/>
             </Trigger>
             <Trigger Property="Orientation" Value="Horizontal">
-                <Setter Property="Height" Value="6"/>
+                <Setter Property="Height" Value="10"/>
                 <Setter Property="VerticalAlignment" Value="Bottom"/>
             </Trigger>
         </Style.Triggers>

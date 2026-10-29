@@ -322,9 +322,14 @@ namespace RPAWriter2
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.Compaction, Text = text });
         }
 
-        private void AppendModeSwitch(string text)
+        private void AppendModeSwitch(AgentMode mode)
         {
-            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = text });
+            AppendChatMessage(new ChatMessage
+            {
+                Kind = ChatMessageKind.ModeSwitch,
+                Mode = mode.ToString(),
+                Text = "Mode: " + mode.ToString()
+            });
         }
 
         /// <summary>
@@ -4282,7 +4287,7 @@ namespace RPAWriter2
             ApplyModeBrush();
             if (_restoringUiState)
                 return;
-            AppendModeSwitch("Mode: " + _mode);
+            AppendModeSwitch(_mode);
             PersistUiState();
         }
 
@@ -4768,7 +4773,7 @@ namespace RPAWriter2
                 new ChatMessage { Kind = ChatMessageKind.Error, Text = "Failed to reach the AI provider: request timed out after 300 s." },
                 new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = "Knowledge base directory is not configured." },
                 new ChatMessage { Kind = ChatMessageKind.Compaction, Text = "Conversation compacted: 12 earlier messages summarized." },
-                new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = "Switched from Plan to Act mode." },
+                new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Mode = "Act", Text = "Mode: Act" },
                 new ChatMessage
                 {
                     Kind = ChatMessageKind.Question,

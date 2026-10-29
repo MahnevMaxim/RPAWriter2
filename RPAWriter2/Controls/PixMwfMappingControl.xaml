@@ -2,8 +2,13 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
-        <!-- Self-contained dark theme brushes (kept local so the control does not depend on the host's resources). -->
-        <SolidColorBrush x:Key="Dark.Window" Color="#2D2D30"/>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/DarkScrollBars.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Self-contained dark theme brushes (kept local so the control does not depend on the host's resources). -->
+            <SolidColorBrush x:Key="Dark.Window" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
         <SolidColorBrush x:Key="Dark.Control" Color="#333337"/>
         <SolidColorBrush x:Key="Dark.ControlHover" Color="#3E3E42"/>
@@ -218,6 +223,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <DockPanel Background="{StaticResource Dark.Window}">

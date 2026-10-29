@@ -9,5 +9,25 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
-    <chat:ChatMessageCard />
+    <StackPanel Orientation="Horizontal" Margin="8,4,0,7">
+        <TextBlock Text="Mode: " Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+        <TextBlock Text="{Binding Mode, Mode=OneWay}" VerticalAlignment="Center">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Mode}" Value="Act">
+                            <Setter Property="Foreground" Value="{StaticResource Mode.ActBrush}"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Mode}" Value="Plan">
+                            <Setter Property="Foreground" Value="{StaticResource Mode.PlanBrush}"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Mode}" Value="Help">
+                            <Setter Property="Foreground" Value="{StaticResource Mode.HelpBrush}"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </StackPanel>
 </UserControl>
