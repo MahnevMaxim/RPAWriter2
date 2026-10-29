@@ -36,7 +36,6 @@ namespace RPAWriter2.Controls
             AddHandler(ChatMessageCard.CopyRequestedEvent, new RoutedEventHandler(OnCopyRequested));
             AddHandler(ChatMessageCard.QuestionAnsweredEvent, new RoutedEventHandler(OnQuestionAnswered));
             AddHandler(ChatMessageCard.QuestionSkippedEvent, new RoutedEventHandler(OnQuestionSkipped));
-            AddHandler(ChatMessageCard.CheckpointCompareRequestedEvent, new RoutedEventHandler(OnCheckpointCompareRequested));
             AddHandler(ChatMessageCard.CheckpointRestoreRequestedEvent, new RoutedEventHandler(OnCheckpointRestoreRequested));
             AddHandler(ChatMessageCard.DiffOpenRequestedEvent, new RoutedEventHandler(OnDiffOpenRequested));
         }
@@ -82,13 +81,10 @@ namespace RPAWriter2.Controls
         /// <summary>Raised after the user skipped a question; <see cref="QuestionPayload.Answer"/>/IsSkipped are already set.</summary>
         public event EventHandler<ChatMessage>? QuestionSkipped;
 
-        /// <summary>Raised when the user clicks the Compare button of a checkpoint indicator.</summary>
-        public event EventHandler<ChatMessage>? CheckpointCompareRequested;
-
         /// <summary>Raised when the user clicks the Restore button of a checkpoint indicator.</summary>
         public event EventHandler<ChatMessage>? CheckpointRestoreRequested;
 
-        /// <summary>Raised when the user clicks the button of a diff indicator.</summary>
+        /// <summary>Raised when the user clicks the diff button of a checkpoint indicator.</summary>
         public event EventHandler<ChatMessage>? DiffOpenRequested;
 
         /// <summary>Appends a message and, when auto-scroll is enabled, scrolls to the end.</summary>
@@ -185,12 +181,6 @@ namespace RPAWriter2.Controls
         {
             if (e is ChatMessageRoutedEventArgs args && args.Message != null)
                 QuestionSkipped?.Invoke(this, args.Message);
-        }
-
-        private void OnCheckpointCompareRequested(object sender, RoutedEventArgs e)
-        {
-            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
-                CheckpointCompareRequested?.Invoke(this, args.Message);
         }
 
         private void OnCheckpointRestoreRequested(object sender, RoutedEventArgs e)

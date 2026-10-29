@@ -257,13 +257,15 @@ namespace RPAWriter2
                 if (Kind == ChatMessageKind.Checkpoint)
                 {
                     var c = Payload as CheckpointPayload;
-                    return "🔖 Checkpoint " + (c?.ShortHash ?? "") + (string.IsNullOrWhiteSpace(c?.Message) ? "" : " — " + c.Message);
-                }
-
-                if (Kind == ChatMessageKind.Diff)
-                {
-                    var d = Payload as DiffPayload;
-                    return "🔀 Diff " + (d?.ShortHash ?? "");
+                    var text = "checkpoint";
+                    if (c != null)
+                    {
+                        if (c.HasDiff)
+                            text += " diff: " + c.ShortHash;
+                        if (c.HasChanges)
+                            text += " Restore";
+                    }
+                    return text;
                 }
 
                 var t = Text ?? "";

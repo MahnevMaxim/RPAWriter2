@@ -104,9 +104,9 @@ namespace RPAWriter.Core.Models
         Question,
         /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
         Subagent,
-        /// <summary>A saved file checkpoint (shadow git snapshot) with Compare/Restore actions.</summary>
+        /// <summary>A saved file checkpoint (shadow git snapshot) with an optional per-iteration diff and a Restore action.</summary>
         Checkpoint,
-        /// <summary>A per-iteration diff indicator: a button that opens the diff tool window.</summary>
+        /// <summary>Reserved: previously rendered as a separate per-iteration diff indicator (no longer shown separately).</summary>
         Diff
     }
 

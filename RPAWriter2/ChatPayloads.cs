@@ -210,10 +210,11 @@ namespace RPAWriter2
         public SubagentStatusItem Item { get; set; } = new SubagentStatusItem();
     }
 
-    /// <summary>Payload for a <see cref="ChatMessageKind.Checkpoint"/> indicator with Compare/Restore actions.</summary>
+    /// <summary>Payload for a <see cref="ChatMessageKind.Checkpoint"/> indicator with an optional per-iteration diff and a Restore action.</summary>
     public sealed class CheckpointPayload : ChatPayload, INotifyPropertyChanged
     {
-        private bool _hasChanges = true;
+        private bool _hasChanges;
+        private bool _hasDiff;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -235,9 +236,12 @@ namespace RPAWriter2
         /// <summary>When the checkpoint was created (UTC).</summary>
         public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
+        /// <summary>Precomputed per-iteration diff (previous checkpoint → this one); opened by the diff button.</summary>
+        public IReadOnlyList<DiffFileModel> Files { get; set; } = new List<DiffFileModel>();
+
         /// <summary>
-        /// True when files changed after this checkpoint (a newer snapshot exists), so a
-        /// Compare diff can be shown. False for the latest checkpoint (nothing changed since).
+        /// True when the current workspace state differs from this checkpoint's snapshot, so a
+        /// Restore action is available. False for the latest snapshot (nothing changed since).
         /// </summary>
         public bool HasChanges
         {
@@ -247,6 +251,20 @@ namespace RPAWriter2
                 if (_hasChanges != value)
                 {
                     _hasChanges = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>True when this checkpoint has a per-iteration diff to show next to the hash.</summary>
+        public bool HasDiff
+        {
+            get => _hasDiff;
+            set
+            {
+                if (_hasDiff != value)
+                {
+                    _hasDiff = value;
                     OnPropertyChanged();
                 }
             }
@@ -271,26 +289,6 @@ namespace RPAWriter2
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-    }
-
-    /// <summary>Payload for a <see cref="ChatMessageKind.Diff"/> indicator: a commit hash whose diff opens in the diff tool window.</summary>
-    public sealed class DiffPayload : ChatPayload
-    {
-        /// <summary>Commit whose diff is shown (short form is displayed on the button).</summary>
-        public string CommitHash { get; set; } = "";
-
-        /// <summary>Precomputed diff files for the commit; opened directly by the diff tool window.</summary>
-        public IReadOnlyList<DiffFileModel> Files { get; set; } = new List<DiffFileModel>();
-
-        /// <summary>Shortened commit hash for display.</summary>
-        public string ShortHash
-        {
-            get
-            {
-                var hash = CommitHash ?? "";
-                return hash.Length > 8 ? hash.Substring(0, 8) : hash;
-            }
         }
     }
 }

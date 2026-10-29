@@ -52,6 +52,7 @@
         <conv:MarkdownToElementConverter x:Key="MarkdownToElement"/>
         <conv:MaterialIconToGeometryConverter x:Key="MaterialIconToGeometry"/>
         <conv:OptionEqualsAnswerConverter x:Key="OptionEqualsAnswerConverter"/>
+        <conv:SkipFirstConverter x:Key="SkipFirst"/>
         <chat:ChatMessageTemplateSelector x:Key="ChatMessageTemplateSelector"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
@@ -453,6 +454,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="2" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -723,7 +725,14 @@
                     </Grid>
                 </Border>
 
-                <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="3" Margin="0,0,0,4"/>
+                <Grid x:Name="MessagesHostPanel" Grid.Row="3" Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="0"/>
+                    <controls:MessageQueueControl x:Name="MessageQueue" Grid.Row="1" Margin="0,4,0,0"/>
+                </Grid>
 
                 <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
                               VerticalAlignment="Center" ResizeDirection="Rows"
@@ -737,14 +746,46 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
-                        <ProgressBar x:Name="AgentProgress" Width="16" Height="16"
-                                     IsIndeterminate="True" VerticalAlignment="Center"
-                                     Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
-                                   Margin="6,0,8,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                                   Margin="0,3,8,0" TextWrapping="Wrap" Visibility="Collapsed">
+                            <TextBlock.Foreground>
+                                <LinearGradientBrush MappingMode="RelativeToBoundingBox" SpreadMethod="Repeat"
+                                                     StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#6E6E6E" Offset="0"/>
+                                    <GradientStop Color="#E9E9E9" Offset="0.5"/>
+                                    <GradientStop Color="#6E6E6E" Offset="1"/>
+                                </LinearGradientBrush>
+                            </TextBlock.Foreground>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <Trigger Property="Visibility" Value="Visible">
+                                            <Trigger.EnterActions>
+                                                <BeginStoryboard Name="StatusShimmer">
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <PointAnimation Storyboard.TargetProperty="Foreground.(LinearGradientBrush.StartPoint)"
+                                                                        From="0,0" To="1,0" Duration="0:0:1.2"/>
+                                                        <PointAnimation Storyboard.TargetProperty="Foreground.(LinearGradientBrush.EndPoint)"
+                                                                        From="1,0" To="2,0" Duration="0:0:1.2"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </Trigger.EnterActions>
+                                            <Trigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="StatusShimmer"/>
+                                            </Trigger.ExitActions>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock x:Name="AgentErrorText" VerticalAlignment="Center"
+                                   Margin="0,0,8,0" TextWrapping="Wrap"
+                                   Foreground="{StaticResource Dark.ErrorText}" Visibility="Collapsed"/>
                     </StackPanel>
                     <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
+                            Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
+                            Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,8" Click="OnCancelSend" Visibility="Collapsed"/>
                     <Grid Grid.Row="2">
@@ -968,9 +1009,13 @@
                     <Border Margin="8"
                             Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
                             BorderThickness="1" CornerRadius="2" Padding="8,6">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <StackPanel>
-                                <Grid>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                                <Grid Grid.Row="0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
@@ -982,20 +1027,21 @@
                                         <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
                                     </Button>
                                 </Grid>
-                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
                                     <Button Content="From Visual Studio Output window" Click="OnAnalyzeLogsFromOutputWindow" Margin="0,0,8,0"/>
                                     <Button Content="From production servers" Click="OnAnalyzeLogsFromProdServers"/>
                                 </StackPanel>
 
-                                <Grid x:Name="ProdLogsPanel" Margin="0,6,0,0" Visibility="Collapsed">
+                                <Grid Grid.Row="2" x:Name="ProdLogsPanel" Margin="0,6,0,0" Visibility="Collapsed">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*" MinHeight="80"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*" MinHeight="80"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
@@ -1026,12 +1072,14 @@
                                     <TextBlock Grid.Row="3" Text="Tasks:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
                                     <DataGrid Grid.Row="4" x:Name="TasksGrid" AutoGenerateColumns="True" IsReadOnly="True"
                                               SelectionMode="Single" SelectionChanged="OnTaskSelected"
-                                              CanUserAddRows="False" MinHeight="80" MaxHeight="160" Margin="0,0,0,6"/>
+                                              CanUserAddRows="False"/>
 
-                                    <TextBlock Grid.Row="5" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
-                                    <DataGrid Grid.Row="6" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                                              SelectionMode="Single" CanUserAddRows="False"
-                                              MinHeight="80" MaxHeight="180" Margin="0,0,0,6">
+                                    <GridSplitter Grid.Row="5" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                                  Background="{StaticResource Dark.Border}"/>
+                                    <TextBlock Grid.Row="6" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
+                                    <DataGrid Grid.Row="7" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                              SelectionMode="Single" CanUserAddRows="False">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="Auto"/>
                                             <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="90"/>
@@ -1040,25 +1088,67 @@
                                             <DataGridTemplateColumn Header="Parameters" Width="*">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <ItemsControl ItemsSource="{Binding Parameters}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <TextBlock TextWrapping="Wrap">
-                                                                        <Run Text="{Binding Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Value, Mode=OneWay}"/>
+                                                        <StackPanel>
+                                                            <TextBlock x:Name="SingleParameterText" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                                       Foreground="{StaticResource Dark.Text}"
+                                                                       Visibility="Collapsed">
+                                                                <Run Text="{Binding Parameters[0].Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Parameters[0].Value, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                            <ToggleButton x:Name="ParametersToggle" Focusable="False" HorizontalAlignment="Left"
+                                                                          Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                                                                          Foreground="{StaticResource Dark.Text}">
+                                                                <ToggleButton.Template>
+                                                                    <ControlTemplate TargetType="ToggleButton">
+                                                                        <Border Background="Transparent">
+                                                                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                                                                        </Border>
+                                                                    </ControlTemplate>
+                                                                </ToggleButton.Template>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Viewbox Width="12" Height="12" Margin="0,0,6,0">
+                                                                        <Polyline x:Name="Chevron" Points="6,9 12,15 18,9"
+                                                                                  Stroke="{StaticResource Dark.Text}" StrokeThickness="2"
+                                                                                  StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                                                  Fill="Transparent"/>
+                                                                    </Viewbox>
+                                                                    <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}">
+                                                                        <Run Text="{Binding Parameters[0].Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Parameters[0].Value, Mode=OneWay}"/>
                                                                     </TextBlock>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
+                                                                </StackPanel>
+                                                            </ToggleButton>
+                                                            <ItemsControl x:Name="AllParametersList" ItemsSource="{Binding Parameters, Converter={StaticResource SkipFirst}}" Margin="0,2,0,0"
+                                                                          Visibility="Collapsed">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" Foreground="{StaticResource Dark.Text}">
+                                                                            <Run Text="{Binding Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Value, Mode=OneWay}"/>
+                                                                        </TextBlock>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding IsChecked, ElementName=ParametersToggle}" Value="True">
+                                                                <Setter TargetName="AllParametersList" Property="Visibility" Value="Visible"/>
+                                                                <Setter TargetName="Chevron" Property="Points" Value="6,15 12,9 18,15"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Parameters.Count}" Value="0">
+                                                                <Setter TargetName="ParametersToggle" Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Parameters.Count}" Value="1">
+                                                                <Setter TargetName="ParametersToggle" Property="Visibility" Value="Collapsed"/>
+                                                                <Setter TargetName="SingleParameterText" Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
                                         </DataGrid.Columns>
                                     </DataGrid>
 
-                                    <Button Grid.Row="7" Content="Analyze logs" Click="OnAnalyzeProdLogs" HorizontalAlignment="Left" Padding="10,2"/>
+                                    <Button Grid.Row="8" Content="Analyze logs" Click="OnAnalyzeProdLogs" HorizontalAlignment="Left" Padding="10,2" Margin="0,4,0,0"/>
                                 </Grid>
-                            </StackPanel>
-                        </ScrollViewer>
+                        </Grid>
                     </Border>
                 </Grid>
             </Grid>
@@ -1211,6 +1301,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1303,6 +1394,19 @@
 
                                 <CheckBox Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckpointsEnabledCheckBox"
                                           Content="Enable checkpoints (auto-snapshot by iteration diffs)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                                <TextBlock Grid.Row="25" Grid.Column="0" Text="Reasoning effort" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                                <ComboBox Grid.Row="25" Grid.Column="1" x:Name="ReasoningEffortCombo" SelectedIndex="0"
+                                          VerticalAlignment="Center" Margin="0,0,0,4">
+                                    <ComboBoxItem Content="Default"/>
+                                    <ComboBoxItem Content="None"/>
+                                    <ComboBoxItem Content="Minimal"/>
+                                    <ComboBoxItem Content="Low"/>
+                                    <ComboBoxItem Content="Medium"/>
+                                    <ComboBoxItem Content="High"/>
+                                    <ComboBoxItem Content="Extra high"/>
+                                    <ComboBoxItem Content="Max"/>
+                                </ComboBox>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>

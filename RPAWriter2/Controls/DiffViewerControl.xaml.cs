@@ -60,7 +60,7 @@ namespace RPAWriter2.Controls
         {
             EmptyText.Visibility = Visibility.Visible;
             SideBySideHeader.Visibility = Visibility.Collapsed;
-            SideBySideScroll.Visibility = Visibility.Collapsed;
+            SideBySideBody.Visibility = Visibility.Collapsed;
             InlineScroll.Visibility = Visibility.Collapsed;
         }
 
@@ -73,8 +73,10 @@ namespace RPAWriter2.Controls
             }
 
             EmptyText.Visibility = Visibility.Collapsed;
-            SideBySideList.ItemsSource = file.Rows;
+            SideBySideLeftList.ItemsSource = file.Rows;
+            SideBySideRightList.ItemsSource = file.Rows;
             InlineList.ItemsSource = BuildInlineRows(file.Rows);
+            ResetSideBySideScroll();
             ApplyViewMode();
         }
 
@@ -82,7 +84,7 @@ namespace RPAWriter2.Controls
         {
             // The "Checked" event also fires while InitializeComponent builds the
             // first RadioButton; guard against not-yet-initialized named elements.
-            if (InlineToggle == null || SideBySideScroll == null || InlineScroll == null)
+            if (InlineToggle == null || SideBySideBody == null || InlineScroll == null)
                 return;
 
             ApplyViewMode();
@@ -92,8 +94,45 @@ namespace RPAWriter2.Controls
         {
             bool inline = InlineToggle.IsChecked == true;
             SideBySideHeader.Visibility = inline ? Visibility.Collapsed : Visibility.Visible;
-            SideBySideScroll.Visibility = inline ? Visibility.Collapsed : Visibility.Visible;
+            SideBySideBody.Visibility = inline ? Visibility.Collapsed : Visibility.Visible;
             InlineScroll.Visibility = inline ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private bool _syncingSideBySideScroll;
+
+        private void ResetSideBySideScroll()
+        {
+            if (SideBySideLeftScroll == null || SideBySideRightScroll == null)
+                return;
+
+            SideBySideLeftScroll.ScrollToHorizontalOffset(0);
+            SideBySideRightScroll.ScrollToHorizontalOffset(0);
+            SideBySideLeftScroll.ScrollToTop();
+            SideBySideRightScroll.ScrollToTop();
+        }
+
+        private void OnSideBySideScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (_syncingSideBySideScroll)
+                return;
+
+            ScrollViewer other = ReferenceEquals(sender, SideBySideLeftScroll)
+                ? SideBySideRightScroll
+                : SideBySideLeftScroll;
+
+            if (other == null)
+                return;
+
+            _syncingSideBySideScroll = true;
+            try
+            {
+                other.ScrollToHorizontalOffset(e.HorizontalOffset);
+                other.ScrollToVerticalOffset(e.VerticalOffset);
+            }
+            finally
+            {
+                _syncingSideBySideScroll = false;
+            }
         }
 
         private static IReadOnlyList<InlineDiffRow> BuildInlineRows(IReadOnlyList<DiffRowModel> rows)

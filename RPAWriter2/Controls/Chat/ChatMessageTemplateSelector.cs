@@ -28,8 +28,7 @@ namespace RPAWriter2.Controls.Chat
                 [ChatMessageKind.DiffEdit] = typeof(DiffEditMessageControl),
                 [ChatMessageKind.Question] = typeof(QuestionMessageControl),
                 [ChatMessageKind.Subagent] = typeof(SubagentMessageControl),
-                [ChatMessageKind.Checkpoint] = typeof(CheckpointMessageControl),
-                [ChatMessageKind.Diff] = typeof(DiffMessageControl)
+                [ChatMessageKind.Checkpoint] = typeof(CheckpointMessageControl)
             };
 
         private static readonly Dictionary<Type, DataTemplate> TemplateCache =

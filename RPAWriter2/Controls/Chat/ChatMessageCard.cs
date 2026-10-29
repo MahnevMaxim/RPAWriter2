@@ -33,9 +33,6 @@ namespace RPAWriter2.Controls.Chat
         public static readonly RoutedEvent QuestionSkippedEvent =
             EventManager.RegisterRoutedEvent("QuestionSkipped", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));
 
-        public static readonly RoutedEvent CheckpointCompareRequestedEvent =
-            EventManager.RegisterRoutedEvent("CheckpointCompareRequested", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));
-
         public static readonly RoutedEvent CheckpointRestoreRequestedEvent =
             EventManager.RegisterRoutedEvent("CheckpointRestoreRequested", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ChatMessageCard));
 

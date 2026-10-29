@@ -15,6 +15,9 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Sampling temperature sent to the model (0..1).</summary>
         public double Temperature { get; set; } = 0.2;
+
+        /// <summary>Reasoning/thinking effort (Cline-style): "" (default), none, minimal, low, medium, high, xhigh, max.</summary>
+        public string ReasoningEffort { get; set; } = "";
         public string KnowledgeBasePath { get; set; } = "";
         public string RobotsRootPath { get; set; } = "";
         public string RobotTemplateName { get; set; } = "";
@@ -185,6 +188,7 @@ namespace RPAWriter.Core.Services
                 settings.ContextWindowSize = 409600;
             if (double.IsNaN(settings.Temperature) || settings.Temperature < 0.0 || settings.Temperature > 1.0)
                 settings.Temperature = 0.2;
+            settings.ReasoningEffort = ReasoningEffortMap.Normalize(settings.ReasoningEffort);
             if (settings.TimeoutSeconds <= 0)
                 settings.TimeoutSeconds = 300;
             if (settings.RetryTimeoutMinutes <= 0)

@@ -46,7 +46,8 @@ namespace RPAWriter.Tests
                 InputPricePerMillion = 0.5,
                 CacheHitPricePerMillion = 0.1,
                 OutputPricePerMillion = 2.0,
-                Temperature = 0.7
+                Temperature = 0.7,
+                ReasoningEffort = "max"
             };
 
             var options = GetOptions(AiProviderFactory.Create(settings));
@@ -64,6 +65,7 @@ namespace RPAWriter.Tests
             Assert.That(options.CacheHitPricePerMillion, Is.EqualTo(0.1));
             Assert.That(options.OutputPricePerMillion, Is.EqualTo(2.0));
             Assert.That(options.Temperature, Is.EqualTo(0.7));
+            Assert.That(options.ReasoningEffort, Is.EqualTo("max"));
         }
 
         [Test]

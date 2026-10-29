@@ -176,6 +176,18 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Normalize_ResetsInvalidReasoningEffort()
+        {
+            var settings = new SettingsData { ReasoningEffort = "Bogus" };
+            SettingsStore.Normalize(settings);
+            Assert.That(settings.ReasoningEffort, Is.EqualTo(""));
+
+            var valid = new SettingsData { ReasoningEffort = "max" };
+            SettingsStore.Normalize(valid);
+            Assert.That(valid.ReasoningEffort, Is.EqualTo("max"));
+        }
+
+        [Test]
         public void SettingsFile_EndsWithSettingsJson()
         {
             Assert.That(SettingsStore.SettingsFile, Does.EndWith("settings.json"));

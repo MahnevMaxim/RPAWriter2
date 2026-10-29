@@ -16,6 +16,7 @@
 | **API key** | Ключ доступа к провайдеру (скрыт точками) | пусто |
 | **Model** | Имя модели | `gpt-4o-mini` |
 | **Temperature** | Температура сэмплирования (0..1) | `0.2` |
+| **Reasoning effort** | Глубина «мышления» модели (Default / None / Minimal / Low / Medium / High / Extra high / Max). Для DeepSeek маппится в `thinking`/`reasoning_effort` (low/high/max), для остальных OpenAI-совместимых — в `reasoning_effort` (none/minimal/low/medium/high) | `Default` |
 
 ### Контекстное окно
 

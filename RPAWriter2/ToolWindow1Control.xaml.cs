@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -78,6 +78,7 @@ namespace RPAWriter2
         private bool _isTranscribing;
         private List<string> _robotNameHistory = new List<string>();
         private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
+        private readonly ObservableCollection<PendingChatMessage> _pendingMessages = new ObservableCollection<PendingChatMessage>();
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
@@ -157,11 +158,11 @@ namespace RPAWriter2
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
             ChatMessages.Messages = _messages;
+            MessageQueue.Messages = _pendingMessages;
             ChatMessages.Filter = message => !ReferenceEquals(message, _pinnedMessage);
             ChatMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
             ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
-            ChatMessages.CheckpointCompareRequested += OnCheckpointCompareRequested;
             ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
             ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
             AttachmentsList.ItemsSource = _attachments;
@@ -230,6 +231,7 @@ namespace RPAWriter2
             CheckpointsEnabledCheckBox.IsChecked = _settings.CheckpointsEnabled;
             SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
             SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
+            ReasoningEffortCombo.SelectedIndex = ReasoningEffortToIndex(_settings.ReasoningEffort);
             LoadRobotNameHistory();
             ShowControlsCheckBox.IsChecked = _settings.ShowControls;
             ApplyControlsVisibility();
@@ -423,8 +425,8 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// Snapshots the just-finished iteration and, when it changed files, appends a Diff
-        /// indicator whose button opens the iteration diff in the diff tool window.
+        /// Snapshots the just-finished iteration and, when it changed files, attaches the
+        /// iteration diff to the new checkpoint so its diff button can open it in the diff tool window.
         /// </summary>
         private async Task SaveIterationCheckpointAndDiffAsync()
         {
@@ -442,17 +444,36 @@ namespace RPAWriter2
                 var files = CheckpointDiffBuilder.Build(diffs);
                 _lastCheckpointHash = newHash;
 
-                AppendChatMessage(new ChatMessage
-                {
-                    Kind = ChatMessageKind.Diff,
-                    Payload = new DiffPayload { CommitHash = newHash!, Files = files }
-                });
+                AttachDiffToCheckpoint(newHash!, files);
             }
             catch (Exception ex)
             {
                 LogService.Warn("Iteration diff failed: " + ex.Message);
                 _lastCheckpointHash = newHash;
             }
+        }
+
+        private void AttachDiffToCheckpoint(string commitHash, IReadOnlyList<DiffFileModel> files)
+        {
+            void Apply()
+            {
+                for (int i = _messages.Count - 1; i >= 0; i--)
+                {
+                    if (_messages[i].Kind == ChatMessageKind.Checkpoint
+                        && _messages[i].Payload is CheckpointPayload checkpoint
+                        && string.Equals(checkpoint.CommitHash, commitHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        checkpoint.Files = files ?? new List<DiffFileModel>();
+                        checkpoint.HasDiff = files != null && files.Count > 0;
+                        break;
+                    }
+                }
+            }
+
+            if (Dispatcher.CheckAccess())
+                Apply();
+            else
+                Dispatcher.Invoke(Apply);
         }
 
         /// <summary>
@@ -528,25 +549,9 @@ namespace RPAWriter2
             });
         }
 
-        private async void OnCheckpointCompareRequested(object? sender, ChatMessage message)
-        {
-            if (message.Payload is not CheckpointPayload payload) return;
-            try
-            {
-                var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
-                var diffs = await Task.Run(() => service.GetDiffAsync(payload.CommitHash, null)).ConfigureAwait(true);
-                var files = await Task.Run(() => CheckpointDiffBuilder.Build(diffs)).ConfigureAwait(true);
-                DiffToolWindowCommand.Instance?.ShowWindow(files, "Diff since checkpoint " + payload.ShortHash);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Checkpoint compare failed: " + ex.Message, "Compare checkpoint", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         private void OnDiffOpenRequested(object? sender, ChatMessage message)
         {
-            if (message.Payload is not DiffPayload payload) return;
+            if (message.Payload is not CheckpointPayload payload) return;
             DiffToolWindowCommand.Instance?.ShowWindow(payload.Files, "Diff " + payload.ShortHash);
         }
 
@@ -554,18 +559,47 @@ namespace RPAWriter2
         {
             if (message.Payload is not CheckpointPayload payload) return;
 
-            var confirm = MessageBox.Show(
-                "Restore files to checkpoint " + payload.ShortHash + "?",
+            var result = MessageDialog.Show(
                 "Restore checkpoint",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes) return;
+                "Restore files to checkpoint " + payload.ShortHash + "?",
+                MessageDialogCommandSet.YesNo);
+            if (result != MessageDialogCommand.Yes) return;
+
+            // Stop any running agent turn and drop queued messages before rewinding the
+            // workspace, so a live edit pass does not race with the restore.
+            _pendingMessages.Clear();
+            _chatCts?.Cancel();
 
             try
             {
                 var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
                 await Task.Run(() => service.RestoreAsync(payload.CommitHash)).ConfigureAwait(true);
                 payload.HasChanges = false;
+
+                // Checkpoints below the restored one are now stale: the workspace was
+                // rewound to this snapshot, so their indicators no longer make sense.
+                var index = _messages.IndexOf(message);
+                if (index >= 0)
+                {
+                    for (int i = _messages.Count - 1; i > index; i--)
+                    {
+                        if (_messages[i].Kind == ChatMessageKind.Checkpoint)
+                            _messages.RemoveAt(i);
+                    }
+                }
+
+                // The next iteration diff must be computed from the restored checkpoint,
+                // not from the now-orphaned snapshot that used to be HEAD.
+                _lastCheckpointHash = payload.CommitHash;
+
+                // Notify the agent that the workspace was rolled back, so the next turn
+                // does not keep reasoning against a stale file snapshot.
+                var rollbackNote = "User rolled back the workspace to checkpoint " + payload.ShortHash
+                    + (string.IsNullOrWhiteSpace(payload.Message) ? "" : " (\"" + payload.Message + "\")")
+                    + ". Files were restored to the state of that snapshot.";
+                AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = rollbackNote });
+
+                ScheduleHistorySave();
                 LogService.Info("Restored files to checkpoint " + payload.ShortHash + ".");
             }
             catch (Exception ex)
@@ -2484,6 +2518,8 @@ namespace RPAWriter2
                 return;
             }
             SetPhase(AgentPhase.Streaming);
+            AgentErrorText.Text = "";
+            AgentErrorText.Visibility = Visibility.Collapsed;
             AgentStatusText.Visibility = Visibility.Visible;
             _chatStartedAt = DateTime.UtcNow;
             _chatStatusTimer.Tick -= OnChatStatusTick;
@@ -2510,6 +2546,8 @@ namespace RPAWriter2
             _chatStatusTimer.Tick -= OnChatStatusTick;
             AgentStatusText.Text = "";
             AgentStatusText.Visibility = Visibility.Collapsed;
+            AgentErrorText.Text = "";
+            AgentErrorText.Visibility = Visibility.Collapsed;
             SetPhase(AgentPhase.Idle);
         }
 
@@ -2519,10 +2557,9 @@ namespace RPAWriter2
             if (_phase == phase)
                 return;
             _phase = phase;
-            SendButton.IsEnabled = phase != AgentPhase.Streaming;
+            SendButton.IsEnabled = true; // sending now queues while busy
             DoItButton.IsEnabled = phase != AgentPhase.Streaming;
             CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
-            AgentProgress.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ShowChatStatusError(string message)
@@ -2534,13 +2571,16 @@ namespace RPAWriter2
             }
             _chatStatusTimer.Stop();
             _chatStatusTimer.Tick -= OnChatStatusTick;
-            AgentStatusText.Text = "Error: " + message;
-            AgentStatusText.Visibility = Visibility.Visible;
+            AgentStatusText.Text = "";
+            AgentStatusText.Visibility = Visibility.Collapsed;
+            AgentErrorText.Text = "Error: " + message;
+            AgentErrorText.Visibility = Visibility.Visible;
             SetPhase(AgentPhase.Error);
         }
 
         private void OnCancelSend(object sender, RoutedEventArgs e)
         {
+            _pendingMessages.Clear();
             _chatCts?.Cancel();
         }
 
@@ -3020,7 +3060,7 @@ namespace RPAWriter2
             await SendChatTextAsync(text, null);
         }
 
-        private async Task SendChatTextAsync(string text, IReadOnlyList<ChatAttachment> attachments)
+        private async Task SendChatTextAsync(string text, IReadOnlyList<ChatAttachment>? attachments)
         {
             // If the agent is waiting for an answer to an interactive question, treat the
             // typed chat message as the answer instead of dropping it while the agent is busy.
@@ -3035,9 +3075,52 @@ namespace RPAWriter2
                 return;
             }
 
-            if (_chatCts != null) return; // already awaiting the agent's reply
             if (_agentRunner == null) return;
 
+            // Agent busy — enqueue instead of dropping the message.
+            if (_chatCts != null)
+            {
+                EnqueuePending(text, attachments);
+                return;
+            }
+
+            // Run the current message, then drain the queue.
+            await RunSingleTurnAsync(text, attachments);
+
+            while (_pendingMessages.Count > 0)
+            {
+                var next = DequeueNext();
+                if (next == null) break;
+                await RunSingleTurnAsync(next.Text, next.Attachments);
+            }
+        }
+
+        private void EnqueuePending(string text, IReadOnlyList<ChatAttachment>? attachments)
+        {
+            if (string.IsNullOrWhiteSpace(text) && (attachments == null || attachments.Count == 0))
+                return;
+
+            _pendingMessages.Add(new PendingChatMessage
+            {
+                Text = text ?? "",
+                Attachments = attachments ?? new List<ChatAttachment>()
+            });
+        }
+
+        private PendingChatMessage? DequeueNext()
+        {
+            if (_pendingMessages.Count == 0) return null;
+
+            // Steer items jump the queue: pick the first one marked Steer.
+            var steer = _pendingMessages.FirstOrDefault(m => m.Delivery == PendingDelivery.Steer);
+            var next = steer ?? _pendingMessages[0];
+            _pendingMessages.Remove(next);
+            return next;
+        }
+
+        /// <summary>Executes a single agent turn (one user message) to completion.</summary>
+        private async Task RunSingleTurnAsync(string text, IReadOnlyList<ChatAttachment>? attachments)
+        {
             var images = new List<ChatImagePart>();
             var attachmentNotes = new List<string>();
             var fileBlocks = new StringBuilder();
@@ -3190,7 +3273,10 @@ namespace RPAWriter2
             finally
             {
                 reasoningTimer.Stop();
-                _chatCts = null;
+                if (!Dispatcher.CheckAccess())
+                    Dispatcher.Invoke(() => _chatCts = null);
+                else
+                    _chatCts = null;
                 cts.Dispose();
             }
         }
@@ -3232,7 +3318,7 @@ namespace RPAWriter2
         /// <summary>
         /// Sends an externally produced message (e.g. an Error List item selected by the user)
         /// to the agent chat. When the agent is still processing a previous request, the message
-        /// is placed into the input box instead of being silently dropped.
+        /// is queued and processed after the current turn completes.
         /// </summary>
         public async Task SubmitErrorToChatAsync(string text)
         {
@@ -3243,8 +3329,7 @@ namespace RPAWriter2
 
             if (_chatCts != null)
             {
-                InputBox.Text = text;
-                AppendChat("The agent is busy — the message was placed into the input box.");
+                EnqueuePending(text, null);
                 return;
             }
 
@@ -3605,6 +3690,34 @@ namespace RPAWriter2
             return "Disabled";
         }
 
+        private static int ReasoningEffortToIndex(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return 0;
+            if (string.Equals(value, "none", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (string.Equals(value, "minimal", StringComparison.OrdinalIgnoreCase)) return 2;
+            if (string.Equals(value, "low", StringComparison.OrdinalIgnoreCase)) return 3;
+            if (string.Equals(value, "medium", StringComparison.OrdinalIgnoreCase)) return 4;
+            if (string.Equals(value, "high", StringComparison.OrdinalIgnoreCase)) return 5;
+            if (string.Equals(value, "xhigh", StringComparison.OrdinalIgnoreCase)) return 6;
+            if (string.Equals(value, "max", StringComparison.OrdinalIgnoreCase)) return 7;
+            return 0;
+        }
+
+        private static string ReasoningEffortIndexToName(int index)
+        {
+            switch (index)
+            {
+                case 1: return "none";
+                case 2: return "minimal";
+                case 3: return "low";
+                case 4: return "medium";
+                case 5: return "high";
+                case 6: return "xhigh";
+                case 7: return "max";
+                default: return "";
+            }
+        }
+
         private MemoryBankMode ParseMemoryBankMode()
         {
             var value = _settings?.MemoryBankMode;
@@ -3843,6 +3956,7 @@ namespace RPAWriter2
         private void StartNewChat(bool markDirty = true)
         {
             _chatCts?.Cancel();
+            _pendingMessages.Clear();
             SaveHistoryNow();
 
             _loadingHistory = true;
@@ -3878,6 +3992,7 @@ namespace RPAWriter2
                 return;
 
             _chatCts?.Cancel();
+            _pendingMessages.Clear();
             SaveHistoryNow();
 
             ChatConversation? stored;
@@ -3952,7 +4067,7 @@ namespace RPAWriter2
         {
             var conversation = _chatViewMode == ChatViewMode.Conversation;
             ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            ChatMessages.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+            MessagesHostPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatInputPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             PinnedHeaderPanel.Visibility = conversation && _pinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
@@ -4035,6 +4150,7 @@ namespace RPAWriter2
         private void ResetCurrentConversation()
         {
             _historySaveTimer.Stop();
+            _pendingMessages.Clear();
 
             _loadingHistory = true;
             try
@@ -4408,6 +4524,7 @@ namespace RPAWriter2
             _settings.ApiKey = ApiKeyBox.Password.Trim();
             _settings.Model = ModelBox.Text.Trim();
             _settings.Temperature = Math.Round(TemperatureSlider.Value, 1);
+            _settings.ReasoningEffort = ReasoningEffortIndexToName(ReasoningEffortCombo?.SelectedIndex ?? 0);
             _settings.KnowledgeBasePath = KbPathBox.Text.Trim();
             _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
             _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();

@@ -13,7 +13,8 @@ namespace Examples.LogProvider
     /// production-log library. It returns a deterministic, generated dataset of 50 robot
     /// tasks running between 2026-01-01 and 2026-12-28, each carrying 10 to 200 structured
     /// log entries so the RPAWriter2 "Analyze logs" UI can be exercised end-to-end without
-    /// a real orchestrator.
+    /// a real orchestrator. Every run also contains log lines that carry a 2-20 key/value
+    /// parameter list, so the parameters column of the UI can be exercised as well.
     ///
     /// To use it: build this project and copy the resulting Examples.LogProvider.dll
     /// into the folder configured as "Log providers directory" (default
@@ -106,6 +107,22 @@ namespace Examples.LogProvider
         private static readonly string[] Fields = { "VBAP-NETWR", "VBAK-VBELN", "MARA-MATNR", "KNA1-KUNNR", "BSEG-WRBTR" };
         private static readonly string[] Targets = { "btn_Save", "input_InvoiceNo", "grid_Rows", "tab_Details" };
 
+        private static readonly string[] TransactionCodes = { "VF01", "SE16N", "F110", "MM01", "XD02", "VA02", "VA01" };
+        private static readonly string[] CompanyCodes = { "1000", "2000", "3000", "4000", "5000" };
+        private static readonly string[] Plants = { "1100", "1200", "1300", "1400" };
+        private static readonly string[] StorageLocations = { "0001", "0002", "0003", "0004" };
+        private static readonly string[] Units = { "EA", "KG", "L", "M", "PC", "H" };
+        private static readonly string[] Currencies = { "USD", "EUR", "RUB", "CNY", "JPY" };
+        private static readonly string[] Regions = { "EU", "US", "APAC", "LATAM" };
+        private static readonly string[] Environments = { "PROD", "QA", "DEV", "UAT" };
+        private static readonly string[] ParameterKeys =
+        {
+            "DocumentNumber", "CompanyCode", "Plant", "StorageLocation", "Material", "Quantity",
+            "Unit", "Currency", "Amount", "PostingDate", "Reference", "BusinessPartner",
+            "Account", "BatchId", "QueueItemId", "Transaction", "Table", "Field", "Target",
+            "TimeoutMs", "Environment", "Region", "Retries", "Priority"
+        };
+
         private static IReadOnlyList<ProdTask> BuildTasks(string robotName)
         {
             var rng = new Random(20260101);
@@ -180,12 +197,18 @@ namespace Examples.LogProvider
             logs.Add(Entry(started, LogLevel.Info, "Orchestrator", "Queue item received for task '" + task.Name + "'."));
             logs.Add(Entry(TimestampAt(started, span, 1, count, rng), LogLevel.Info, "Orchestrator", "Robot '" + robot + "' started."));
 
+            // Every run carries at least one log line listing 2..20 structured parameters.
+            logs.Add(BuildParameterListEntry(rng, started.AddTicks(1), task, transaction));
+
             // Middle entries sit between the fixed opening and closing lines.
             var middleCount = Math.Max(0, count - 3);
             for (var i = 0; i < middleCount; i++)
             {
                 var timestamp = TimestampAt(started, span, i + 2, count, rng);
-                logs.Add(BuildProcessingEntry(rng, timestamp, task, transaction, isFailed));
+                if (rng.Next(5) == 0)
+                    logs.Add(BuildParameterListEntry(rng, timestamp, task, transaction));
+                else
+                    logs.Add(BuildProcessingEntry(rng, timestamp, task, transaction, isFailed));
             }
 
             logs.Add(BuildClosingEntry(rng, TimestampAt(started, span, count - 1, count, rng), task, isFailed));
@@ -342,6 +365,63 @@ namespace Examples.LogProvider
             for (var i = 0; i + 1 < keyValues.Length; i += 2)
                 list.Add(new LogParameter { Key = keyValues[i], Value = keyValues[i + 1] });
             return list;
+        }
+
+        /// <summary>Builds a 2..20 key/value parameter list for a single log line.</summary>
+        private static IReadOnlyList<LogParameter> BuildParameterList(Random rng)
+        {
+            var count = rng.Next(2, 21); // 2..20 parameters on one line
+            var keys = ParameterKeys.OrderBy(k => rng.Next()).Take(count).ToArray();
+            var parameters = new List<LogParameter>(count);
+            foreach (var key in keys)
+                parameters.Add(new LogParameter { Key = key, Value = BuildParameterValue(rng, key) });
+            return parameters;
+        }
+
+        private static string BuildParameterValue(Random rng, string key)
+        {
+            switch (key)
+            {
+                case "DocumentNumber": return rng.Next(100000000, 199999999).ToString();
+                case "CompanyCode": return CompanyCodes[rng.Next(CompanyCodes.Length)];
+                case "Plant": return Plants[rng.Next(Plants.Length)];
+                case "StorageLocation": return StorageLocations[rng.Next(StorageLocations.Length)];
+                case "Material": return Materials[rng.Next(Materials.Length)];
+                case "Quantity": return rng.Next(1, 10000).ToString();
+                case "Unit": return Units[rng.Next(Units.Length)];
+                case "Currency": return Currencies[rng.Next(Currencies.Length)];
+                case "Amount": return (rng.NextDouble() * 100000).ToString("F2");
+                case "PostingDate": return YearStartUtc.AddDays(rng.Next(365)).ToString("yyyy-MM-dd");
+                case "Reference": return "REF-" + rng.Next(100000, 999999);
+                case "BusinessPartner": return rng.Next(100000, 999999).ToString();
+                case "Account": return rng.Next(10000000, 99999999).ToString();
+                case "BatchId": return "B-" + rng.Next(1000, 9999);
+                case "QueueItemId": return rng.Next(100000, 999999).ToString();
+                case "Transaction": return TransactionCodes[rng.Next(TransactionCodes.Length)];
+                case "Table": return SapTables[rng.Next(SapTables.Length)];
+                case "Field": return Fields[rng.Next(Fields.Length)];
+                case "Target": return Targets[rng.Next(Targets.Length)];
+                case "TimeoutMs": return rng.Next(1000, 60000).ToString();
+                case "Environment": return Environments[rng.Next(Environments.Length)];
+                case "Region": return Regions[rng.Next(Regions.Length)];
+                case "Retries": return rng.Next(0, 6).ToString();
+                case "Priority": return rng.Next(1, 6).ToString();
+                default: return rng.Next(1, 999999).ToString();
+            }
+        }
+
+        /// <summary>One log line whose only payload is a 2..20 parameter list.</summary>
+        private static IProdLog BuildParameterListEntry(Random rng, DateTime timestamp, ProdTask task, string transaction)
+        {
+            string message;
+            switch (rng.Next(4))
+            {
+                case 0: message = "Task context loaded."; break;
+                case 1: message = "Transaction '" + transaction + "' input parameters."; break;
+                case 2: message = "Queue item arguments for task '" + task.Name + "'."; break;
+                default: message = "Work item " + rng.Next(1, 99999) + " parameters."; break;
+            }
+            return Entry(timestamp, LogLevel.Info, "Orchestrator", message, BuildParameterList(rng));
         }
 
         private static int StableHash(string value)

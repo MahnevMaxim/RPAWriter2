@@ -5,7 +5,7 @@ namespace RPAWriter2.Controls.Chat
 {
     /// <summary>
     /// Chat card for a <see cref="RPAWriter.Core.Models.ChatMessageKind.Checkpoint"/> indicator:
-    /// shows the snapshot hash/time and surfaces Compare/Restore as routed events to the host.
+    /// a transparent single-line chip with an optional per-iteration diff button and a Restore action.
     /// </summary>
     public partial class CheckpointMessageControl : UserControl
     {
@@ -14,9 +14,9 @@ namespace RPAWriter2.Controls.Chat
             InitializeComponent();
         }
 
-        private void OnCompare(object sender, RoutedEventArgs e)
+        private void OnOpenDiff(object sender, RoutedEventArgs e)
         {
-            RaiseEvent(new ChatMessageRoutedEventArgs(ChatMessageCard.CheckpointCompareRequestedEvent, DataContext as ChatMessage));
+            RaiseEvent(new ChatMessageRoutedEventArgs(ChatMessageCard.DiffOpenRequestedEvent, DataContext as ChatMessage));
         }
 
         private void OnRestore(object sender, RoutedEventArgs e)

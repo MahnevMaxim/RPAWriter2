@@ -24,6 +24,9 @@ namespace RPAWriter.Core.Services
         public string Model { get; set; } = "gpt-4o-mini";
         public double Temperature { get; set; } = 0.2;
 
+        /// <summary>Reasoning/thinking effort (Cline-style): "" = provider default, otherwise none/minimal/low/medium/high/xhigh/max.</summary>
+        public string ReasoningEffort { get; set; } = "";
+
         /// <summary>How the agent talks to the model about tools: native function calling or JSON over chat.</summary>
         public ToolCallingMode ToolCallingMode { get; set; } = ToolCallingMode.JsonChat;
         public int TimeoutSeconds { get; set; } = 300;
@@ -1074,6 +1077,8 @@ namespace RPAWriter.Core.Services
                 // without it the chat context progress bar never receives real token counts during streaming.
                 payload["stream_options"] = new JObject { ["include_usage"] = true };
             }
+
+            ReasoningEffortMap.Apply(payload, _options.ReasoningEffort, _options.BaseUrl, _options.Model);
 
             var json = payload.ToString(Formatting.None);
 
