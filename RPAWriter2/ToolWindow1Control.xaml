@@ -822,7 +822,29 @@
                             <TextBox Grid.Column="0" x:Name="InputBox"
                                      AcceptsReturn="True" TextWrapping="Wrap" FontSize="17"
                                      VerticalScrollBarVisibility="Auto"
-                                     PreviewKeyDown="OnInputKeyDown"/>
+                                     PreviewKeyDown="OnInputKeyDown">
+                                <TextBox.Template>
+                                    <ControlTemplate TargetType="TextBox">
+                                        <!-- Border always follows BorderBrush (the mode color) instead of
+                                             switching to the default blue accent on hover/focus. -->
+                                        <Border x:Name="Bd"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                SnapsToDevicePixels="True">
+                                            <ScrollViewer x:Name="PART_ContentHost"
+                                                          Focusable="False"
+                                                          HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                          VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </TextBox.Template>
+                            </TextBox>
                             <controls:TopOverflowWrapPanel Grid.Column="1" VerticalAlignment="Bottom" VerticalSpacing="4" ColumnSpacing="8">
                                 <Button x:Name="ClearInputButton" Width="26" Height="26"
                                         Click="OnClearInput"
