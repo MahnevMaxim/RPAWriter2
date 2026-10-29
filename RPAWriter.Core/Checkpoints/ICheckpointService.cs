@@ -20,6 +20,8 @@ namespace RPAWriter.Core.Checkpoints
 
         Task<IReadOnlyList<CheckpointDiff>> GetDiffAsync(string from, string to, CancellationToken ct = default);
 
+        Task<IReadOnlyList<Checkpoint>> GetCheckpointsAsync(CancellationToken ct = default);
+
         Task DeleteAsync(CancellationToken ct = default);
     }
 }

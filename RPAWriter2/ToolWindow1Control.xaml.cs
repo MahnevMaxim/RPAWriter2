@@ -554,10 +554,45 @@ namespace RPAWriter2
             });
         }
 
-        private void OnDiffOpenRequested(object? sender, ChatMessage message)
+        private async void OnDiffOpenRequested(object? sender, ChatMessage message)
         {
             if (message.Payload is not CheckpointPayload payload) return;
-            DiffToolWindowCommand.Instance?.ShowWindow(payload.Files, "Diff " + payload.ShortHash);
+            if (string.IsNullOrWhiteSpace(payload.CommitHash))
+            {
+                ShowNotice("This checkpoint has no commit to diff.", NotificationKind.Error);
+                return;
+            }
+
+            try
+            {
+                var previous = FindPreviousCheckpoint(message);
+                if (previous == null || string.IsNullOrWhiteSpace(previous.CommitHash))
+                {
+                    ShowNotice("No previous checkpoint to diff against.", NotificationKind.Error);
+                    return;
+                }
+
+                var service = await GetCheckpointServiceAsync(payload).ConfigureAwait(true);
+                var diffs = await Task.Run(() => service.GetDiffAsync(previous.CommitHash, payload.CommitHash)).ConfigureAwait(true);
+                var files = CheckpointDiffBuilder.Build(diffs);
+                DiffToolWindowCommand.Instance?.ShowWindow(files, "Diff " + payload.ShortHash);
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("Checkpoint diff failed: " + ex.Message);
+                ShowNotice("Checkpoint diff failed: " + ex.Message, NotificationKind.Error);
+            }
+        }
+
+        private CheckpointPayload? FindPreviousCheckpoint(ChatMessage message)
+        {
+            var index = _messages.IndexOf(message);
+            for (var i = index - 1; i >= 0; i--)
+            {
+                if (_messages[i].Kind == ChatMessageKind.Checkpoint && _messages[i].Payload is CheckpointPayload previous)
+                    return previous;
+            }
+            return null;
         }
 
         private async void OnCheckpointRestoreRequested(object? sender, ChatMessage message)
@@ -616,11 +651,14 @@ namespace RPAWriter2
 
         private async Task<ICheckpointService> GetCheckpointServiceAsync(CheckpointPayload payload)
         {
+            var taskId = _currentConversation?.Id ?? payload.TaskId;
             var ws = string.IsNullOrWhiteSpace(payload.WorkspaceDir) ? GetOpenSolutionDirectory() : payload.WorkspaceDir;
+            if (string.IsNullOrWhiteSpace(taskId))
+                throw new InvalidOperationException("No conversation is open.");
             if (string.IsNullOrWhiteSpace(ws))
                 throw new InvalidOperationException("No solution is open.");
 
-            var service = _checkpoints.GetOrCreate(payload.TaskId, ws);
+            var service = _checkpoints.GetOrCreate(taskId, ws);
             if (!service.IsInitialized)
                 await service.InitializeAsync(CancellationToken.None).ConfigureAwait(false);
             return service;
@@ -4022,6 +4060,7 @@ namespace RPAWriter2
                     _messages.Add(FromHistoryMessage(m));
                 }
                 _currentConversation = stored;
+                RehydrateCheckpoints();
                 RefreshPinnedMessage();
                 ChatMessages.ScrollToEnd();
             }
@@ -4031,7 +4070,7 @@ namespace RPAWriter2
             }
 
             _baselineCheckpointCreated = false;
-            _lastCheckpointHash = null;
+            _lastCheckpointHash = GetLastCheckpointHash();
             _iterationNumber = 0;
 
             if (markDirty)
@@ -4216,6 +4255,20 @@ namespace RPAWriter2
 
         private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)
         {
+            if (message.Kind == ChatMessageKind.Checkpoint && message.Payload is CheckpointPayload checkpoint)
+            {
+                // Persist only the commit identifier; the rest is recomputed on the fly
+                // from the shadow git repository when the conversation is reloaded.
+                return new ChatHistoryMessage
+                {
+                    Kind = message.Kind,
+                    Text = "",
+                    CheckpointHash = checkpoint.CommitHash ?? "",
+                    Reasoning = message.Reasoning,
+                    Mode = message.Mode
+                };
+            }
+
             if (message.Payload is QuestionPayload question)
             {
                 return new ChatHistoryMessage
@@ -4242,6 +4295,17 @@ namespace RPAWriter2
 
         private static ChatMessage FromHistoryMessage(ChatHistoryMessage m)
         {
+            if (m.Kind == ChatMessageKind.Checkpoint)
+            {
+                return new ChatMessage
+                {
+                    Kind = m.Kind,
+                    Reasoning = m.Reasoning,
+                    Mode = m.Mode,
+                    Payload = new CheckpointPayload { CommitHash = m.CheckpointHash ?? "" }
+                };
+            }
+
             if (m.Kind == ChatMessageKind.Question)
             {
                 return new ChatMessage
@@ -4267,6 +4331,93 @@ namespace RPAWriter2
             }
 
             return new ChatMessage { Kind = m.Kind, Text = m.Text, Reasoning = m.Reasoning, Mode = m.Mode };
+        }
+
+        /// <summary>
+        /// Rebuilds derived checkpoint values from the persisted commit hashes after a
+        /// conversation is reloaded. Visibility flags and the sequence follow from the
+        /// transcript alone, so the green commit id and Restore action survive a restart.
+        /// </summary>
+        private void RehydrateCheckpoints()
+        {
+            var checkpoints = _messages
+                .Where(m => m.Kind == ChatMessageKind.Checkpoint && m.Payload is CheckpointPayload)
+                .Select(m => (CheckpointPayload)m.Payload!)
+                .ToList();
+
+            for (var i = 0; i < checkpoints.Count; i++)
+            {
+                var payload = checkpoints[i];
+                payload.Sequence = i + 1;
+                payload.HasChanges = i < checkpoints.Count - 1;
+                payload.HasDiff = i > 0;
+                payload.TaskId = _currentConversation?.Id ?? "";
+            }
+
+            RehydrateCheckpointMetadata();
+        }
+
+        /// <summary>
+        /// Best-effort restore of checkpoint message/time from the shadow git repository.
+        /// These values are not persisted and are recomputed from the commits themselves.
+        /// </summary>
+        private async void RehydrateCheckpointMetadata()
+        {
+            var ws = GetOpenSolutionDirectory();
+            var taskId = _currentConversation?.Id;
+            if (string.IsNullOrWhiteSpace(ws) || string.IsNullOrWhiteSpace(taskId))
+                return;
+
+            var checkpoints = _messages
+                .Where(m => m.Kind == ChatMessageKind.Checkpoint && m.Payload is CheckpointPayload p && !string.IsNullOrWhiteSpace(p.CommitHash))
+                .Select(m => (CheckpointPayload)m.Payload!)
+                .ToList();
+            if (checkpoints.Count == 0)
+                return;
+
+            try
+            {
+                var service = _checkpoints.GetOrCreate(taskId, ws);
+                if (!service.IsInitialized)
+                    await service.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+                var commits = await Task.Run(() => service.GetCheckpointsAsync(CancellationToken.None)).ConfigureAwait(true);
+
+                var byHash = new Dictionary<string, Checkpoint>(StringComparer.OrdinalIgnoreCase);
+                foreach (var commit in commits)
+                {
+                    if (!string.IsNullOrWhiteSpace(commit.Ref))
+                        byHash[commit.Ref] = commit;
+                }
+
+                foreach (var payload in checkpoints)
+                {
+                    if (byHash.TryGetValue(payload.CommitHash ?? "", out var commit))
+                    {
+                        payload.Message = commit.Message ?? "";
+                        payload.CreatedAtUtc = commit.CreatedAtUtc.UtcDateTime;
+                        payload.WorkspaceDir = ws;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("Checkpoint metadata rehydration failed: " + ex.Message);
+            }
+        }
+
+        private string? GetLastCheckpointHash()
+        {
+            for (var i = _messages.Count - 1; i >= 0; i--)
+            {
+                if (_messages[i].Kind == ChatMessageKind.Checkpoint
+                    && _messages[i].Payload is CheckpointPayload payload
+                    && !string.IsNullOrWhiteSpace(payload.CommitHash))
+                {
+                    return payload.CommitHash;
+                }
+            }
+            return null;
         }
 
         private static string BuildChatTitle(string text)

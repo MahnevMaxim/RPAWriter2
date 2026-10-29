@@ -18,6 +18,7 @@ namespace RPAWriter2.Services
         public string Mode { get; set; } = "";
         public string ToolName { get; set; } = "";
         public List<string> Options { get; set; } = new List<string>();
+        public string CheckpointHash { get; set; } = "";
     }
 
     /// <summary>A saved chat conversation with its messages.</summary>
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS messages (
     kind TEXT NULL,
     tool_name TEXT NULL,
     options TEXT NULL,
+    checkpoint_hash TEXT NULL,
     PRIMARY KEY (conversation_id, position),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
@@ -105,6 +107,7 @@ CREATE TABLE IF NOT EXISTS conversations (
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
+                EnsureColumn(connection, "messages", "checkpoint_hash", "TEXT NULL");
 
                 if (HasColumn(connection, "messages", "role"))
                 {
@@ -158,7 +161,7 @@ LIMIT @limit;";
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-SELECT text, reasoning, mode, kind, tool_name, options
+SELECT text, reasoning, mode, kind, tool_name, options, checkpoint_hash
 FROM messages
 WHERE conversation_id = @id
 ORDER BY position;";
@@ -174,7 +177,8 @@ ORDER BY position;";
                                 Reasoning = reader["reasoning"] as string ?? "",
                                 Mode = reader["mode"] as string ?? "",
                                 ToolName = reader["tool_name"] as string ?? "",
-                                Options = DeserializeOptions(reader["options"] as string)
+                                Options = DeserializeOptions(reader["options"] as string),
+                                CheckpointHash = reader["checkpoint_hash"] as string ?? ""
                             });
                         }
                     }
@@ -227,8 +231,8 @@ VALUES (@id, @title, @created, @updated);";
                 {
                     insert.Transaction = transaction;
                     insert.CommandText = @"
-INSERT INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options)
-VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);";
+INSERT INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash)
+VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @checkpoint_hash);";
                     var idParam = insert.Parameters.Add("@id", System.Data.DbType.String);
                     var positionParam = insert.Parameters.Add("@position", System.Data.DbType.Int64);
                     var textParam = insert.Parameters.Add("@text", System.Data.DbType.String);
@@ -237,6 +241,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
                     var kindParam = insert.Parameters.Add("@kind", System.Data.DbType.String);
                     var toolNameParam = insert.Parameters.Add("@tool_name", System.Data.DbType.String);
                     var optionsParam = insert.Parameters.Add("@options", System.Data.DbType.String);
+                    var checkpointHashParam = insert.Parameters.Add("@checkpoint_hash", System.Data.DbType.String);
 
                     idParam.Value = conversation.Id;
                     for (var i = 0; i < conversation.Messages.Count; i++)
@@ -249,6 +254,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
                         kindParam.Value = message.Kind.ToString();
                         toolNameParam.Value = message.ToolName ?? "";
                         optionsParam.Value = SerializeOptions(message.Options);
+                        checkpointHashParam.Value = message.CheckpointHash ?? "";
                         insert.ExecuteNonQuery();
                     }
                 }

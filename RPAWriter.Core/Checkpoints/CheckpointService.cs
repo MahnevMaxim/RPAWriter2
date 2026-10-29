@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -189,6 +190,38 @@ namespace RPAWriter.Core.Checkpoints
                 });
             }
             return diffs;
+        }
+
+        public async Task<IReadOnlyList<Checkpoint>> GetCheckpointsAsync(CancellationToken ct = default)
+        {
+            EnsureInitialized();
+
+            // %H = full commit hash, %s = subject, %cI = committer date (strict ISO 8601).
+            // --reverse lists commits oldest-first, so the sequence is derived from the index.
+            var result = await RunGitAsync(ct, "log", "--reverse", "--format=%H%x00%s%x00%cI").ConfigureAwait(false);
+
+            var checkpoints = new List<Checkpoint>();
+            var sequence = 0;
+            foreach (var line in result.StdOut.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = line.Split('\0');
+                if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[0]))
+                    continue;
+
+                sequence++;
+                if (!DateTimeOffset.TryParse(parts[2], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var createdAt))
+                    createdAt = DateTimeOffset.UtcNow;
+
+                checkpoints.Add(new Checkpoint
+                {
+                    Ref = parts[0].Trim(),
+                    Message = parts[1] ?? "",
+                    CreatedAtUtc = createdAt,
+                    Sequence = sequence,
+                });
+            }
+
+            return checkpoints;
         }
 
         public async Task DeleteAsync(CancellationToken ct = default)
