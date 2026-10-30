@@ -155,6 +155,8 @@ namespace RPAWriter2.Markdown
             var converter = new CodeTokensToTextBlockConverter();
             var textBlock = converter.Convert(tokens, typeof(TextBlock), null, CultureInfo.InvariantCulture) as TextBlock
                             ?? new TextBlock { Text = text };
+            // Code blocks copy their raw source, so highlighting never leaks into the clipboard.
+            MarkdownBlockContextMenu.Attach(textBlock, text);
 
             var scroll = new ScrollViewer
             {
@@ -379,6 +381,7 @@ namespace RPAWriter2.Markdown
                 textBlock.Margin = margin.Value;
 
             AppendContainer(inline, textBlock.Inlines);
+            MarkdownBlockContextMenu.Attach(textBlock);
             return textBlock;
         }
 
