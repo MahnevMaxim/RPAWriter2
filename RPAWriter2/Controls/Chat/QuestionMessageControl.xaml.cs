@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using RPAWriter2.Services;
 
 namespace RPAWriter2.Controls.Chat
 {
@@ -19,6 +20,7 @@ namespace RPAWriter2.Controls.Chat
             if (DataContext is ChatMessage message && message.Payload is QuestionPayload q)
                 q.Answer = option;
 
+            LogService.ChatDebug("Question option clicked: \"" + option + "\".");
             RaiseEvent(new ChatMessageRoutedEventArgs(ChatMessageCard.QuestionAnsweredEvent, DataContext as ChatMessage));
         }
 
@@ -30,6 +32,7 @@ namespace RPAWriter2.Controls.Chat
                 q.IsSkipped = true;
             }
 
+            LogService.ChatDebug("Question skip clicked.");
             RaiseEvent(new ChatMessageRoutedEventArgs(ChatMessageCard.QuestionSkippedEvent, DataContext as ChatMessage));
         }
     }

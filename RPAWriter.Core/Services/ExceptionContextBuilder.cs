@@ -13,11 +13,8 @@ namespace RPAWriter.Core.Services
     public static class ExceptionContextBuilder
     {
         /// <summary>Instruction prepended to every debugger-exception message.</summary>
-        public const string AnalysisPrompt =
-            "Отладчик Visual Studio остановился на исключении. " +
-            "Проанализируй его, определи наиболее вероятную причину, " +
-            "найди место в коде, где оно возникает, и предложи конкретное исправление. " +
-            "Отвечай по-русски.";
+        public static string AnalysisPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "analyze-exception.txt", PromptDefaults.AnalysisPrompt);
 
         /// <summary>Builds the prompt from a captured <see cref="DebuggerExceptionSnapshot"/>.</summary>
         public static string Build(DebuggerExceptionSnapshot snapshot)

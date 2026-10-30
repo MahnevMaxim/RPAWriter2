@@ -105,7 +105,7 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("read_errors", "Read compiler errors from the Visual Studio Error List.", "{}", false, ReadErrorsAsync));
             registry.Register(new AgentTool("read_output", "Read the Visual Studio Output window text.", "{}", false, ReadOutputAsync));
             // Temporarily excluded in favor of read_files:
-            // registry.Register(new AgentTool("open_file", "Open a file in Visual Studio and activate its tab. Use before read_open_document when the file's tab is not open yet. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
+            registry.Register(new AgentTool("open_file_in_visual_studio", "Open a file in Visual Studio and activate its tab. Use to bring a file into the editor so the user can see it, then read its live content with read_files. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
             // registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
             registry.Register(new AgentTool("analyze_logs", "Analyze log files at the given paths.", "{\"paths\":[\"string\"]}", false, AnalyzeLogsAsync));
             if (_memoryBankMode == MemoryBankMode.Tool)
@@ -258,24 +258,38 @@ namespace RPAWriter2.Services.AgentTools
                 }
             }
 
+            LogService.ChatDebug("ask_question invoked: question=\"" + SanitizeForLog(question) + "\", options=" + options.Count + " [" + SanitizeForLog(string.Join(" | ", options)) + "].");
+
             if (string.IsNullOrEmpty(question))
+            {
+                LogService.ChatWarn("ask_question rejected: missing or empty \"question\" argument.");
                 return "Missing or empty \"question\" argument.";
+            }
             if (options.Count < 2 || options.Count > 5)
+            {
+                LogService.ChatWarn("ask_question rejected: options count " + options.Count + " is outside 2..5.");
                 return "The \"options\" argument must contain between 2 and 5 non-empty options.";
+            }
 
             try
             {
-                return await _askQuestionAsync(question, options, ct).ConfigureAwait(false);
+                var answer = await _askQuestionAsync(question, options, ct).ConfigureAwait(false);
+                LogService.ChatInfo("ask_question answered: \"" + SanitizeForLog(answer) + "\".");
+                return answer;
             }
             catch (OperationCanceledException)
             {
+                LogService.ChatInfo("ask_question cancelled.");
                 throw;
             }
             catch (Exception ex)
             {
+                LogService.ChatError("ask_question failed: " + SanitizeForLog(ex.Message));
                 return "ask_question failed: " + ex.Message;
             }
         }
+
+        private static string SanitizeForLog(string text) => (text ?? "").Replace("\r", " ").Replace("\n", " ");
 
         private async Task<string> SpawnAgentAsync(JObject args, CancellationToken ct)
         {

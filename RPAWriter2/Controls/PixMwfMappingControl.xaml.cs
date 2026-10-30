@@ -30,23 +30,11 @@ namespace RPAWriter2.Controls
     {
         private const int MaxAiIterations = 60;
 
-        private const string MappingSystemPrompt =
-            "You map PIX RPA activities to Microsoft Workflow Foundation (MWF) activities. " +
-            "Your only tool is map_pix_to_mwf. " +
-            "Process the PIX activities strictly in the order listed in the user message and call map_pix_to_mwf once per activity. " +
-            "Choose the closest semantic match among the available MWF activities. " +
-            "If no MWF activity fits an activity, clear it by passing an empty mwf_activity. " +
-            "After all assignments, answer with a short summary. Do not invent activities that are not listed.";
+        private static string MappingSystemPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-mapping.txt", PromptDefaults.PixMappingSystemPrompt);
 
-        private const string ArgumentMappingSystemPrompt =
-            "You map arguments of already-mapped PIX RPA activities to arguments of their mapped Microsoft Workflow Foundation (MWF) activities. " +
-            "Your only tool is map_pix_mwf_arguments. " +
-            "For each PIX activity listed in the user message, process its arguments in the listed order and call map_pix_mwf_arguments once per argument. " +
-            "Choose the closest semantic match among the available MWF arguments (match by name, then by type and direction). " +
-            "Set conversion to None when the source and target types match, ToString when the target is a string, DateTimeFormat when parsing a date/time (expression = format string), " +
-            "Parse when converting with ChangeType (expression = target type name), and Custom when a custom C# expression template is needed (expression uses {0} for the source value). " +
-            "If no MWF argument fits an argument, unmap it by passing an empty mwf_argument. " +
-            "After all assignments, answer with a short summary. Do not invent arguments that are not listed.";
+        private static string ArgumentMappingSystemPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-argument-mapping.txt", PromptDefaults.PixArgumentMappingSystemPrompt);
 
         private readonly PixMwfMappingStore _store;
         private readonly ObservableCollection<PixMwfMappingRow> _rows = new ObservableCollection<PixMwfMappingRow>();

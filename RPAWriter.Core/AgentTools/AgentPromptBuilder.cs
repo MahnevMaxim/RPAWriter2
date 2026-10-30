@@ -38,8 +38,8 @@ namespace RPAWriter.Core.AgentTools
 
             var basePrompt = PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-json-base.txt", PromptDefaults.AgentJsonBaseSystemPrompt);
             var modeInstructions = mode == AgentMode.Act
-                ? PromptDefaults.AgentActModeInstructions
-                : PromptDefaults.AgentPlanModeInstructions;
+                ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-mode-instructions.txt", PromptDefaults.AgentActModeInstructions)
+                : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-mode-instructions.txt", PromptDefaults.AgentPlanModeInstructions);
 
             var sb = new StringBuilder();
             foreach (var t in registry.ForMode(mode, allowed))
@@ -77,7 +77,7 @@ namespace RPAWriter.Core.AgentTools
                 prompt = prompt + "\n\nAddress the user by their name when replying: \"" + name + "\".";
 
             if (memoryBankMode == MemoryBankMode.Convention)
-                prompt = prompt + "\n\n" + PromptDefaults.MemoryBankConventionInstructions;
+                prompt = prompt + "\n\n" + PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "memory-bank-convention.txt", PromptDefaults.MemoryBankConventionInstructions);
 
             return prompt;
         }
@@ -85,15 +85,13 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Builds the Help-mode support prompt: the support persona plus the bundled user documentation.</summary>
         private static string BuildHelpSupportPrompt()
         {
-            const string preamble = "Ты очень нежный и внимательный агент поддержки, вот твоя документация - ";
+            var template = PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "help-support.txt", PromptDefaults.HelpSupportPrompt);
             var docs = HelpDocumentation.ReadAll();
             var body = string.IsNullOrWhiteSpace(docs)
                 ? "Документация временно недоступна. Вежливо объясни пользователю, как пользоваться расширением RPA Writer, на основе общих знаний."
                 : docs;
 
-            return preamble + "\n\n" + body + "\n\n" +
-                "Отвечай на вопросы пользователя по этой документации на русском языке. " +
-                "Будь вежливым, терпеливым и внимательным. Если в документации нет ответа, честно скажи об этом.";
+            return template.Replace("{docs}", body);
         }
     }
 }

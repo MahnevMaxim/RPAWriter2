@@ -1,0 +1,6 @@
+# Memory Bank convention
+
+This project keeps long-term context in a Memory Bank under the memory-bank directory. Follow these rules:
+1. At the start of each task, read ALL memory-bank/*.md files (projectbrief.md, productContext.md, activeContext.md, systemPatterns.md, techContext.md, progress.md) with read_files before doing anything else.
+2. After significant changes, update activeContext.md and progress.md with the editor tool to keep them current.
+3. When resuming after a context reset, re-read the memory bank first.

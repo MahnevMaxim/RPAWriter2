@@ -44,6 +44,10 @@
       <Group guid="guidRPAWriter2PackageCmdSet" id="grpidEditorContextMenu" priority="0x0001">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
       </Group>
+      <!-- Places the "Send to RPA Writer" command into the XAML editor context menu. -->
+      <Group guid="guidRPAWriter2PackageCmdSet" id="grpidXamlEditorContextMenu" priority="0x0001">
+        <Parent guid="guidXamlUiCmds" id="IDM_XAML_EDITOR" />
+      </Group>
     </Groups>
 
     <!--Buttons section. -->
@@ -101,6 +105,17 @@
     </Bitmaps>
   </Commands>
 
+  <CommandPlacements>
+    <!-- Shows the "Send to RPA Writer" (selection) command in the XAML editor context menu too. -->
+    <CommandPlacement guid="guidRPAWriter2PackageCmdSet" id="cmdidSendSelectionToMessagebox" priority="0x0100">
+      <Parent guid="guidRPAWriter2PackageCmdSet" id="grpidXamlEditorContextMenu" />
+    </CommandPlacement>
+    <!-- Shows the "Send exception to RPA Writer" command in the XAML editor context menu too. -->
+    <CommandPlacement guid="guidRPAWriter2PackageCmdSet" id="cmdidSendExceptionToChat" priority="0x0100">
+      <Parent guid="guidRPAWriter2PackageCmdSet" id="grpidXamlEditorContextMenu" />
+    </CommandPlacement>
+  </CommandPlacements>
+
   <Symbols>
     <!-- This is the package guid. -->
     <GuidSymbol name="guidRPAWriter2Package" value="{a0fa18cb-df97-4047-870b-e9b052173a09}" />
@@ -114,6 +129,15 @@
       <IDSymbol value="4133" name="grpidEditorContextMenu" />
       <IDSymbol value="4134" name="cmdidConverterToolWindowCommand" />
       <IDSymbol value="4135" name="cmdidSendExceptionToChat" />
+      <IDSymbol value="4136" name="grpidXamlEditorContextMenu" />
+    </GuidSymbol>
+
+    <!-- XAML editor context menu (the menu that appears on right-click inside the
+         XAML editor). GUID + command id are the well-known XAML editor window context
+         menu constants: guidXamlUiCmds and menu id 259 (0x0103), same values used by
+         e.g. XAML Styler to add items to the XAML editor context menu. -->
+    <GuidSymbol name="guidXamlUiCmds" value="{4c87b692-1202-46aa-b64c-ef01faec53da}">
+      <IDSymbol name="IDM_XAML_EDITOR" value="0x0103" />
     </GuidSymbol>
 
 

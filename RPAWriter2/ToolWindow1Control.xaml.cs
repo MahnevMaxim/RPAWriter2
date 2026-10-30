@@ -64,6 +64,10 @@ namespace RPAWriter2
         private AgentPhase _phase = AgentPhase.Idle;
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
+        private AgentResumeSnapshot? _resumableSnapshot;
+        private AgentMode _resumableMode;
+        private ContextBudget? _resumableBudget;
+        private bool _resumeAvailable;
         private ITokenUsageProvider? _tokenUsage;
         private int _lastEstimatedInputTokens;
         private IMessageNotifier? _messageNotifier;
@@ -99,29 +103,21 @@ namespace RPAWriter2
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
         private const string SkipAnswerText = "User skipped the question.";
-        private const string CommitMessageSystemPrompt =
-            "You are an expert at writing concise git commit messages. " +
-            "Summarize the provided changes into a single-line commit message in the format \"type(scope): summary\". " +
-            "Write the summary in Russian. " +
-            "Respond with only the commit message text — no markdown, no quotes, no extra explanation.";
-        private const string CommitRobotSummarySystemPrompt =
-            "You are an expert at writing concise git commit messages. " +
-            "Summarize the robot changes below into a single concise line in the imperative mood. " +
-            "Write the summary in Russian. " +
-            "Respond with only the summary text — no RPA-...: prefix, no markdown, no quotes, no extra explanation.";
-        private const string CommitOtherSummarySystemPrompt =
-            "You are an expert at writing concise git commit messages. " +
-            "Summarize the changes below into a single concise line in the imperative mood. " +
-            "Write the summary in Russian. " +
-            "Respond with only the summary text — no markdown, no quotes, no extra explanation.";
+        private static string CommitMessageSystemPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", PromptDefaults.CommitMessageSystemPrompt);
+
+        private static string CommitRobotSummarySystemPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-robot-summary.txt", PromptDefaults.CommitRobotSummarySystemPrompt);
+
+        private static string CommitOtherSummarySystemPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-other-summary.txt", PromptDefaults.CommitOtherSummarySystemPrompt);
 
         private const int CommitDiffMaxChars = 8000;
-        private const string AnalyzeOutputWindowPrompt =
-            "Analyze the Visual Studio Output window content below. " +
-            "Identify errors, warnings and their likely root causes, and suggest concrete fixes:\n\n";
-        private const string AnalyzeProdLogsPrompt =
-            "Analyze the production robot logs below. " +
-            "Summarize the robot run, list errors and warnings with their likely root causes, and suggest fixes:\n\n";
+        private static string AnalyzeOutputWindowPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "analyze-output-window.txt", PromptDefaults.AnalyzeOutputWindow);
+
+        private static string AnalyzeProdLogsPrompt =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "analyze-prod-logs.txt", PromptDefaults.AnalyzeProdLogs);
         private const int ProdLogMaxChars = 40000;
         private const string RobotNameDefault = "RPA-";
         private const int RobotNameHistoryMax = 20;
@@ -340,6 +336,7 @@ namespace RPAWriter2
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
 
+            var alreadyActive = _questionTcs != null;
             var message = new ChatMessage
             {
                 Kind = ChatMessageKind.Question,
@@ -348,13 +345,17 @@ namespace RPAWriter2
             _activeQuestion = message;
             AppendChatMessage(message);
 
+            LogService.ChatInfo("Question shown: \"" + (question ?? "").Replace("\r", " ").Replace("\n", " ") + "\" (options=" + (options?.Count ?? 0) + "); alreadyActive=" + alreadyActive + ".");
+
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             _questionTcs = tcs;
             using (ct.Register(() => tcs.TrySetCanceled()))
             {
                 try
                 {
-                    return await tcs.Task;
+                    var answer = await tcs.Task;
+                    LogService.ChatInfo("Question completed: answer=\"" + (answer ?? "").Replace("\r", " ").Replace("\n", " ") + "\", canceled=" + tcs.Task.IsCanceled + ".");
+                    return answer;
                 }
                 finally
                 {
@@ -384,16 +385,28 @@ namespace RPAWriter2
 
         private void OnChatMessageQuestionAnswered(object? sender, ChatMessage message)
         {
-            if (_questionTcs == null) return;
+            var answer = (message.Payload as QuestionPayload)?.Answer ?? "";
+            if (_questionTcs == null)
+            {
+                LogService.ChatWarn("QuestionAnswered but _questionTcs is null (answer may be lost): \"" + answer.Replace("\r", " ").Replace("\n", " ") + "\"; activeQuestion=" + (_activeQuestion != null) + ".");
+                return;
+            }
+            LogService.ChatInfo("Question answered by user: \"" + answer.Replace("\r", " ").Replace("\n", " ") + "\".");
             ScheduleHistorySave();
-            _questionTcs.TrySetResult((message.Payload as QuestionPayload)?.Answer ?? "");
+            _questionTcs.TrySetResult(answer);
         }
 
         private void OnChatMessageQuestionSkipped(object? sender, ChatMessage message)
         {
-            if (_questionTcs == null) return;
+            var answer = (message.Payload as QuestionPayload)?.Answer ?? ChatMessagesControl.SkipAnswerText;
+            if (_questionTcs == null)
+            {
+                LogService.ChatWarn("QuestionSkipped but _questionTcs is null (answer may be lost); activeQuestion=" + (_activeQuestion != null) + ".");
+                return;
+            }
+            LogService.ChatInfo("Question skipped by user.");
             ScheduleHistorySave();
-            _questionTcs.TrySetResult((message.Payload as QuestionPayload)?.Answer ?? ChatMessagesControl.SkipAnswerText);
+            _questionTcs.TrySetResult(answer);
         }
 
         private void AppendExtensionError(Exception ex)
@@ -1966,7 +1979,7 @@ namespace RPAWriter2
                 }
 
                 AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-                await SendChatTextAsync(AnalyzeOutputWindowPrompt + text);
+                await SendChatTextAsync(AnalyzeOutputWindowPrompt + "\n\n" + text);
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -2603,6 +2616,26 @@ namespace RPAWriter2
             SendButton.IsEnabled = true; // sending now queues while busy
             DoItButton.IsEnabled = phase != AgentPhase.Streaming;
             CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
+            UpdateResumeButtonVisibility();
+        }
+
+        /// <summary>Shows the Resume button only when a cancelled run left a resumable breakpoint and the chat is idle.</summary>
+        private void UpdateResumeButtonVisibility()
+        {
+            if (ResumeButton == null)
+                return;
+            ResumeButton.Visibility = _resumeAvailable && _resumableSnapshot != null && _phase == AgentPhase.Idle
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        /// <summary>Drops any resumable breakpoint and hides the Resume button.</summary>
+        private void ResetResume()
+        {
+            _resumeAvailable = false;
+            _resumableSnapshot = null;
+            _resumableBudget = null;
+            UpdateResumeButtonVisibility();
         }
 
         private void ShowChatStatusError(string message)
@@ -2623,11 +2656,29 @@ namespace RPAWriter2
 
         private void OnCancelSend(object sender, RoutedEventArgs e)
         {
+            // Manual Cancel: remember to offer "Resume task" once the run has stopped.
+            _resumeAvailable = true;
             _pendingMessages.Clear();
             _chatCts?.Cancel();
         }
 
         #pragma warning disable VSTHRD100 // WPF event handlers are async void
+
+        private async void OnResumeTask(object sender, RoutedEventArgs e)
+        {
+            if (_agentRunner == null || _resumableSnapshot == null)
+                return;
+
+            var snapshot = _resumableSnapshot;
+            var mode = _resumableMode;
+            var budget = _resumableBudget ?? BuildContextBudget();
+
+            ResetResume();
+            RemoveCancelledNotice();
+            RemoveStaleThinkingPlaceholder();
+
+            await RunResumeTurnAsync(snapshot, mode, budget);
+        }
 
         private async void OnCommit(object sender, RoutedEventArgs e)
         {
@@ -3214,6 +3265,8 @@ namespace RPAWriter2
             if (string.IsNullOrWhiteSpace(promptText) && images.Count == 0)
                 return;
 
+            ResetResume();
+
             var modeName = _mode.ToString();
             var history = BuildTranscript();
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
@@ -3223,10 +3276,27 @@ namespace RPAWriter2
             var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
+            var budget = BuildContextBudget();
+            await RunAgentTurnAsync(_mode, budget, "input chars=" + promptText.Length + ", images=" + images.Count, thinking,
+                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _mode, budget, ct, progress, resumeProgress));
+        }
+
+        /// <summary>
+        /// Drives one agent turn end-to-end: streaming status, reasoning buffering, checkpoints,
+        /// tool progress, final answer and the Resume button after a manual Cancel.
+        /// </summary>
+        private async Task RunAgentTurnAsync(
+            AgentMode mode,
+            ContextBudget budget,
+            string startDetail,
+            ChatMessage thinking,
+            Func<CancellationToken, IProgress<ChatStreamDelta>, IProgress<AgentResumeSnapshot>, Task<AgentRunResult>> run)
+        {
+            var modeName = mode.ToString();
             var cts = new CancellationTokenSource();
             _chatCts = cts;
             StartChatStatus();
-            LogService.ChatInfo("Agent chat request started (mode=" + modeName + ", input chars=" + promptText.Length + ", images=" + images.Count + ").");
+            LogService.ChatInfo("Agent chat request started (mode=" + modeName + (string.IsNullOrEmpty(startDetail) ? "" : ", " + startDetail) + ").");
 
             // Accumulate reasoning in a buffer and flush it to the bound property on a timer.
             // Writing every delta straight into the property would reallocate the string and
@@ -3239,6 +3309,9 @@ namespace RPAWriter2
                 thinking.Reasoning = reasoningBuffer.ToString();
                 reasoningTimer.Stop();
             };
+
+            AgentResumeSnapshot? resumableSnapshot = null;
+
             try
             {
                 var progress = new Progress<ChatStreamDelta>(delta =>
@@ -3250,9 +3323,10 @@ namespace RPAWriter2
                             reasoningTimer.Start();
                     }
                 });
+                var resumeProgress = new Progress<AgentResumeSnapshot>(snap => resumableSnapshot = snap);
                 await EnsureBaselineCheckpointAsync();
 
-                var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
+                var result = await run(cts.Token, progress, resumeProgress);
 
                 reasoningTimer.Stop();
 
@@ -3285,7 +3359,7 @@ namespace RPAWriter2
                 {
                     var finalMessage = new ChatMessage
                     {
-                        Kind = _mode == AgentMode.Act ? ChatMessageKind.ResultAnswerAct : ChatMessageKind.ResultAnswerPlan,
+                        Kind = mode == AgentMode.Act ? ChatMessageKind.ResultAnswerAct : ChatMessageKind.ResultAnswerPlan,
                         Mode = modeName,
                         Text = result.FinalText
                     };
@@ -3301,7 +3375,20 @@ namespace RPAWriter2
                 thinking.IsThinking = false;
                 if (_messages.Contains(thinking))
                     AppendChat("Request cancelled.");
+
+                if (_resumeAvailable && resumableSnapshot != null)
+                {
+                    _resumableSnapshot = resumableSnapshot;
+                    _resumableMode = mode;
+                    _resumableBudget = budget;
+                }
+                else
+                {
+                    ResetResume();
+                }
+
                 StopChatStatus();
+                UpdateResumeButtonVisibility();
                 LogService.ChatInfo("Agent chat request cancelled.");
             }
             catch (Exception ex)
@@ -3322,6 +3409,33 @@ namespace RPAWriter2
                     _chatCts = null;
                 cts.Dispose();
             }
+        }
+
+        /// <summary>Continues a cancelled turn from its saved snapshot, reusing the same user message in the chat.</summary>
+        private async Task RunResumeTurnAsync(AgentResumeSnapshot snapshot, AgentMode mode, ContextBudget budget)
+        {
+            var modeName = mode.ToString();
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
+            AppendChatMessage(thinking);
+
+            await RunAgentTurnAsync(mode, budget, "resume", thinking,
+                (ct, progress, resumeProgress) => _agentRunner.ResumeAsync(snapshot, mode, budget, ct, progress, resumeProgress));
+        }
+
+        /// <summary>Removes the "Request cancelled." notice added by a cancelled turn before resuming.</summary>
+        private void RemoveCancelledNotice()
+        {
+            var notice = _messages.LastOrDefault(m => m.Kind == ChatMessageKind.SystemNotice && m.Text == "Request cancelled.");
+            if (notice != null)
+                _messages.Remove(notice);
+        }
+
+        /// <summary>Removes the stale partial "Thinking…" placeholder left behind by a cancelled turn.</summary>
+        private void RemoveStaleThinkingPlaceholder()
+        {
+            var stale = _messages.LastOrDefault(m => m.Kind == ChatMessageKind.AgentText && m.IsPartial);
+            if (stale != null)
+                _messages.Remove(stale);
         }
 
         /// <summary>
@@ -4000,6 +4114,7 @@ namespace RPAWriter2
         {
             _chatCts?.Cancel();
             _pendingMessages.Clear();
+            ResetResume();
             SaveHistoryNow();
 
             _loadingHistory = true;
@@ -4036,6 +4151,7 @@ namespace RPAWriter2
 
             _chatCts?.Cancel();
             _pendingMessages.Clear();
+            ResetResume();
             SaveHistoryNow();
 
             ChatConversation? stored;
@@ -4195,6 +4311,7 @@ namespace RPAWriter2
         {
             _historySaveTimer.Stop();
             _pendingMessages.Clear();
+            ResetResume();
 
             _loadingHistory = true;
             try

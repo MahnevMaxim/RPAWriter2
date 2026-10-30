@@ -1,0 +1,1 @@
+Analyze the production robot logs below. Summarize the robot run, list errors and warnings with their likely root causes, and suggest fixes. When an error references a source file (for example a stack trace entry like "... in path\file.cs:line N"), open that file in Visual Studio using the open_file_in_visual_studio tool so the user can inspect it:

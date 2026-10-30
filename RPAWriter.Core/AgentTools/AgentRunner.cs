@@ -43,20 +43,29 @@ namespace RPAWriter.Core.AgentTools
         public string Detail { get; set; } = "";
     }
 
+    /// <summary>
+    /// A resumable snapshot of an in-progress agent loop. The UI stores the last reported
+    /// snapshot while the run is streaming so a manual Cancel can be continued from the same
+    /// breakpoint instead of restarting the whole task.
+    /// </summary>
+    public sealed class AgentResumeSnapshot
+    {
+        /// <summary>Transcript prefix as of the start of the next iteration (provider cache-hit friendly).</summary>
+        public IReadOnlyList<ChatMessageData> Messages { get; set; } = new List<ChatMessageData>();
+
+        /// <summary>Zero-based iteration index the resumed run should continue from.</summary>
+        public int NextIteration { get; set; }
+    }
+
     public sealed class AgentRunner
     {
         private const int MaxTokensRecoveryLimit = 3;
-        private const string MaxTokensRecoveryNudge =
-            "Your previous response was cut off because it reached the output-token limit before finishing. " +
-            "Keep responses concise: take one small step at a time and finish with the JSON final answer.";
+        private static string MaxTokensRecoveryNudge =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-max-tokens-recovery-nudge.txt", PromptDefaults.MaxTokensRecoveryNudge);
 
         private const int ProtocolRecoveryLimit = 2;
-        private const string ProtocolRecoveryNudge =
-            "Your last reply was not in the required format. I cannot understand XML/DSML tool-call markup such as <invoke> or <parameter>. " +
-            "Answer with EXACTLY ONE JSON object and nothing else. To call a tool: " +
-            "{\"action\":\"tool_call\",\"tool\":\"<tool name>\",\"arguments\":{...}}. " +
-            "To answer the user: {\"action\":\"final\",\"text\":\"...\"}. " +
-            "No markdown fences, no XML/DSML tags, no text before or after the JSON.";
+        private static string ProtocolRecoveryNudge =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-protocol-recovery-nudge.txt", PromptDefaults.ProtocolRecoveryNudge);
 
         private readonly IAiProvider _ai;
         private readonly AgentToolRegistry _registry;
@@ -147,7 +156,8 @@ namespace RPAWriter.Core.AgentTools
             AgentMode mode,
             ContextBudget budget,
             CancellationToken cancellationToken,
-            IProgress<ChatStreamDelta> progress = null)
+            IProgress<ChatStreamDelta> progress = null,
+            IProgress<AgentResumeSnapshot> resumeProgress = null)
         {
             var effectiveBudget = budget ?? _budget;
             var systemPrompt = _systemPromptFactory(mode);
@@ -163,11 +173,63 @@ namespace RPAWriter.Core.AgentTools
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
             var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
+
+            return await RunLoopAsync(messages, 0, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Continues a previously cancelled run from a saved snapshot. The transcript is not
+        /// rebuilt from UI history; it resumes with the exact message prefix captured at the
+        /// breakpoint, so the provider's prompt cache hits and already-executed tools are not
+        /// re-run (only the single interrupted step is re-generated).
+        /// </summary>
+        public async Task<AgentRunResult> ResumeAsync(
+            AgentResumeSnapshot snapshot,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress = null,
+            IProgress<AgentResumeSnapshot> resumeProgress = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+
+            var effectiveBudget = budget ?? _budget;
+            var systemPrompt = _systemPromptFactory(mode);
+            var messages = new List<ChatMessageData>(snapshot.Messages ?? new List<ChatMessageData>());
+            var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
+            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
+
+            return await RunLoopAsync(messages, snapshot.NextIteration, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress).ConfigureAwait(false);
+        }
+
+        /// <summary>Shared agentic tool loop; <paramref name="startIteration"/> resumes a saved snapshot mid-run.</summary>
+        private async Task<AgentRunResult> RunLoopAsync(
+            List<ChatMessageData> messages,
+            int startIteration,
+            string systemPrompt,
+            IReadOnlyList<ToolDefinition> toolDefinitions,
+            int maxIterations,
+            AgentMode mode,
+            ContextBudget effectiveBudget,
+            CancellationToken cancellationToken,
+            IProgress<ChatStreamDelta> progress,
+            IProgress<AgentResumeSnapshot> resumeProgress)
+        {
             var protocolAttempts = 0;
 
-            for (var i = 0; i < maxIterations; i++)
+            for (var i = startIteration; i < maxIterations; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Publish a resumable checkpoint before mutating the transcript for this
+                // iteration. Cancelling now re-runs only this iteration: the partial model
+                // answer is regenerated and any in-flight tool call is re-executed.
+                resumeProgress?.Report(new AgentResumeSnapshot
+                {
+                    Messages = new List<ChatMessageData>(messages),
+                    NextIteration = i
+                });
 
                 var prepared = await PrepareContextAsync(messages, systemPrompt, effectiveBudget, cancellationToken).ConfigureAwait(false);
                 var response = await CallWithRecoveryAsync(prepared, toolDefinitions, effectiveBudget, cancellationToken, progress).ConfigureAwait(false);

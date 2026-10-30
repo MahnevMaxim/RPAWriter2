@@ -404,6 +404,14 @@ namespace RPAWriter.Tests
     [TestFixture]
     public class AgentRunnerTests
     {
+        /// <summary>Synchronous <see cref="IProgress{T}"/> so tests capture reports without a dispatcher.</summary>
+        private sealed class SyncProgress<T> : IProgress<T>
+        {
+            private readonly Action<T> _handler;
+            public SyncProgress(Action<T> handler) => _handler = handler;
+            public void Report(T value) => _handler(value);
+        }
+
         private static string Completion(string content)
         {
             var payload = new Dictionary<string, object>
@@ -703,6 +711,92 @@ namespace RPAWriter.Tests
 
             Assert.That(executed, Is.False);
             Assert.That(result.FinalText, Is.EqualTo("ok"));
+        }
+
+        [Test]
+        public async Task ResumeAsync_FromMidLoopSnapshot_DoesNotReexecuteTools()
+        {
+            var executions = 0;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) =>
+            {
+                executions++;
+                return Task.FromResult("tool-result");
+            }));
+
+            var snapshot = new AgentResumeSnapshot
+            {
+                NextIteration = 1,
+                Messages = new List<ChatMessageData>
+                {
+                    new ChatMessageData { Role = "user", Content = "go" },
+                    new ChatMessageData { Role = "assistant", Content = "{\"action\":\"tool_call\",\"tool\":\"my_tool\",\"arguments\":{}}" },
+                    new ChatMessageData { Role = "tool", Content = "Tool \"my_tool\" returned:\ntool-result" }
+                }
+            };
+
+            var ai = new FakeAiProvider(new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+
+            var result = await runner.ResumeAsync(snapshot, AgentMode.Act, null, CancellationToken.None);
+
+            Assert.That(executions, Is.EqualTo(0));
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(ai.Calls.Count, Is.EqualTo(1));
+            Assert.That(ai.Calls[0].Count, Is.EqualTo(3));
+        }
+
+        [Test]
+        public async Task ResumeAsync_FromStartSnapshot_ReexecutesInterruptedIteration()
+        {
+            var executions = 0;
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) =>
+            {
+                executions++;
+                return Task.FromResult("tool-result");
+            }));
+
+            var snapshot = new AgentResumeSnapshot
+            {
+                NextIteration = 0,
+                Messages = new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "go" } }
+            };
+
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"tool_call\",\"tool\":\"my_tool\",\"arguments\":{}}", FinishReason = "stop" },
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+
+            var result = await runner.ResumeAsync(snapshot, AgentMode.Act, null, CancellationToken.None);
+
+            Assert.That(executions, Is.EqualTo(1));
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+        }
+
+        [Test]
+        public async Task RunAsync_ReportsResumeSnapshotsPerIteration()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) => Task.FromResult("tool-result")));
+
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"tool_call\",\"tool\":\"my_tool\",\"arguments\":{}}", FinishReason = "stop" },
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+
+            var snapshots = new List<AgentResumeSnapshot>();
+            var resumeProgress = new SyncProgress<AgentResumeSnapshot>(s => snapshots.Add(s));
+
+            var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), "go", null, AgentMode.Act, null, CancellationToken.None, null, resumeProgress);
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(snapshots.Count, Is.EqualTo(2));
+            Assert.That(snapshots[0].NextIteration, Is.EqualTo(0));
+            Assert.That(snapshots[1].NextIteration, Is.EqualTo(1));
+            Assert.That(snapshots[1].Messages.Count, Is.EqualTo(3));
         }
     }
 

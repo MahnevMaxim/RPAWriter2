@@ -82,15 +82,15 @@ namespace RPAWriter2
                 return;
             }
 
-            var selectedText = ReadSelectedText(textDoc);
-            if (string.IsNullOrWhiteSpace(selectedText))
+            var selection = ReadSelection(textDoc);
+            if (string.IsNullOrWhiteSpace(selection.Text))
             {
                 await NotifyAsync("Send to RPA Writer: no text is selected in the editor.");
                 return;
             }
 
             var relativePath = GetRelativePath(GetSolutionDirectory(dte), doc.FullName);
-            var message = BuildMessage(relativePath, selectedText);
+            var message = BuildMessage(relativePath, selection.StartLine, selection.EndLine, selection.Text);
 
             var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
             var control = window?.Control;
@@ -117,34 +117,37 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// Reads the selected text from the editor. When nothing is selected, falls back to
-        /// the current line so the command still produces a useful snippet.
+        /// Reads the selected text from the editor together with its 1-based line range.
+        /// When nothing is selected, falls back to the current line so the command still
+        /// produces a useful snippet (start line == end line).
         /// </summary>
-        private static string ReadSelectedText(TextDocument textDoc)
+        private static (string Text, int StartLine, int EndLine) ReadSelection(TextDocument textDoc)
         {
             var selection = textDoc.Selection;
             if (selection == null)
-                return string.Empty;
+                return (string.Empty, 0, 0);
 
             var text = selection.Text;
+            var startLine = selection.TopPoint.Line;
+            var endLine = selection.BottomPoint.Line;
             if (!string.IsNullOrWhiteSpace(text))
-                return text;
+                return (text, startLine, endLine);
 
             try
             {
                 var line = selection.TopPoint.Line;
                 var editPoint = selection.TopPoint.CreateEditPoint();
                 var lineText = editPoint.GetLines(line, line + 1);
-                return lineText?.TrimEnd('\r', '\n') ?? string.Empty;
+                return (lineText?.TrimEnd('\r', '\n') ?? string.Empty, line, line);
             }
             catch
             {
-                return string.Empty;
+                return (string.Empty, 0, 0);
             }
         }
 
         /// <summary>
-        /// Computes the document path relative to the solution root (forward slashes), falling
+        /// Computes the document path relative to the solution root (native separators), falling
         /// back to the bare file name when the solution is unavailable or the path cannot be normalized.
         /// </summary>
         private static string GetRelativePath(string? solutionDir, string filePath)
@@ -160,7 +163,7 @@ namespace RPAWriter2
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
                     var fileFull = Path.GetFullPath(filePath);
                     if (fileFull.StartsWith(baseFull, StringComparison.OrdinalIgnoreCase))
-                        return fileFull.Substring(baseFull.Length).Replace('\\', '/');
+                        return fileFull.Substring(baseFull.Length);
                 }
             }
             catch
@@ -171,10 +174,10 @@ namespace RPAWriter2
             return Path.GetFileName(filePath);
         }
 
-        private static string BuildMessage(string relativePath, string selectedText)
+        private static string BuildMessage(string relativePath, int startLine, int endLine, string selectedText)
         {
             var sb = new StringBuilder();
-            sb.Append('\'').Append(relativePath).Append("' (see below for file content)").AppendLine();
+            sb.Append(relativePath).Append(':').Append(startLine).Append('-').Append(endLine).AppendLine();
             sb.AppendLine("```");
             sb.AppendLine(selectedText);
             sb.Append("```");

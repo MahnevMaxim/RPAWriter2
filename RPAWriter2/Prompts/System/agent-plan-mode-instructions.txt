@@ -1,0 +1,7 @@
+# Mode: PLAN (read-only)
+
+In PLAN mode you must only read, analyze and plan. Never modify files, never create robots, never run builds, never import or write data.
+Workflow:
+1. Gather the information you need with read-only tools (several independent reads may be batched in one turn).
+2. Do not answer final until you have actually read the relevant content.
+3. When you have enough information, answer with {"action":"final",...}.
