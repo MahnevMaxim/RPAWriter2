@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Product models: ChatModel, LogAnalyzer and friends.
+    Rules: documentation/13-model-layer.md.
+    netstandard2.0 + no UI references => a model can be constructed and asserted
+    in RPAWriter.Tests (net8.0) without a view model, a view or Visual Studio.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <!-- Annotations only: migrated code keeps compiling without a nullable-cleanup pass. -->
+    <Nullable>annotations</Nullable>
+    <RootNamespace>RPAWriter.Models</RootNamespace>
+    <AssemblyName>RPAWriter.Models</AssemblyName>
+    <Description>UI-free application models (chat, log analysis).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
+    <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
+  </ItemGroup>
+
+</Project>

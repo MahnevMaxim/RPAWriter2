@@ -16,22 +16,22 @@ namespace RPAWriter2
     /// </para>
     /// </remarks>
     [Guid("bd7cbce8-18d8-49b8-9c3c-8d77e2567a65")]
-    public class ToolWindow1 : ToolWindowPane
+    public class MainWindowPane : ToolWindowPane
     {
         /// <summary>
-        /// Initializes a new instance of the <see cref="ToolWindow1"/> class.
+        /// Initializes a new instance of the <see cref="MainWindowPane"/> class.
         /// </summary>
-        public ToolWindow1() : base(null)
+        public MainWindowPane() : base(null)
         {
             this.Caption = "RPA Writer";
 
             // This is the user control hosted by the tool window; Note that, even if this class implements IDisposable,
             // we are not calling Dispose on this object. This is because ToolWindowPane calls Dispose on
             // the object returned by the Content property.
-            this.Content = new ToolWindow1Control();
+            this.Content = new MainWindowControl();
         }
 
         /// <summary>The hosted user control.</summary>
-        public ToolWindow1Control? Control => this.Content as ToolWindow1Control;
+        public MainWindowControl? Control => this.Content as MainWindowControl;
     }
 }

@@ -131,7 +131,7 @@ namespace RPAWriter2.Services
         {
             try
             {
-                var installDir = Path.GetDirectoryName(typeof(ToolWindow1Control).Assembly.Location);
+                var installDir = Path.GetDirectoryName(typeof(MainWindowControl).Assembly.Location);
                 if (!string.IsNullOrWhiteSpace(installDir))
                     return Path.Combine(installDir, "Logs");
             }

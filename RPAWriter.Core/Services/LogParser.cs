@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -7,7 +7,7 @@ using RPAWriter.Core.Models;
 namespace RPAWriter.Core.Services
 {
     /// <summary>Parses and analyzes log lines: extracts level, source, timestamp, and errors.</summary>
-    public class LogAnalyzer
+    public class LogParser
     {
         private static readonly Regex LevelPattern = new Regex(
             @"\b(?<level>ERROR|ERR|WARN|WARNING|INFO|DEBUG|TRACE|FATAL)\b",

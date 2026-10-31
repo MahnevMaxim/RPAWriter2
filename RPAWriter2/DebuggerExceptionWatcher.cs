@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
@@ -126,7 +126,7 @@ namespace RPAWriter2
 
         private async Task SendToChatAsync(DebuggerExceptionSnapshot snapshot)
         {
-            var window = await _package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, _package.DisposalToken) as ToolWindow1;
+            var window = await _package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, _package.DisposalToken) as MainWindowPane;
             var control = window?.Control;
             if (control == null)
                 return;

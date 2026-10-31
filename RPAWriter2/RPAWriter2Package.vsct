@@ -61,7 +61,7 @@
               <CommandFlag>DefaultInvisible</CommandFlag>
               <CommandFlag>DynamicVisibility</CommandFlag>
           If you do not want an image next to your command, remove the Icon node /> -->
-      <Button guid="guidRPAWriter2PackageCmdSet" id="cmdidToolWindow1Command" priority="0x0100" type="Button">
+      <Button guid="guidRPAWriter2PackageCmdSet" id="cmdidMainWindowCommand" priority="0x0100" type="Button">
         <Parent guid="guidSHLMainMenu" id="IDG_VS_TOOLS_EXT_CUST" />
         <Icon guid="guidImages1" id="bmpPic1" />
         <Strings>
@@ -101,7 +101,7 @@
             bitmap strip containing the bitmaps and then there are the numeric ids of the elements used
             inside a button definition. An important aspect of this declaration is that the element id
             must be the actual index (1-based) of the bitmap inside the bitmap strip. -->
-      <Bitmap guid="guidImages1" href="Resources\ToolWindow1Command.png" usedList="bmpPic1, bmpPic2, bmpPicSearch, bmpPicX, bmpPicArrows, bmpPicStrikethrough" />
+      <Bitmap guid="guidImages1" href="Resources\MainWindowCommand.png" usedList="bmpPic1, bmpPic2, bmpPicSearch, bmpPicX, bmpPicArrows, bmpPicStrikethrough" />
     </Bitmaps>
   </Commands>
 
@@ -122,7 +122,7 @@
 
     <!-- This is the guid used to group the menu commands together -->
     <GuidSymbol name="guidRPAWriter2PackageCmdSet" value="{d648562d-8124-4a1f-9574-4874fa421738}">
-      <IDSymbol value="4129" name="cmdidToolWindow1Command" />
+      <IDSymbol value="4129" name="cmdidMainWindowCommand" />
       <IDSymbol value="4130" name="cmdidSendErrorToChat" />
       <IDSymbol value="4131" name="grpidErrorListContextMenu" />
       <IDSymbol value="4132" name="cmdidSendSelectionToMessagebox" />

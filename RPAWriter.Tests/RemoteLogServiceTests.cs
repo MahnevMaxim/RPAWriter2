@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
@@ -29,7 +29,7 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public async Task AnalyzeAsync_DelegatesToLogAnalyzer()
+        public async Task AnalyzeAsync_DelegatesToLogParser()
         {
             var lines = new[]
             {

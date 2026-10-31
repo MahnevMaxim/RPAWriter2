@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using RPAWriter.Core.Models;
 
 namespace RPAWriter2.Controls.Chat
 {

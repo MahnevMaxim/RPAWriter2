@@ -5,7 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using RPAWriter.Core.Checkpoints;
 
-namespace RPAWriter2
+namespace RPAWriter.Core.Models
 {
     /// <summary>
     /// Base type for the typed content payload attached to a <see cref="ChatMessage"/>.

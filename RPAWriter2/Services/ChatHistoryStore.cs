@@ -9,51 +9,10 @@ using Newtonsoft.Json;
 
 namespace RPAWriter2.Services
 {
-    /// <summary>A single chat message persisted in the chat history database.</summary>
-    public class ChatHistoryMessage
-    {
-        public ChatMessageKind Kind { get; set; } = ChatMessageKind.SystemNotice;
-        public string Text { get; set; } = "";
-        public string Reasoning { get; set; } = "";
-        public string Mode { get; set; } = "";
-        public string ToolName { get; set; } = "";
-        public List<string> Options { get; set; } = new List<string>();
-        public string CheckpointHash { get; set; } = "";
-    }
-
-    /// <summary>A saved chat conversation with its messages.</summary>
-    public class ChatConversation
-    {
-        public string Id { get; set; } = "";
-        public string Title { get; set; } = "";
-        public DateTime CreatedAtUtc { get; set; }
-        public DateTime UpdatedAtUtc { get; set; }
-        public List<ChatHistoryMessage> Messages { get; set; } = new List<ChatHistoryMessage>();
-
-        /// <summary>Text shown in the history dropdown.</summary>
-        public string DisplayTitle
-        {
-            get
-            {
-                var title = string.IsNullOrWhiteSpace(Title) ? "(empty)" : Title;
-                var when = UpdatedAtUtc == default(DateTime)
-                    ? ""
-                    : "  ·  " + UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-                return title + when;
-            }
-        }
-
-        /// <summary>Title for a history card: the first message text, or a placeholder.</summary>
-        public string CardTitle => string.IsNullOrWhiteSpace(Title) ? "(empty)" : Title;
-
-        /// <summary>Local date shown on a history card.</summary>
-        public string DisplayDate => UpdatedAtUtc == default(DateTime)
-            ? ""
-            : UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-    }
-
     /// <summary>
     /// SQLite-backed chat history. The database lives at %AppData%\RPAWriter2\&lt;version&gt;\chat_history.db.
+    /// Models use the IChatHistoryStore seam instead of this static class;
+    /// SqliteChatHistoryStore adapts one to the other.
     /// </summary>
     public static class ChatHistoryStore
     {

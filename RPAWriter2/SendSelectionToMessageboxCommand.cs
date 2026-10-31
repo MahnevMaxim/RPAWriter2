@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Text;
@@ -92,7 +92,7 @@ namespace RPAWriter2
             var relativePath = GetRelativePath(GetSolutionDirectory(dte), doc.FullName);
             var message = BuildMessage(relativePath, selection.StartLine, selection.EndLine, selection.Text);
 
-            var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+            var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
             var control = window?.Control;
             if (control == null)
                 throw new InvalidOperationException("Cannot create the RPA Writer window.");
@@ -188,7 +188,7 @@ namespace RPAWriter2
         {
             try
             {
-                var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+                var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
                 window?.Control?.AppendSystemMessage(message);
             }
             catch
@@ -202,7 +202,7 @@ namespace RPAWriter2
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(this.package.DisposalToken);
             try
             {
-                var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+                var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
                 window?.Control?.AppendSystemMessage("\u26A0 Failed to send the selection to RPA Writer: " + ex.Message);
             }
             catch

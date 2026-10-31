@@ -19,6 +19,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
+    <!-- Models and the MVVM framework are netstandard2.0 on purpose: they must be testable
+         from this net8.0 project without Visual Studio and without the VSIX assembly.
+         See documentation/13-model-layer.md. -->
+    <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
+    <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -892,7 +892,7 @@ namespace RPAWriter2.Services.AgentTools
                 catch (Exception ex) { lines.Add("(read error " + full + ": " + ex.Message + ")"); }
             }
 
-            var analysis = new LogAnalyzer().Analyze(lines);
+            var analysis = new LogParser().Analyze(lines);
             var sb = new StringBuilder();
             sb.AppendLine(analysis.Summary);
             foreach (var e in analysis.Errors.Take(50)) sb.AppendLine("ERR: " + (e.Message ?? ""));

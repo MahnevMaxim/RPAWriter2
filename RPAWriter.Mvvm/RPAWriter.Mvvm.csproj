@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    UI-free MVVM framework.
+    Rules: documentation/13-model-layer.md.
+    This assembly must NEVER reference PresentationFramework/PresentationCore/WindowsBase
+    and must stay netstandard2.0 so that models built on top of it are unit testable
+    from RPAWriter.Tests (net8.0). ModelArchitectureTests enforces this.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>RPAWriter.Mvvm</RootNamespace>
+    <AssemblyName>RPAWriter.Mvvm</AssemblyName>
+    <Description>UI-free MVVM primitives (BaseModel, BaseViewModel, IView, RelayCommand).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>

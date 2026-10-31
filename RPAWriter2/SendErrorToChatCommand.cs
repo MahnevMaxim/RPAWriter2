@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Text.RegularExpressions;
@@ -76,7 +76,7 @@ namespace RPAWriter2
 
             var errors = ReadSelectedErrorListEntries(dte);
 
-            var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+            var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
             var control = window?.Control;
             if (control == null)
                 throw new InvalidOperationException("Cannot create the RPA Writer window.");
@@ -264,7 +264,7 @@ namespace RPAWriter2
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(this.package.DisposalToken);
             try
             {
-                var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+                var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
                 window?.Control?.AppendSystemMessage("⚠ Failed to send the error to RPA Writer: " + ex.Message);
             }
             catch

@@ -30,7 +30,7 @@ namespace RPAWriter2
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [Guid(RPAWriter2Package.PackageGuidString)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideToolWindow(typeof(ToolWindow1))]
+    [ProvideToolWindow(typeof(MainWindowPane))]
     [ProvideToolWindow(typeof(ConverterToolWindow), Style = VsDockStyle.MDI)]
     [ProvideToolWindow(typeof(DiffToolWindow), Style = VsDockStyle.MDI)]
     public sealed class RPAWriter2Package : AsyncPackage
@@ -67,7 +67,7 @@ namespace RPAWriter2
 
             VsOptionsService.ApplyRequiredDocumentOptions(dte);
 
-            await ToolWindow1Command.InitializeAsync(this);
+            await MainWindowCommand.InitializeAsync(this);
             await ConverterToolWindowCommand.InitializeAsync(this);
             await DiffToolWindowCommand.InitializeAsync(this);
             await SendErrorToChatCommand.InitializeAsync(this);

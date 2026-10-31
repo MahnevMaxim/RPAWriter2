@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,11 +9,11 @@ namespace RPAWriter.Core.Services
 {
     /// <summary>
     /// Remote logs: contract-based download (transport wired up later),
-    /// analysis delegated to LogAnalyzer.
+    /// analysis delegated to LogParser.
     /// </summary>
     public class RemoteLogService : IRemoteLogService
     {
-        private readonly LogAnalyzer _analyzer = new LogAnalyzer();
+        private readonly LogParser _analyzer = new LogParser();
 
         public Task<IReadOnlyList<string>> DownloadAsync(
             RobotDeploymentConfig config, CancellationToken cancellationToken = default)

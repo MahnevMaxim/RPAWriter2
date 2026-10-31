@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -69,7 +69,7 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public async Task RemoteLogService_AnalyzeAsync_DelegatesToLogAnalyzer()
+        public async Task RemoteLogService_AnalyzeAsync_DelegatesToLogParser()
         {
             var result = await new RemoteLogService().AnalyzeAsync(new[] { "2026-10-13 10:00:00 [Robot] ERROR boom" });
 

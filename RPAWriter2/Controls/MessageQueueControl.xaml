@@ -13,6 +13,7 @@
             <SolidColorBrush x:Key="Dark.Panel" Color="#252526"/>
 
             <conv:MaterialIconToGeometryConverter x:Key="MaterialIconToGeometry"/>
+            <conv:PendingDeliveryToGeometryConverter x:Key="PendingDeliveryToGeometry"/>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -57,7 +58,7 @@
                             <Button Grid.Column="0" ToolTip="{Binding DeliveryToolTip, Mode=OneWay}"
                                     Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
                                     Margin="0,0,4,0" Click="OnToggleDelivery">
-                                <Path Data="{Binding DeliveryIcon, Mode=OneWay, Converter={StaticResource MaterialIconToGeometry}}"
+                                <Path Data="{Binding Delivery, Mode=OneWay, Converter={StaticResource PendingDeliveryToGeometry}}"
                                       Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="12" Height="12"/>
                             </Button>
 

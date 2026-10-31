@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -41,6 +41,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
+    <!-- UI-free MVVM framework + product models. See documentation/13-model-layer.md. -->
+    <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
+    <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it

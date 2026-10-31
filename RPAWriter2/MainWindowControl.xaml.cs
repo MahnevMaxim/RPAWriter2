@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +14,10 @@ using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 using RPAWriter.Core.Checkpoints;
 using RPAWriter2.Services;
+using RPAWriter.Models;
+using RPAWriter.Mvvm;
+using RPAWriter2.ViewModels;
+using RPAWriter2.Mvvm;
 using RPAWriter2.Services.AgentTools;
 using RPAWriter2.Services.Checkpoints;
 using RPAWriter2.Controls;
@@ -42,16 +46,8 @@ namespace RPAWriter2
     /// <summary>
     /// Single extension window: agent chat and settings.
     /// </summary>
-    public partial class ToolWindow1Control : UserControl
+    public partial class MainWindowControl : UserControl
     {
-        /// <summary>Explicit UI phase of the current agent turn (drives the footer buttons/indicators).</summary>
-        private enum AgentPhase
-        {
-            Idle,
-            Streaming,
-            Error
-        }
-
         private SettingsData _settings;
         private IAiProvider _ai;
         private SpecModel _currentSpec;
@@ -60,8 +56,22 @@ namespace RPAWriter2
         private OutputWindowService _outputWindow;
         private readonly GitService _git = new GitService();
         private readonly CheckpointServiceFactory _checkpoints = new CheckpointServiceFactory();
-        private AgentMode _mode = AgentMode.Plan;
-        private AgentPhase _phase = AgentPhase.Idle;
+        private readonly ChatModel _chatModel = new ChatModel(new SqliteChatHistoryStore(), new JsonUiStateStore());
+        private readonly ChatViewModel _chatViewModel = new ChatViewModel();
+
+        /// <summary>Agent mode (Plan/Act/Help); owned by <see cref="ChatModel"/>.</summary>
+        private AgentMode _mode
+        {
+            get => _chatModel.Mode;
+            set => _chatModel.Mode = value;
+        }
+
+        /// <summary>Phase of the current agent turn; owned by <see cref="ChatModel"/>.</summary>
+        private AgentPhase _phase
+        {
+            get => _chatModel.Phase;
+            set => _chatModel.Phase = value;
+        }
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
         private AgentResumeSnapshot? _resumableSnapshot;
@@ -74,19 +84,18 @@ namespace RPAWriter2
         private IRetryNotifier? _retryNotifier;
         private IPromptNotifier? _promptNotifier;
         private DTE2? _dte;
-        private IReadOnlyList<IProdLogProvider>? _logProviders;
-        private IProdLogProvider? _selectedLogProvider;
         private MicrophoneRecorder _mic;
         private ISpeechToTextService _stt;
         private bool _isRecording;
         private bool _isTranscribing;
-        private List<string> _robotNameHistory = new List<string>();
-        private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
-        private readonly ObservableCollection<PendingChatMessage> _pendingMessages = new ObservableCollection<PendingChatMessage>();
+        // Chat state is owned by the model; the host keeps these aliases so the existing control
+        // code keeps working while the bindings move over (phase E) and the tests cover the model.
+        private ObservableCollection<ChatMessage> _messages => _chatModel.Messages;
+        private ObservableCollection<PendingMessage> _pendingMessages => _chatModel.Pending;
         private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
-        private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
+        private ObservableCollection<ChatAttachment> _attachments => _chatModel.Attachments;
         private readonly ObservableCollection<MessageSample> _messageSamples = new ObservableCollection<MessageSample>();
 
         private CancellationTokenSource? _chatCts;
@@ -102,7 +111,7 @@ namespace RPAWriter2
         private DateTime _chatStartedAt;
         private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
-        private const string SkipAnswerText = "User skipped the question.";
+
         private static string CommitMessageSystemPrompt =>
             PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", PromptDefaults.CommitMessageSystemPrompt);
 
@@ -113,25 +122,27 @@ namespace RPAWriter2
             PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-other-summary.txt", PromptDefaults.CommitOtherSummarySystemPrompt);
 
         private const int CommitDiffMaxChars = 8000;
-        private static string AnalyzeOutputWindowPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "analyze-output-window.txt", PromptDefaults.AnalyzeOutputWindow);
-
-        private static string AnalyzeProdLogsPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "analyze-prod-logs.txt", PromptDefaults.AnalyzeProdLogs);
-        private const int ProdLogMaxChars = 40000;
-        private const string RobotNameDefault = "RPA-";
-        private const int RobotNameHistoryMax = 20;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
-        private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
-        private ChatConversation _currentConversation = new ChatConversation();
+        private ObservableCollection<ChatConversation> _conversations => _chatModel.History;
+
+        private ChatConversation _currentConversation
+        {
+            get => _chatModel.ActiveChatConversation;
+            set => _chatModel.ActiveChatConversation = value;
+        }
+
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
-        private bool _loadingHistory;
-        private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
+
+        private ChatViewMode _chatViewMode
+        {
+            get => _chatModel.ViewMode;
+            set => _chatModel.ViewMode = value;
+        }
         // Starts true so XAML load events (e.g. ModeToggle ValueChanged) don't
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
-        private ChatMessage? _pinnedMessage;
+        private ChatMessage? _pinnedMessage => _chatModel.PinnedMessage;
         private ICollectionView? _packagesView;
         private ICollectionView? _svgView;
         private bool _pinnedExpanded;
@@ -144,10 +155,9 @@ namespace RPAWriter2
         private string? _lastCheckpointHash;
         private int _iterationNumber;
 
-        public ToolWindow1Control()
+        public MainWindowControl()
         {
             this.InitializeComponent();
-            InitializeMinLevelCombo();
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
             _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
@@ -182,7 +192,17 @@ namespace RPAWriter2
             RebuildAgentTools();
             HookSolutionEvents();
             UpdateCreateRobotVisibility();
+            _chatModel.LogAnalyzer = CreateLogAnalyzer();
+            MvvmFactory.Attach(_chatModel, _chatViewModel, this);
+            _chatModel.PropertyChanged += OnChatModelPropertyChanged;
             InitializeChatHistory();
+        }
+
+        /// <summary>Re-renders the layout parts that depend on chat model state.</summary>
+        private void OnChatModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ChatModel.PinnedMessage))
+                RefreshPinnedMessage();
         }
 
         private void LoadSettings()
@@ -228,7 +248,6 @@ namespace RPAWriter2
             SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
             SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
             ReasoningEffortCombo.SelectedIndex = ReasoningEffortToIndex(_settings.ReasoningEffort);
-            LoadRobotNameHistory();
             ShowControlsCheckBox.IsChecked = _settings.ShowControls;
             ApplyControlsVisibility();
             SpeechToTextProviderCombo.SelectedIndex = SpeechToTextProviderToIndex(_settings.SpeechToTextProvider);
@@ -423,10 +442,10 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => AppendChatMessage(message)));
                 return;
             }
+            // The chat control adds into the model-owned Messages collection; the model reacts by
+            // updating the pinned message and the dirty flag.
             ChatMessages.Append(message);
-            if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
-                RefreshPinnedMessage();
-            if (!_loadingHistory)
+            if (_chatModel.IsDirty)
                 ScheduleHistorySave();
         }
 
@@ -1383,7 +1402,6 @@ namespace RPAWriter2
             }
         }
 
-
         private async void OnImportSpec(object sender, RoutedEventArgs e)
         {
             var solutionDir = GetOpenSolutionDirectory();
@@ -1954,6 +1972,10 @@ namespace RPAWriter2
             catch (Exception ex) { ShowError(ex); }
         }
 
+        /// <summary>
+        /// "Analyze logs" panel logo: layout only — visibility is view state
+        /// (documentation/13-model-layer.md, rule 10).
+        /// </summary>
         private void OnAnalyzeLogs(object sender, RoutedEventArgs e)
         {
             AnalyzeLogsPanel.Visibility = AnalyzeLogsPanel.Visibility == Visibility.Visible
@@ -1967,19 +1989,49 @@ namespace RPAWriter2
             ProdLogsPanel.Visibility = Visibility.Collapsed;
         }
 
+        /// <summary>Child model of the panel; owned by <see cref="ChatModel"/>, may be absent in headless runs.</summary>
+        private LogAnalyzer? LogAnalyzer => _chatModel.LogAnalyzer;
+
+        /// <summary>Builds the log analysis model with its host adapters (discovery, Output window, chat, settings).</summary>
+        private LogAnalyzer CreateLogAnalyzer()
+        {
+            return new LogAnalyzer(
+                new LogProviderSourceAdapter(() => _settings?.LogProvidersPath ?? ""),
+                new OutputWindowTextSourceAdapter(_ => _buildFeedback.GetOutputWindowTextAsync()),
+                new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
+                new UserMessageSinkAdapter(AppendChat, AppendExtensionError),
+                new SettingsLogAnalysisAdapter(() => _settings));
+        }
+
+        /// <summary>
+        /// Copies what the user typed/selected into the model right before a request.
+        /// WPF raises <c>SelectionChanged</c> and <c>SelectedDateChanged</c> <i>before</i> a two-way
+        /// binding pushes the new value into the source, so a handler that acts immediately cannot
+        /// rely on the binding alone. Everything the model owns stays writable from here; the
+        /// controls remain a pure presentation of <see cref="LogAnalyzer"/>.
+        /// </summary>
+        private void PushPanelInputsToModel(LogAnalyzer analyzer)
+        {
+            analyzer.RobotName = (RobotNameBox?.Text ?? "").Trim();
+
+            if (MinLevelCombo?.SelectedItem is LogLevelOption option)
+                analyzer.SelectedMinLevel = option;
+
+            analyzer.FromDate = FromDatePicker?.SelectedDate;
+            analyzer.ToDate = ToDatePicker?.SelectedDate;
+            analyzer.SelectedTask = TasksGrid?.SelectedItem as ProdTask;
+        }
+
         private async void OnAnalyzeLogsFromOutputWindow(object sender, RoutedEventArgs e)
         {
             try
             {
-                var text = await _buildFeedback.GetOutputWindowTextAsync();
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    AppendChat("The Visual Studio Output window is empty.");
+                var analyzer = LogAnalyzer;
+                if (analyzer == null)
                     return;
-                }
 
-                AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-                await SendChatTextAsync(AnalyzeOutputWindowPrompt + "\n\n" + text);
+                if (await analyzer.AnalyzeFromOutputWindowAsync())
+                    AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -1989,285 +2041,100 @@ namespace RPAWriter2
             try
             {
                 ProdLogsPanel.Visibility = Visibility.Visible;
-                EnsureLogProviders();
-                RefreshProviderCombo();
-                if (_selectedLogProvider == null)
-                    ProdLogsStatusText.Text = "No log provider found. Place a provider DLL into the \"Log providers directory\" (Settings) and retry.";
+
+                // Discovery, the provider combo, the status text and the robot-name suggestions are
+                // model state; the bindings of ProdLogsPanel render them (rule 10: visibility is ours).
+                LogAnalyzer?.Prepare();
             }
             catch (Exception ex) { ShowError(ex); }
         }
 
-        private void EnsureLogProviders()
-        {
-            if (_logProviders != null) return;
-
-            var discovered = LogProviderLoader.Discover(ResolveLogProvidersDirectory());
-            if (discovered.Count > 0)
-            {
-                // Prefer external providers; fall back to the offline stub only when none are present.
-                _logProviders = discovered;
-                _selectedLogProvider = discovered[0];
-            }
-            else
-            {
-                var fallback = new List<IProdLogProvider> { new StubProdLogProvider() };
-                _logProviders = fallback;
-                _selectedLogProvider = fallback[0];
-            }
-        }
-
-        private string ResolveLogProvidersDirectory()
-        {
-            var configured = (_settings?.LogProvidersPath ?? "").Trim();
-            if (!string.IsNullOrWhiteSpace(configured))
-                return configured;
-            return AppDataPaths.Resolve("Providers");
-        }
-
-        private void RefreshProviderCombo()
-        {
-            var providers = _logProviders;
-            ProviderCombo.ItemsSource = providers;
-            ProviderCombo.SelectedItem = _selectedLogProvider;
-            ProviderCombo.Visibility = providers != null && providers.Count > 1
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-        }
-
-        private void OnProviderChanged(object sender, SelectionChangedEventArgs e)
-        {
-            var provider = ProviderCombo.SelectedItem as IProdLogProvider;
-            if (provider != null)
-                _selectedLogProvider = provider;
-        }
-
         private async void OnLoadProdTasks(object sender, RoutedEventArgs e)
         {
-            await LoadProdTasksAsync();
+            await LoadProdTasksFromModelAsync();
         }
 
         private void OnRobotNameKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter) return;
             e.Handled = true;
-            _ = LoadProdTasksAsync();
+            _ = LoadProdTasksFromModelAsync();
         }
 
-        private async Task LoadProdTasksAsync()
+        /// <summary>
+        /// Pushes the panel inputs into the model and lets it run the "load tasks" scenario
+        /// (validation, robot-name history, provider call and status texts all live there).
+        /// </summary>
+        private async Task LoadProdTasksFromModelAsync()
         {
+            var analyzer = LogAnalyzer;
+            if (analyzer == null)
+                return;
+
             try
             {
-                var robotName = (RobotNameBox?.Text ?? "").Trim();
-                if (string.IsNullOrWhiteSpace(robotName))
-                {
-                    ProdLogsStatusText.Text = "Enter a robot name (e.g. RPA-1212).";
-                    return;
-                }
-
-                AddRobotNameToHistory(robotName);
-
-                if (_selectedLogProvider == null)
-                {
-                    ProdLogsStatusText.Text = "No log provider available.";
-                    return;
-                }
-
-                ProdLogsStatusText.Text = "Loading tasks…";
-                LogsGrid.ItemsSource = null;
-                var tasks = await _selectedLogProvider.GetTasksAsync(robotName, BuildProdLogQuery());
-                TasksGrid.ItemsSource = tasks;
-                ProdLogsStatusText.Text = tasks.Count + " task(s) loaded. Select a task to see its logs.";
+                PushPanelInputsToModel(analyzer);
+                await analyzer.LoadTasksAsync();
             }
-            catch (Exception ex)
-            {
-                ProdLogsStatusText.Text = "Failed to load tasks: " + ex.Message;
-                ShowError(ex);
-            }
-        }
-
-        private void AddRobotNameToHistory(string name)
-        {
-            name = (name ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(name)) return;
-            if (string.Equals(name, RobotNameDefault, StringComparison.OrdinalIgnoreCase)) return;
-
-            _robotNameHistory.RemoveAll(s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase));
-            _robotNameHistory.Insert(0, name);
-            if (_robotNameHistory.Count > RobotNameHistoryMax)
-                _robotNameHistory.RemoveRange(RobotNameHistoryMax, _robotNameHistory.Count - RobotNameHistoryMax);
-
-            _settings.RobotNameHistory = new List<string>(_robotNameHistory);
-            SettingsStore.Save(_settings);
-            UpdateRobotNameBox();
-        }
-
-        private void LoadRobotNameHistory()
-        {
-            _robotNameHistory = (_settings.RobotNameHistory ?? new List<string>())
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            UpdateRobotNameBox();
-        }
-
-        private void UpdateRobotNameBox()
-        {
-            var last = _robotNameHistory.Count > 0 ? _robotNameHistory[0] : RobotNameDefault;
-            RobotNameBox.ItemsSource = _robotNameHistory.Skip(1).ToList();
-            RobotNameBox.Text = last;
+            catch (Exception ex) { ShowError(ex); }
         }
 
         private async void OnTaskSelected(object sender, SelectionChangedEventArgs e)
         {
-            await ReloadSelectedTaskLogsAsync();
+            await RefreshLogsFromModelAsync();
         }
 
         private async void OnMinLevelChanged(object sender, SelectionChangedEventArgs e)
         {
-            await ReloadSelectedTaskLogsAsync();
+            await RefreshLogsFromModelAsync();
         }
 
         private async void OnDateRangeChanged(object sender, SelectionChangedEventArgs e)
         {
+            // Visibility is layout state, so this guard stays in the view (rule 10); the business
+            // guard ("a robot name is typed and a provider is selected") lives in the model.
             if (ProdLogsPanel.Visibility != Visibility.Visible) return;
-            var robotName = (RobotNameBox?.Text ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(robotName)) return;
-            await LoadProdTasksAsync();
-        }
 
-        private async Task ReloadSelectedTaskLogsAsync()
-        {
+            var analyzer = LogAnalyzer;
+            if (analyzer == null) return;
+
+            PushPanelInputsToModel(analyzer);
+            if (!analyzer.CanLoadTasks) return;
+
             try
             {
-                var task = TasksGrid.SelectedItem as ProdTask;
-                if (task == null || _selectedLogProvider == null)
-                {
-                    LogsGrid.ItemsSource = null;
-                    return;
-                }
-
-                ProdLogsStatusText.Text = "Loading logs…";
-                var logs = await _selectedLogProvider.GetLogsAsync(task, BuildProdLogQuery());
-                LogsGrid.ItemsSource = logs;
-                ProdLogsStatusText.Text = logs.Count + " log entry/entries loaded.";
+                await analyzer.LoadTasksAsync();
             }
-            catch (Exception ex)
+            catch (Exception ex) { ShowError(ex); }
+        }
+
+        /// <summary>Pushes the selection/filter into the model and reloads the logs of the selected task.</summary>
+        private async Task RefreshLogsFromModelAsync()
+        {
+            var analyzer = LogAnalyzer;
+            if (analyzer == null)
+                return;
+
+            try
             {
-                ProdLogsStatusText.Text = "Failed to load logs: " + ex.Message;
-                ShowError(ex);
+                PushPanelInputsToModel(analyzer);
+                await analyzer.RefreshLogsAsync();
             }
-        }
-
-        private void InitializeMinLevelCombo()
-        {
-            MinLevelCombo.Items.Add(new ComboBoxItem { Content = "All", Tag = null });
-            foreach (LogLevel level in Enum.GetValues(typeof(LogLevel)))
-                MinLevelCombo.Items.Add(new ComboBoxItem { Content = level.ToString(), Tag = level });
-            MinLevelCombo.SelectedIndex = 0;
-        }
-
-        private ProdLogQuery BuildProdLogQuery()
-        {
-            var query = new ProdLogQuery();
-
-            if (MinLevelCombo.SelectedItem is ComboBoxItem item && item.Tag is LogLevel level)
-                query.MinLevel = level;
-
-            if (FromDatePicker.SelectedDate.HasValue)
-                query.FromUtc = DateTime.SpecifyKind(FromDatePicker.SelectedDate.Value.Date, DateTimeKind.Utc);
-
-            if (ToDatePicker.SelectedDate.HasValue)
-                query.ToUtc = DateTime.SpecifyKind(ToDatePicker.SelectedDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
-
-            return query;
+            catch (Exception ex) { ShowError(ex); }
         }
 
         private async void OnAnalyzeProdLogs(object sender, RoutedEventArgs e)
         {
             try
             {
-                var logs = LogsGrid.ItemsSource as IEnumerable<IProdLog>;
-                if (logs == null)
-                {
-                    ProdLogsStatusText.Text = "Load logs first.";
+                var analyzer = LogAnalyzer;
+                if (analyzer == null)
                     return;
-                }
 
-                var list = logs.ToList();
-                if (list.Count == 0)
-                {
-                    ProdLogsStatusText.Text = "No log entries to analyze.";
-                    return;
-                }
-
-                var entries = list.Select(MapToLogEntry).ToList();
-                var analysis = new LogAnalyzer().Analyze(entries);
-                var prompt = BuildProdLogsPrompt(analysis, list);
-                AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-                await SendChatTextAsync(prompt);
+                if (await analyzer.AnalyzeFromProdLogsAsync())
+                    AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
             }
             catch (Exception ex) { ShowError(ex); }
-        }
-
-        private static LogEntry MapToLogEntry(IProdLog log)
-        {
-            return new LogEntry
-            {
-                Timestamp = log.Timestamp,
-                Level = log.Level.ToString(),
-                Source = log.Source,
-                Message = log.Message,
-                RawLine = string.IsNullOrWhiteSpace(log.RawLine) ? log.Message : log.RawLine,
-                Parameters = log.Parameters?.ToList() ?? new List<LogParameter>()
-            };
-        }
-
-        private string BuildProdLogsPrompt(LogAnalysis analysis, IReadOnlyList<IProdLog> logs)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine(AnalyzeProdLogsPrompt.TrimEnd());
-            sb.AppendLine();
-            sb.AppendLine(analysis.Summary);
-            sb.AppendLine();
-
-            if (analysis.Errors.Count > 0)
-            {
-                sb.AppendLine("Errors:");
-                foreach (var entry in analysis.Errors.Take(50))
-                    sb.AppendLine("  [" + FormatTimestamp(entry.Timestamp) + "] " + (entry.Source ?? "") + ": " + (entry.Message ?? ""));
-                sb.AppendLine();
-            }
-
-            if (analysis.Warnings.Count > 0)
-            {
-                sb.AppendLine("Warnings:");
-                foreach (var entry in analysis.Warnings.Take(50))
-                    sb.AppendLine("  [" + FormatTimestamp(entry.Timestamp) + "] " + (entry.Source ?? "") + ": " + (entry.Message ?? ""));
-                sb.AppendLine();
-            }
-
-            sb.AppendLine("Full log:");
-            foreach (var log in logs.Take(200))
-                sb.AppendLine("  [" + FormatTimestamp(log.Timestamp) + "] [" + log.Level + "] " + (log.Source ?? "") + ": " + (log.Message ?? "") + FormatParameters(log.Parameters));
-
-            var text = sb.ToString();
-            if (text.Length > ProdLogMaxChars)
-                text = text.Substring(0, ProdLogMaxChars) + "\n... (truncated)";
-            return text;
-        }
-
-        private static string FormatTimestamp(DateTime? timestamp)
-        {
-            return timestamp?.ToString("yyyy-MM-dd HH:mm:ss") ?? "?";
-        }
-
-        private static string FormatParameters(IReadOnlyList<LogParameter> parameters)
-        {
-            if (parameters == null || parameters.Count == 0) return "";
-            var pairs = new List<string>();
-            foreach (var parameter in parameters)
-                pairs.Add((parameter.Key ?? "") + "=" + (parameter.Value ?? ""));
-            return "  parameters: " + string.Join(", ", pairs);
         }
 
         private void OnConvertMarkdownToDocx(object sender, RoutedEventArgs e)
@@ -3191,25 +3058,12 @@ namespace RPAWriter2
 
         private void EnqueuePending(string text, IReadOnlyList<ChatAttachment>? attachments)
         {
-            if (string.IsNullOrWhiteSpace(text) && (attachments == null || attachments.Count == 0))
-                return;
-
-            _pendingMessages.Add(new PendingChatMessage
-            {
-                Text = text ?? "",
-                Attachments = attachments ?? new List<ChatAttachment>()
-            });
+            _chatModel.Enqueue(text, attachments);
         }
 
-        private PendingChatMessage? DequeueNext()
+        private PendingMessage? DequeueNext()
         {
-            if (_pendingMessages.Count == 0) return null;
-
-            // Steer items jump the queue: pick the first one marked Steer.
-            var steer = _pendingMessages.FirstOrDefault(m => m.Delivery == PendingDelivery.Steer);
-            var next = steer ?? _pendingMessages[0];
-            _pendingMessages.Remove(next);
-            return next;
+            return _chatModel.DequeueNext();
         }
 
         /// <summary>Executes a single agent turn (one user message) to completion.</summary>
@@ -3271,7 +3125,7 @@ namespace RPAWriter2
             var history = BuildTranscript();
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
             if (string.IsNullOrEmpty(_currentConversation.Title))
-                _currentConversation.Title = BuildChatTitle(uiText);
+                _currentConversation.Title = ChatMessageMapper.BuildTitle(uiText);
 
             var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
@@ -3931,15 +3785,8 @@ namespace RPAWriter2
             _historySaveTimer.Tick += OnHistorySaveTick;
             this.Unloaded += OnWindowUnloaded;
 
-            try
-            {
-                ChatHistoryStore.Initialize();
-                RefreshHistoryList();
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Chat history unavailable: " + ex.Message);
-            }
+            if (!string.IsNullOrEmpty(_chatModel.LastError))
+                AppendExtensionError(_chatModel.LastError);
 
             RestoreUiState();
         }
@@ -3950,7 +3797,7 @@ namespace RPAWriter2
             _restoringUiState = true;
             try
             {
-                var state = UiStateStore.Load();
+                var state = _chatModel.LoadUiState();
 
                 _mode = state.AgentMode;
                 ModeToggle.SelectedValue = _mode == AgentMode.Act ? "Act"
@@ -3966,7 +3813,7 @@ namespace RPAWriter2
                 }
                 else
                 {
-                    var toOpen = ResolveConversationToOpen(state.LastConversationId);
+                    var toOpen = _chatModel.ResolveConversationToOpen(state.LastConversationId);
                     if (toOpen != null)
                         OpenConversation(toOpen.Id, markDirty: false);
                     else
@@ -3978,25 +3825,6 @@ namespace RPAWriter2
             {
                 _restoringUiState = false;
             }
-        }
-
-        private ChatConversation? ResolveConversationToOpen(string id)
-        {
-            if (!string.IsNullOrWhiteSpace(id))
-            {
-                try
-                {
-                    var stored = ChatHistoryStore.LoadConversation(id);
-                    if (stored != null)
-                        return stored;
-                }
-                catch
-                {
-                    // fall back to the most recent conversation below
-                }
-            }
-
-            return _conversations.FirstOrDefault();
         }
 
         private static string MainTabToHeader(MainTab tab)
@@ -4055,13 +3883,7 @@ namespace RPAWriter2
             if (_restoringUiState)
                 return;
 
-            UiStateStore.Save(new UiStateData
-            {
-                ChatViewMode = _chatViewMode,
-                LastConversationId = _currentConversation?.Id ?? "",
-                AgentMode = _mode,
-                ActiveTab = HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Header as string)
-            });
+            _chatModel.PersistUiState(HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Header as string));
         }
 
         private void OnWindowUnloaded(object sender, RoutedEventArgs e)
@@ -4085,140 +3907,65 @@ namespace RPAWriter2
             SaveHistoryNow();
         }
 
+        /// <summary>Flushes the transcript to the history store; the scenario lives in the model.</summary>
         private void SaveHistoryNow()
         {
-            if (_currentConversation == null || string.IsNullOrWhiteSpace(_currentConversation.Id))
-                return;
-
-            _currentConversation.Messages = _messages.Select(ToHistoryMessage).ToList();
-            if (string.IsNullOrEmpty(_currentConversation.Title))
-            {
-                var firstUser = _currentConversation.Messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User);
-                if (firstUser != null)
-                    _currentConversation.Title = BuildChatTitle(firstUser.Text);
-            }
-            _currentConversation.UpdatedAtUtc = DateTime.UtcNow;
-
-            try
-            {
-                ChatHistoryStore.SaveConversation(_currentConversation);
-                RefreshHistoryList();
-            }
-            catch
-            {
-                // History persistence is best-effort; never block or spam the chat on failure.
-            }
+            _chatModel.SaveHistoryNow();
         }
 
         private void StartNewChat(bool markDirty = true)
         {
             _chatCts?.Cancel();
-            _pendingMessages.Clear();
             ResetResume();
-            SaveHistoryNow();
 
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                _currentConversation = new ChatConversation
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    CreatedAtUtc = DateTime.UtcNow,
-                    UpdatedAtUtc = DateTime.UtcNow
-                };
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
+            // Saving the previous conversation, clearing the transcript and the queue is the
+            // model scenario; the host only resets its own agent and checkpoint state.
+            _chatModel.StartNewChat(markDirty);
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = null;
             _iterationNumber = 0;
 
-            RefreshPinnedMessage();
             ShowConversationView();
-            if (markDirty)
-                ScheduleHistorySave();
         }
         private void OpenConversation(string id, bool markDirty = true)
         {
             if (string.IsNullOrWhiteSpace(id))
                 return;
-            if (id == _currentConversation?.Id)
+            if (string.Equals(id, _chatModel.ActiveConversationId, StringComparison.Ordinal))
                 return;
 
             _chatCts?.Cancel();
-            _pendingMessages.Clear();
             ResetResume();
-            SaveHistoryNow();
 
-            ChatConversation? stored;
-            try
+            if (!_chatModel.OpenConversation(id, markDirty))
             {
-                stored = ChatHistoryStore.LoadConversation(id);
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to open chat: " + ex.Message);
+                if (!string.IsNullOrEmpty(_chatModel.LastError))
+                    AppendExtensionError(_chatModel.LastError);
                 return;
             }
-            if (stored == null)
-                return;
 
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                foreach (var m in stored.Messages)
-                {
-                    _messages.Add(FromHistoryMessage(m));
-                }
-                _currentConversation = stored;
-                RehydrateCheckpoints();
-                RefreshPinnedMessage();
-                ChatMessages.ScrollToEnd();
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
+            // Checkpoint indicators and scrolling are view/agent concerns, not model state.
+            RehydrateCheckpoints();
+            ChatMessages.ScrollToEnd();
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = GetLastCheckpointHash();
             _iterationNumber = 0;
 
-            if (markDirty)
-                ScheduleHistorySave();
             PersistUiState();
-        }
-
-        private void RefreshHistoryList()
-        {
-            try
-            {
-                _conversations.Clear();
-                foreach (var conversation in ChatHistoryStore.ListConversations())
-                    _conversations.Add(conversation);
-            }
-            catch
-            {
-                // best-effort refresh of the history list
-            }
         }
 
         private void ShowConversationView()
         {
-            _chatViewMode = ChatViewMode.Conversation;
+            _chatModel.ShowConversationView();
             ApplyChatViewMode();
             PersistUiState();
         }
 
         private void ShowHistoryView()
         {
-            _chatViewMode = ChatViewMode.History;
-            RefreshHistoryList();
+            _chatModel.ShowHistoryView();
             ApplyChatViewMode();
             PersistUiState();
         }
@@ -4267,20 +4014,16 @@ namespace RPAWriter2
             if (result != MessageDialogCommand.Yes)
                 return;
 
-            try
+            var deletedActive = string.Equals(conversation.Id, _chatModel.ActiveConversationId, StringComparison.Ordinal);
+
+            if (!_chatModel.DeleteConversation(conversation.Id))
             {
-                ChatHistoryStore.DeleteConversation(conversation.Id);
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to delete chat: " + ex.Message);
+                AppendExtensionError(_chatModel.LastError);
                 return;
             }
 
-            if (conversation.Id == _currentConversation?.Id)
-                ResetCurrentConversation();
-
-            RefreshHistoryList();
+            if (deletedActive)
+                ResetAgentStateAfterConversationRemoved();
         }
 
         private void OnClearHistory(object sender, RoutedEventArgs e)
@@ -4292,48 +4035,28 @@ namespace RPAWriter2
             if (result != MessageDialogCommand.Yes)
                 return;
 
-            try
+            if (!_chatModel.ClearHistory())
             {
-                ChatHistoryStore.DeleteAllConversations();
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to clear chat history: " + ex.Message);
+                AppendExtensionError(_chatModel.LastError);
                 return;
             }
 
-            ResetCurrentConversation();
-            RefreshHistoryList();
+            ResetAgentStateAfterConversationRemoved();
         }
 
-        /// <summary>Resets the in-memory conversation to a fresh empty one without persisting it.</summary>
-        private void ResetCurrentConversation()
+        /// <summary>
+        /// Drops the host-side state that belonged to the removed conversation (resume snapshot,
+        /// checkpoint baseline, save timer) and persists the new session state.
+        /// </summary>
+        private void ResetAgentStateAfterConversationRemoved()
         {
             _historySaveTimer.Stop();
-            _pendingMessages.Clear();
             ResetResume();
-
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                _currentConversation = new ChatConversation
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    CreatedAtUtc = DateTime.UtcNow,
-                    UpdatedAtUtc = DateTime.UtcNow
-                };
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = null;
             _iterationNumber = 0;
 
-            RefreshPinnedMessage();
             PersistUiState();
         }
 
@@ -4356,8 +4079,7 @@ namespace RPAWriter2
 
         private void RefreshPinnedMessage()
         {
-            _pinnedMessage = _messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User)
-                          ?? _messages.FirstOrDefault();
+            // The pinned message itself is computed by the model; the host only renders it.
             PinnedHeaderPanel.DataContext = _pinnedMessage;
             _pinnedExpanded = false;
             UpdatePinnedExpandState();
@@ -4368,86 +4090,6 @@ namespace RPAWriter2
         private void OnNewChat(object sender, RoutedEventArgs e)
         {
             StartNewChat();
-        }
-
-        private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)
-        {
-            if (message.Kind == ChatMessageKind.Checkpoint && message.Payload is CheckpointPayload checkpoint)
-            {
-                // Persist only the commit identifier; the rest is recomputed on the fly
-                // from the shadow git repository when the conversation is reloaded.
-                return new ChatHistoryMessage
-                {
-                    Kind = message.Kind,
-                    Text = "",
-                    CheckpointHash = checkpoint.CommitHash ?? "",
-                    Reasoning = message.Reasoning,
-                    Mode = message.Mode
-                };
-            }
-
-            if (message.Payload is QuestionPayload question)
-            {
-                return new ChatHistoryMessage
-                {
-                    Kind = message.Kind,
-                    Text = question.Question ?? "",
-                    ToolName = question.Answer ?? "",
-                    Options = question.Options?.ToList() ?? new List<string>(),
-                    Reasoning = message.Reasoning,
-                    Mode = message.Mode
-                };
-            }
-
-            var tool = message.Payload as ToolCallPayload;
-            return new ChatHistoryMessage
-            {
-                Kind = message.Kind,
-                Text = tool != null ? tool.Result : message.Text,
-                ToolName = tool?.ToolName ?? "",
-                Reasoning = message.Reasoning,
-                Mode = message.Mode
-            };
-        }
-
-        private static ChatMessage FromHistoryMessage(ChatHistoryMessage m)
-        {
-            if (m.Kind == ChatMessageKind.Checkpoint)
-            {
-                return new ChatMessage
-                {
-                    Kind = m.Kind,
-                    Reasoning = m.Reasoning,
-                    Mode = m.Mode,
-                    Payload = new CheckpointPayload { CommitHash = m.CheckpointHash ?? "" }
-                };
-            }
-
-            if (m.Kind == ChatMessageKind.Question)
-            {
-                return new ChatMessage
-                {
-                    Kind = m.Kind,
-                    Payload = new QuestionPayload
-                    {
-                        Question = m.Text ?? "",
-                        Answer = m.ToolName ?? "",
-                        IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal),
-                        Options = m.Options ?? new List<string>()
-                    }
-                };
-            }
-
-            if (m.Kind == ChatMessageKind.ToolCall || m.Kind == ChatMessageKind.ToolBlocked)
-            {
-                return new ChatMessage
-                {
-                    Kind = m.Kind,
-                    Payload = new ToolCallPayload { ToolName = m.ToolName ?? "", Result = m.Text ?? "", Blocked = m.Kind == ChatMessageKind.ToolBlocked }
-                };
-            }
-
-            return new ChatMessage { Kind = m.Kind, Text = m.Text, Reasoning = m.Reasoning, Mode = m.Mode };
         }
 
         /// <summary>
@@ -4535,15 +4177,6 @@ namespace RPAWriter2
                 }
             }
             return null;
-        }
-
-        private static string BuildChatTitle(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                return "New chat";
-            var singleLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            const int max = 60;
-            return singleLine.Length <= max ? singleLine : singleLine.Substring(0, max) + "…";
         }
 
         private void OnModeChanged(object sender, RoutedEventArgs e)
@@ -4819,8 +4452,7 @@ namespace RPAWriter2
             _settings.LogFilePath = LogFilePathBox.Text.Trim();
             _settings.ChatLogFilePath = ChatLogFilePathBox.Text.Trim();
             _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
-            _logProviders = null;
-            _selectedLogProvider = null;
+            _chatModel.LogAnalyzer?.InvalidateProviders();
             _settings.TimeoutSeconds = ParsePositiveInt(TimeoutSecondsBox?.Text, 300);
             _settings.RetryTimeoutMinutes = ParsePositiveInt(RetryTimeoutMinutesBox?.Text, 30);
             _settings.RetryBaseDelaySeconds = ParsePositiveInt(RetryBaseDelaySecondsBox?.Text, 1);
@@ -5115,7 +4747,6 @@ namespace RPAWriter2
         {
             HideOptionsWarning();
         }
-
 
         private void OnOpenLog(object sender, RoutedEventArgs e)
         {

@@ -1,6 +1,5 @@
-using RPAWriter.Core.Models;
 
-namespace RPAWriter2
+namespace RPAWriter.Core.Models
 {
     /// <summary>
     /// A pending chat attachment, shown as a removable chip above the input box.

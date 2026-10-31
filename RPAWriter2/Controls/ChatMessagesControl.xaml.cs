@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using RPAWriter2;
 using RPAWriter2.Controls.Chat;
+using RPAWriter.Core.Models;
 
 namespace RPAWriter2.Controls
 {

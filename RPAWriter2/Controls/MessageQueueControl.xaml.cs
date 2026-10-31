@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
+using RPAWriter.Core.Models;
 
 namespace RPAWriter2.Controls
 {
@@ -14,7 +15,7 @@ namespace RPAWriter2.Controls
     /// </summary>
     public partial class MessageQueueControl : UserControl
     {
-        private ObservableCollection<PendingChatMessage> _messages = new ObservableCollection<PendingChatMessage>();
+        private ObservableCollection<PendingMessage> _messages = new ObservableCollection<PendingMessage>();
 
         public MessageQueueControl()
         {
@@ -23,20 +24,20 @@ namespace RPAWriter2.Controls
         }
 
         /// <summary>The shared queue collection owned by the host.</summary>
-        public ObservableCollection<PendingChatMessage> Messages
+        public ObservableCollection<PendingMessage> Messages
         {
             get => _messages;
             set
             {
                 if (!ReferenceEquals(_messages, value))
-                    AttachCollection(value ?? new ObservableCollection<PendingChatMessage>());
+                    AttachCollection(value ?? new ObservableCollection<PendingMessage>());
             }
         }
 
         /// <summary>Raised after any queue mutation (for host logging; optional).</summary>
         public event EventHandler? Changed;
 
-        private void AttachCollection(ObservableCollection<PendingChatMessage> collection)
+        private void AttachCollection(ObservableCollection<PendingMessage> collection)
         {
             _messages.CollectionChanged -= OnCollectionChanged;
 
@@ -64,8 +65,8 @@ namespace RPAWriter2.Controls
             Visibility = _messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private static PendingChatMessage? ItemOf(object sender) =>
-            (sender as FrameworkElement)?.DataContext as PendingChatMessage;
+        private static PendingMessage? ItemOf(object sender) =>
+            (sender as FrameworkElement)?.DataContext as PendingMessage;
 
         private void OnMoveUp(object sender, RoutedEventArgs e)
         {

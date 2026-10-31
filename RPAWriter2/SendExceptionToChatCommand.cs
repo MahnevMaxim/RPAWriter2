@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel.Design;
 using System.Threading.Tasks;
 using EnvDTE80;
@@ -73,7 +73,7 @@ namespace RPAWriter2
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(this.package.DisposalToken);
 
             var snapshot = DebuggerExceptionWatcher.Instance?.Pending;
-            var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+            var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
             var control = window?.Control;
 
             if (snapshot == null)
@@ -94,7 +94,7 @@ namespace RPAWriter2
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(this.package.DisposalToken);
             try
             {
-                var window = await this.package.ShowToolWindowAsync(typeof(ToolWindow1), 0, true, this.package.DisposalToken) as ToolWindow1;
+                var window = await this.package.ShowToolWindowAsync(typeof(MainWindowPane), 0, true, this.package.DisposalToken) as MainWindowPane;
                 window?.Control?.AppendSystemMessage("⚠ Failed to send the exception to RPA Writer: " + ex.Message);
             }
             catch

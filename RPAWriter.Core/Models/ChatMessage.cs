@@ -1,11 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
 
-namespace RPAWriter2
+namespace RPAWriter.Core.Models
 {
     /// <summary>
     /// A single chat entry: a <see cref="Kind"/> (what the entry is), a typed
