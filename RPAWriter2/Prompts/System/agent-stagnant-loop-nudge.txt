@@ -1,0 +1,1 @@
+You have repeated the same tool call with the same arguments several times in a row and are about to loop. Stop and choose a different action: re-read the previous results, change the arguments, or finish with the final answer. Do not call the same tool with the same arguments again.

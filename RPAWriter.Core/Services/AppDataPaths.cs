@@ -74,6 +74,45 @@ namespace RPAWriter.Core.Services
         /// <summary>Builds a path under the versioned temp root.</summary>
         public static string ResolveTemp(params string[] segments) => CombinePath(TempScopedRoot, segments);
 
+        /// <summary>
+        /// Id of the currently open workspace, or empty when no solution is open. Set by the host
+        /// via <see cref="SetWorkspaceScope"/>; storage scopes resolve their files through it.
+        /// </summary>
+        public static string WorkspaceId { get; private set; } = "";
+
+        /// <summary>Root folder holding every per-workspace folder (<c>...\workspaces</c>).</summary>
+        public static string WorkspacesRoot => Path.Combine(ScopedRoot, "workspaces");
+
+        /// <summary>Folder of the current workspace, or empty when no workspace is active.</summary>
+        public static string WorkspaceScopedRoot =>
+            string.IsNullOrWhiteSpace(WorkspaceId) ? "" : Path.Combine(WorkspacesRoot, WorkspaceId);
+
+        /// <summary>Sets the current workspace scope; an empty or whitespace id clears it.</summary>
+        public static void SetWorkspaceScope(string workspaceId)
+        {
+            WorkspaceId = string.IsNullOrWhiteSpace(workspaceId) ? "" : workspaceId;
+        }
+
+        /// <summary>Builds a path under the workspace folder of the given id.</summary>
+        public static string ResolveWorkspace(string workspaceId, params string[] segments) =>
+            CombinePath(Path.Combine(WorkspacesRoot, workspaceId), segments);
+
+        /// <summary>
+        /// Builds a path under the current workspace folder; falls back to the versioned root when
+        /// no workspace is active (so global stores keep working without a solution open).
+        /// </summary>
+        public static string ResolveWorkspaceCurrent(params string[] segments) =>
+            string.IsNullOrWhiteSpace(WorkspaceId) ? CombinePath(ScopedRoot, segments) : CombinePath(WorkspaceScopedRoot, segments);
+
+        /// <summary>Creates the current workspace directory; a no-op when no workspace is active.</summary>
+        public static void EnsureWorkspaceDirectory()
+        {
+            if (string.IsNullOrWhiteSpace(WorkspaceId))
+                return;
+
+            Directory.CreateDirectory(WorkspaceScopedRoot);
+        }
+
         private static string CombinePath(string root, string[] segments)
         {
             var path = root;

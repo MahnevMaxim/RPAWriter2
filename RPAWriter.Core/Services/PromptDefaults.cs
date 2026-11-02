@@ -168,6 +168,11 @@ namespace RPAWriter.Core.Services
             "To answer the user: {\"action\":\"final\",\"text\":\"...\"}. " +
             "No markdown fences, no XML/DSML tags, no text before or after the JSON.";
 
+        public const string StagnantLoopNudge =
+            "You have repeated the same tool call with the same arguments several times in a row and are about to loop. " +
+            "Stop and choose a different action: re-read the previous results, change the arguments, or finish with the final answer. " +
+            "Do not call the same tool with the same arguments again.";
+
         public const string AnalysisPrompt =
             "Отладчик Visual Studio остановился на исключении. " +
             "Проанализируй его, определи наиболее вероятную причину, " +

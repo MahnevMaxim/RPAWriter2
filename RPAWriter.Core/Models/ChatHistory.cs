@@ -24,8 +24,12 @@ namespace RPAWriter.Core.Models
 
     /// <summary>
     /// A saved chat conversation with its messages. Raises change notifications because
-    /// the history list binds to <see cref="IsActive"/>: exactly one conversation is active
-    /// (the one currently shown in the conversation view) and it carries the green indicator.
+    /// the history list binds to <see cref="IsActive"/> — the green "active chat" indicator.
+    /// <para>
+    /// <see cref="IsActive"/> is a projection of <c>ChatModel.ActiveChatConversation</c> (the single
+    /// source of "which chat is active"): at most one conversation is active, none while no chat is
+    /// open. It is written only by <c>ChatModel.UpdateActiveFlags</c>, never persisted, and the view
+    /// must not set it.</para>
     /// </summary>
     public class ChatConversation : INotifyPropertyChanged
     {
@@ -83,8 +87,11 @@ namespace RPAWriter.Core.Models
         public List<ChatHistoryMessage> Messages { get; set; } = new List<ChatHistoryMessage>();
 
         /// <summary>
-        /// True for the conversation currently shown in the conversation view; drives the
-        /// small green indicator on the history card. Not persisted.
+        /// Derived display flag: <c>true</c> while this conversation is the model's
+        /// <c>ChatModel.ActiveChatConversation</c>. It mirrors that property only —
+        /// it is not a second source of activity, is never persisted, and the view must not set it
+        /// (if it disagrees with the model it is stale by definition). Written only by
+        /// <c>ChatModel.UpdateActiveFlags</c>; drives the small green indicator on the history card.
         /// </summary>
         public bool IsActive
         {

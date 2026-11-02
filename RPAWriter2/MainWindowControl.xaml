@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:core="clr-namespace:RPAWriter.Core.Services;assembly=RPAWriter.Core"
+             xmlns:corem="clr-namespace:RPAWriter.Core.Models;assembly=RPAWriter.Core"
              xmlns:conv="clr-namespace:RPAWriter2.Converters"
              xmlns:controls="clr-namespace:RPAWriter2.Controls"
               xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat"
@@ -54,6 +55,11 @@
         <conv:OptionEqualsAnswerConverter x:Key="OptionEqualsAnswerConverter"/>
         <conv:SkipFirstConverter x:Key="SkipFirst"/>
         <conv:CountToVisibilityConverter x:Key="MultiProviderVisibility"/>
+        <conv:AgentModeToToggleValueConverter x:Key="ModeToToggle"/>
+        <conv:EnumMatchConverter x:Key="PhaseStreamingVisibility" Match="Streaming"
+                                 WhenMatch="Visible" WhenDifferent="Collapsed"/>
+        <conv:EnumMatchConverter x:Key="PhaseNotStreaming" Match="Streaming"
+                                 WhenMatch="False" WhenDifferent="True"/>
         <chat:ChatMessageTemplateSelector x:Key="ChatMessageTemplateSelector"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
@@ -592,7 +598,8 @@
                                                   SendToChatRequested="OnNotificationSendToChat"/>
                     <WrapPanel Margin="0,5,0,6">
                         <Button Content="New chat" Click="OnNewChat" Padding="8,2" Margin="0,0,8,4"/>
-                        <Button Content="History" Click="OnShowHistory" Padding="8,2" Margin="0,0,8,4"/>
+                        <Button Content="History" Click="OnShowHistory" Padding="8,2" Margin="0,0,8,4"
+                                ToolTip="Browse saved chats (keeps the current chat active)"/>
                         <Button Content="Commit" Click="OnCommit" Padding="8,2" Margin="0,0,8,4"/>
                         <Button Content="Deploy" Click="OnDeploy" Padding="8,2" Margin="0,0,8,4"/>
                         <Button Content="Analyze logs" Click="OnAnalyzeLogs" Padding="8,2" Margin="0,0,8,4"/>
@@ -713,7 +720,7 @@
                             </Button>
                             <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
                                     VerticalAlignment="Top"
-                                    ToolTip="Close chat (show history)" Click="OnCloseChat">
+                                    ToolTip="Close chat (no active chat)" Click="OnCloseChat">
                                 <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
                             </Button>
                         </Grid>
@@ -787,13 +794,15 @@
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            Margin="0,0,0,8" Click="OnCancelSend" Visibility="Collapsed"/>
+                            Margin="0,0,0,8" Click="OnCancelSend"
+                            Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}"/>
                     <Button x:Name="ResumeButton" Grid.Row="1" Content="Resume task" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            Margin="0,0,0,8" Click="OnResumeTask" Visibility="Collapsed"/>
+                            Margin="0,0,0,8" Click="OnResumeTask"
+                            Visibility="{Binding Chat.CanResume, Converter={StaticResource BoolToVis}}"/>
                     <Grid Grid.Row="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -829,6 +838,21 @@
                                      AcceptsReturn="True" TextWrapping="Wrap" FontSize="17"
                                      VerticalScrollBarVisibility="Auto"
                                      PreviewKeyDown="OnInputKeyDown">
+                                <TextBox.Style>
+                                    <!-- The border shows the mode. It follows Chat.Mode directly: one
+                                         source of truth, no code-behind brush assignment. -->
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                        <Setter Property="BorderBrush" Value="{StaticResource Mode.PlanBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Act}">
+                                                <Setter Property="BorderBrush" Value="{StaticResource Mode.ActBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Help}">
+                                                <Setter Property="BorderBrush" Value="{StaticResource Mode.HelpBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
                                 <TextBox.Template>
                                     <ControlTemplate TargetType="TextBox">
                                         <!-- Border always follows BorderBrush (the mode color) instead of
@@ -893,8 +917,11 @@
                     </Grid>
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
+                        <!-- Two-way: the toggle shows Chat.Mode and writes it back; the handler only
+                             records the switch and persists the session. -->
                         <controls:SegmentedToggle x:Name="ModeToggle" VerticalAlignment="Center"
-                                                  SelectedValue="Plan" ValueChanged="OnModeChanged">
+                                                  SelectedValue="{Binding Chat.Mode, Converter={StaticResource ModeToToggle}, Mode=TwoWay}"
+                                                  ValueChanged="OnModeChanged">
                             <controls:SegmentedToggle.Items>
                                 <controls:SegmentedToggleItem Label="Plan" Value="Plan" Accent="{StaticResource Mode.PlanBrush}"/>
                                 <controls:SegmentedToggleItem Label="Act" Value="Act" Accent="{StaticResource Mode.ActBrush}"/>
@@ -913,9 +940,11 @@
                         <Button x:Name="DocsButton" Content="Docs" Click="OnDocsClick"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Open the documentation"/>
-                        <Button x:Name="DoItButton" Content="Do it!!!" Click="OnDoItClick"
+                        <Button x:Name="DoItButton" Content="Do it!!!"
+                                Command="{Binding Cmd}" CommandParameter="DoItCommand"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
-                                ToolTip="Send 'Do it!!!' to the agent"/>
+                                IsEnabled="{Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}"
+                                ToolTip="Send 'Do it!!!' to the agent and switch it to Act mode"/>
                     </StackPanel>
 
                     <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="4"
@@ -1015,7 +1044,9 @@
                                         <Button HorizontalContentAlignment="Stretch" Click="OnHistoryCardClick" Padding="10,8,32,8">
                                             <StackPanel>
                                                 <StackPanel Orientation="Horizontal">
-                                                    <!-- Green dot = the conversation currently shown in the conversation view (ChatConversation.IsActive, set by the model). -->
+                                                    <!-- Green dot = the single activity indicator of the chat: a display projection of
+                                                         ChatModel.ActiveChatConversation (ChatConversation.IsActive). No other element or
+                                                         field in the view tracks which chat is active. -->
                                                     <Ellipse Width="8" Height="8" Fill="#7AC88F" Margin="0,0,7,0" VerticalAlignment="Center"
                                                              ToolTip="Active chat"
                                                              Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"/>
@@ -1191,25 +1222,26 @@
             </Grid>
         </TabItem>
 
-        <TabItem Header="Spec">
+        <TabItem x:Name="SpecTab" Header="Spec">
             <DockPanel>
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Button Content="Import spec" Click="OnImportSpec" Margin="0,5,8,0"/>
-                    <Button Content="Generate algorithm" Click="OnGenerateAlgorithm" Margin="0,5,8,0"/>
-                    <Button Content="Generate robot" Click="OnGenerateRobot" Margin="0,5,8,0"/>
-                    <Button Content="Find similar" Click="OnFindSimilar" Margin="0,5,8,0"/>
-                    <Button Content="Robot security audit" Click="OnRobotSecurityAudit" Margin="0,5,8,0"/>
-                    <Button Content="Convert md to docx" Click="OnConvertMarkdownToDocx" Margin="0,5,8,0"/>
-                    <Button Content="Clear" Click="OnClearSpec" Margin="0,5,8,0"/>
+                    <Button Content="Import spec" Command="{Binding Cmd}" CommandParameter="ImportSpecCommand" Margin="0,5,8,0"/>
+                    <Button Content="Generate algorithm" Command="{Binding Cmd}" CommandParameter="GenerateAlgorithmCommand" Margin="0,5,8,0"/>
+                    <Button Content="Generate robot" Command="{Binding Cmd}" CommandParameter="GenerateRobotCommand" Margin="0,5,8,0"/>
+                    <Button Content="Find similar" Command="{Binding Cmd}" CommandParameter="FindSimilarCommand" Margin="0,5,8,0"/>
+                    <Button Content="Robot security audit" Command="{Binding Cmd}" CommandParameter="SecurityAuditCommand" Margin="0,5,8,0"/>
+                    <Button Content="Convert md to docx" Command="{Binding Cmd}" CommandParameter="ConvertMarkdownToDocxCommand" Margin="0,5,8,0"/>
+                    <Button Content="Clear" Command="{Binding Cmd}" CommandParameter="ClearSpecCommand" Margin="0,5,8,0"/>
                 </WrapPanel>
                 <controls:NotificationBanner x:Name="NoticeBar" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
                                               CloseRequested="OnNoticeClose"
                                               SendToChatRequested="OnNotificationSendToChat"/>
                 <Border x:Name="ImportProgressPanel" DockPanel.Dock="Top" Background="{StaticResource Dark.Panel}"
                         BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
-                        Padding="10,6" Margin="0,0,0,8" Visibility="Collapsed">
+                        Padding="10,6" Margin="0,0,0,8" Visibility="{Binding Spec.IsImporting, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <TextBlock x:Name="ImportStatusText" Foreground="{StaticResource Dark.Text}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="ImportStatusText" Foreground="{StaticResource Dark.Text}" TextWrapping="Wrap"
+                                   Text="{Binding Spec.ImportStatus, Mode=OneWay}"/>
                         <ProgressBar x:Name="ImportProgress" Height="6" Margin="0,6,0,0" IsIndeterminate="True"
                                      Foreground="{StaticResource Dark.Accent}"/>
                     </StackPanel>
@@ -1222,7 +1254,7 @@
                     <Button x:Name="CopySpecAllButton" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                             Margin="0,0,0,4"
                             Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                            ToolTip="Copy all" Click="OnCopySpecOutput" Visibility="Collapsed">
+                            ToolTip="Copy all" Click="OnCopySpecOutput" Visibility="{Binding Spec.HasOutput, Converter={StaticResource BoolToVis}}">
                         <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
                               Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
                     </Button>
@@ -1240,14 +1272,14 @@
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <ComboBox x:Name="KbModeCombo" SelectedIndex="1" VerticalAlignment="Center" Margin="0,5,8,0">
+                    <ComboBox x:Name="KbModeCombo" SelectedIndex="{Binding KnowledgeBase.ImportModeIndex, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,5,8,0">
                         <ComboBoxItem Content="Override (start over)"/>
                         <ComboBoxItem Content="Continue (resume)"/>
                     </ComboBox>
-                    <Button x:Name="KbImportButton" Content="Import from robots" Click="OnFormKnowledgeBase" Margin="0,5,8,0"/>
-                    <Button x:Name="KbPauseButton" Content="Pause" Click="OnPauseKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
-                    <Button x:Name="KbStopButton" Content="Stop" Click="OnStopKnowledgeBaseImport" Margin="0,5,8,0" IsEnabled="False"/>
-                    <Button Content="Refresh" Click="OnRefreshKnowledgeBase" Margin="0,5,8,0"/>
+                    <Button x:Name="KbImportButton" Content="Import from robots" Command="{Binding Cmd}" CommandParameter="ImportFromRobotsCommand" IsEnabled="{Binding KnowledgeBase.CanImport, Mode=OneWay}" Margin="0,5,8,0"/>
+                    <Button x:Name="KbPauseButton" Content="{Binding KnowledgeBase.PauseButtonText, Mode=OneWay}" Command="{Binding Cmd}" CommandParameter="PauseCommand" IsEnabled="{Binding KnowledgeBase.IsImporting, Mode=OneWay}" Margin="0,5,8,0"/>
+                    <Button x:Name="KbStopButton" Content="Stop" Command="{Binding Cmd}" CommandParameter="StopCommand" IsEnabled="{Binding KnowledgeBase.IsImporting, Mode=OneWay}" Margin="0,5,8,0"/>
+                    <Button Content="Refresh" Command="{Binding Cmd}" CommandParameter="RefreshCommand" Margin="0,5,8,0"/>
                 </WrapPanel>
 
                 <Grid Grid.Row="1" Margin="0,0,0,4">
@@ -1260,10 +1292,11 @@
                              Height="80" MaxLines="3"
                              AcceptsReturn="True" TextWrapping="Wrap"
                              Foreground="#C8C8C8"
+                             Text="{Binding KnowledgeBase.StatusText, Mode=OneWay}"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                     <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
-                                 Minimum="0" Maximum="100" Value="0"
-                                 Foreground="{StaticResource Dark.Accent}" Visibility="Collapsed"/>
+                                 Minimum="0" Maximum="100" Value="{Binding KnowledgeBase.Progress, Mode=OneWay}"
+                                 Foreground="{StaticResource Dark.Accent}" Visibility="{Binding KnowledgeBase.IsImporting, Converter={StaticResource BoolToVis}}"/>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
                         <ProgressBar x:Name="ContextFillBar" Width="120" Height="12"
                                      Minimum="0" Maximum="100" Value="0"
@@ -1280,11 +1313,12 @@
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
                         <TextBlock Text="Messages:" VerticalAlignment="Center" Foreground="#C8C8C8"/>
-                        <CheckBox x:Name="KbAutoScrollCheckBox" Content="Auto-scroll" IsChecked="True"
+                        <CheckBox x:Name="KbAutoScrollCheckBox" Content="Auto-scroll" IsChecked="{Binding KnowledgeBase.AutoScroll, Mode=TwoWay}"
                                   VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#C8C8C8"/>
                     </StackPanel>
                     <TextBox Grid.Row="1" x:Name="KbMessagesBox" IsReadOnly="True"
                              AcceptsReturn="True" TextWrapping="Wrap"
+                             Text="{Binding KnowledgeBase.MessagesText, Mode=OneWay}"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                 </Grid>
 
@@ -1302,7 +1336,10 @@
                                               CloseRequested="OnSettingsToastClose"
                                               SendToChatRequested="OnNotificationSendToChat"/>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,4,8,4">
-                    <Button Content="Save settings" Margin="0,5,8,0" Click="OnSaveSettings"/>
+                    <Button Content="Save settings" Margin="0,5,8,0" Command="{Binding Cmd}" CommandParameter="SaveSettingsCommand"/>
+                    <TextBlock x:Name="WorkspaceIndicatorText" Text="No workspace open" VerticalAlignment="Center" Margin="12,5,8,0" Foreground="{StaticResource Dark.Text}"/>
+                    <Button x:Name="ResetWorkspaceButton" Content="Reset workspace" Margin="0,5,8,0" Click="OnResetWorkspace"
+                            ToolTip="Clear workspace-scoped settings, chat history and UI state"/>
                 </StackPanel>
                 <TabControl x:Name="SettingsSubTabs" Grid.Row="2" Margin="8">
                     <TabItem Header="API">
@@ -1339,60 +1376,63 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="BaseUrlBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="BaseUrlBox" Margin="0,0,0,4" Text="{Binding Settings.BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="API key" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="ApiKeyBox" Margin="0,0,0,4"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Model" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="ModelBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="ModelBox" Margin="0,0,0,4" Text="{Binding Settings.Model, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Temperature" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,4">
                                     <Slider x:Name="TemperatureSlider" Width="200" Minimum="0" Maximum="1"
                                             TickFrequency="0.1" IsSnapToTickEnabled="True"
                                             SmallChange="0.1" LargeChange="0.2"
-                                            ValueChanged="OnTemperatureChanged" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="TemperatureValueText" Text="0.2" VerticalAlignment="Center"
+                                            Value="{Binding Settings.Temperature, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TemperatureValueText" Text="{Binding Settings.TemperatureText}" VerticalAlignment="Center"
                                                Margin="10,0,0,0" Width="40" Foreground="{StaticResource Dark.Text}"/>
                                 </StackPanel>
 
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Context window (tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="ContextWindowBox" Margin="0,0,0,4" Text="{Binding Settings.ContextWindowSize, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="5" Grid.Column="0" Text="Compact threshold (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="5" Grid.Column="1" x:Name="CompactThresholdBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="5" Grid.Column="1" x:Name="CompactThresholdBox" Margin="0,0,0,4" Text="{Binding Settings.CompactThreshold, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Reserve fraction (0..1)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="6" Grid.Column="1" x:Name="ReserveFractionBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="6" Grid.Column="1" x:Name="ReserveFractionBox" Margin="0,0,0,4" Text="{Binding Settings.ReserveFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="7" Grid.Column="0" Text="Keep recent messages" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="7" Grid.Column="1" x:Name="KeepRecentBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="7" Grid.Column="1" x:Name="KeepRecentBox" Margin="0,0,0,4" Text="{Binding Settings.KeepRecentMessages, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="8" Grid.Column="0" Text="Tool result max chars" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="8" Grid.Column="1" x:Name="ToolResultMaxCharsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="8" Grid.Column="1" x:Name="ToolResultMaxCharsBox" Margin="0,0,0,4" Text="{Binding Settings.ToolResultMaxChars, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="9" Grid.Column="0" Text="Max agent iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="9" Grid.Column="1" x:Name="MaxIterationsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="9" Grid.Column="1" x:Name="MaxIterationsBox" Margin="0,0,0,4" Text="{Binding Settings.MaxIterations, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCompactCheckBox"
+                                <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCompactCheckBox" IsChecked="{Binding Settings.AutoCompact, Mode=TwoWay}"
                                           Content="Auto-compact (summarize)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                                <CheckBox Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox"
+                                <CheckBox Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseToolRoleCheckBox" IsChecked="{Binding Settings.UseToolRole, Mode=TwoWay}"
                                           Content="Use 'tool' role for tool results" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
                                 <TextBlock Grid.Row="12" Grid.Column="0" Text="Tool calling" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="12" Grid.Column="1" x:Name="ToolCallingModeCombo" SelectedIndex="0"
+                                <ComboBox Grid.Row="12" Grid.Column="1" x:Name="ToolCallingModeCombo" SelectedIndex="{Binding Settings.ToolCallingModeIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="JSON over chat (compatible)"/>
                                     <ComboBoxItem Content="Native function calling"/>
                                 </ComboBox>
 
                                 <TextBlock Grid.Row="13" Grid.Column="0" Text="Memory bank" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="13" Grid.Column="1" x:Name="MemoryBankModeCombo" SelectedIndex="0"
+                                <ComboBox Grid.Row="13" Grid.Column="1" x:Name="MemoryBankModeCombo" SelectedIndex="{Binding Settings.MemoryBankModeIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Disabled"/>
                                     <ComboBoxItem Content="Tool (read_memory / update_memory)"/>
@@ -1400,40 +1440,40 @@
                                 </ComboBox>
 
                                 <TextBlock Grid.Row="14" Grid.Column="0" Text="Request timeout (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="14" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="14" Grid.Column="1" x:Name="TimeoutSecondsBox" Margin="0,0,0,4" Text="{Binding Settings.TimeoutSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="15" Grid.Column="0" Text="Retry budget (min)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="15" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="15" Grid.Column="1" x:Name="RetryTimeoutMinutesBox" Margin="0,0,0,4" Text="{Binding Settings.RetryTimeoutMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="16" Grid.Column="0" Text="Retry base delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="16" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="16" Grid.Column="1" x:Name="RetryBaseDelaySecondsBox" Margin="0,0,0,4" Text="{Binding Settings.RetryBaseDelaySeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="17" Grid.Column="0" Text="Retry max delay (s)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="17" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="17" Grid.Column="1" x:Name="RetryMaxDelaySecondsBox" Margin="0,0,0,4" Text="{Binding Settings.RetryMaxDelaySeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="18" Grid.Column="0" Text="Input price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="18" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="18" Grid.Column="1" x:Name="InputPriceBox" Margin="0,0,0,4" Text="{Binding Settings.InputPricePerMillion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="19" Grid.Column="0" Text="Cache-hit price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="19" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="19" Grid.Column="1" x:Name="CacheHitPriceBox" Margin="0,0,0,4" Text="{Binding Settings.CacheHitPricePerMillion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="20" Grid.Column="0" Text="Output price ($/1M tokens)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="20" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="20" Grid.Column="1" x:Name="OutputPriceBox" Margin="0,0,0,4" Text="{Binding Settings.OutputPricePerMillion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <CheckBox Grid.Row="21" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AllowSubagentsCheckBox"
+                                <CheckBox Grid.Row="21" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AllowSubagentsCheckBox" IsChecked="{Binding Settings.AllowSubagents, Mode=TwoWay}"
                                           Content="Enable sub-agents (spawn_agent)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
                                 <TextBlock Grid.Row="22" Grid.Column="0" Text="Sub-agent max iterations" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="22" Grid.Column="1" x:Name="SubagentMaxIterationsBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="22" Grid.Column="1" x:Name="SubagentMaxIterationsBox" Margin="0,0,0,4" Text="{Binding Settings.SubagentMaxIterations, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="23" Grid.Column="0" Text="Sub-agent max depth" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="23" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="23" Grid.Column="1" x:Name="SubagentMaxDepthBox" Margin="0,0,0,4" Text="{Binding Settings.SubagentMaxDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <CheckBox Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckpointsEnabledCheckBox"
+                                <CheckBox Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" x:Name="CheckpointsEnabledCheckBox" IsChecked="{Binding Settings.CheckpointsEnabled, Mode=TwoWay}"
                                           Content="Enable checkpoints (auto-snapshot by iteration diffs)" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
                                 <TextBlock Grid.Row="25" Grid.Column="0" Text="Reasoning effort" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="25" Grid.Column="1" x:Name="ReasoningEffortCombo" SelectedIndex="0"
+                                <ComboBox Grid.Row="25" Grid.Column="1" x:Name="ReasoningEffortCombo" SelectedIndex="{Binding Settings.ReasoningEffortIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Default"/>
                                     <ComboBoxItem Content="None"/>
@@ -1444,6 +1484,13 @@
                                     <ComboBoxItem Content="Extra high"/>
                                     <ComboBoxItem Content="Max"/>
                                 </ComboBox>
+
+                                <TextBlock Grid.Row="26" Grid.Column="0" Text="Max stagnant repeats" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                                <TextBox Grid.Row="26" Grid.Column="1" x:Name="MaxStagnantRepeatsBox" Margin="0,0,0,4" Text="{Binding Settings.MaxStagnantRepeats, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+                                <CheckBox Grid.Row="27" Grid.Column="0" Grid.ColumnSpan="2" x:Name="StagnantLoopNudgeCheckBox" IsChecked="{Binding Settings.StagnantLoopNudge, Mode=TwoWay}"
+                                          Content="Nudge the model once before stopping a stagnant loop" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
                             </Grid>
                         </ScrollViewer>
                     </TabItem>
@@ -1468,34 +1515,34 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="KbPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="KbPathBox" Margin="0,0,0,4" Text="{Binding Settings.KnowledgeBasePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Robot solutions directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" x:Name="RobotsRootPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" x:Name="RobotsRootPathBox" Margin="0,0,0,4" Text="{Binding Settings.RobotsRootPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Robot template file name" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="RobotTemplateNameBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="RobotTemplateNameBox" Margin="0,0,0,4" Text="{Binding Settings.RobotTemplateName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Rules directory (md)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="3" Grid.Column="1" x:Name="RulesPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" x:Name="RulesPathBox" Margin="0,0,0,4" Text="{Binding Settings.RulesPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Packages directory (NuGet source)" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="PackagesPathBox" Margin="0,0,0,4" Text="{Binding Settings.PackagesPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="5" Grid.Column="0" Text="Log providers directory" VerticalAlignment="Center" Margin="0,8,8,4"/>
-                                <TextBox Grid.Row="5" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4"/>
+                                <TextBox Grid.Row="5" Grid.Column="1" x:Name="LogProvidersPathBox" Margin="0,8,0,4" Text="{Binding Settings.LogProvidersPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="6" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="6" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4" Text="{Binding Settings.SkillsPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="7" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="7" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="0"
+                                <ComboBox Grid.Row="7" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="{Binding Settings.SecurityAuditModeIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Full (all areas)"/>
                                     <ComboBoxItem Content="Passwords &amp; logins only"/>
                                 </ComboBox>
 
-                                <CheckBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox"
+                                <CheckBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox" IsChecked="{Binding Settings.ShowRobotCreator, Mode=TwoWay}"
                                           Content="Show robot creation control in chat" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>
@@ -1523,23 +1570,23 @@
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <DockPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,4">
-                                    <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Click="OnOpenLog" Margin="8,0,0,0"/>
-                                    <TextBox x:Name="LogFilePathBox"/>
+                                    <Button DockPanel.Dock="Right" x:Name="OpenLogButton" Content="Open log" Command="{Binding Cmd}" CommandParameter="OpenLogCommand" Margin="8,0,0,0"/>
+                                    <TextBox x:Name="LogFilePathBox" Text="{Binding Settings.LogFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                 </DockPanel>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Chat log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,4">
-                                    <Button DockPanel.Dock="Right" x:Name="OpenChatLogButton" Content="Open log" Click="OnOpenChatLog" Margin="8,0,0,0"/>
-                                    <TextBox x:Name="ChatLogFilePathBox"/>
+                                    <Button DockPanel.Dock="Right" x:Name="OpenChatLogButton" Content="Open log" Command="{Binding Cmd}" CommandParameter="OpenChatLogCommand" Margin="8,0,0,0"/>
+                                    <TextBox x:Name="ChatLogFilePathBox" Text="{Binding Settings.ChatLogFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                 </DockPanel>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="User name" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,4" Text="{Binding Settings.UserName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <CheckBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox"
+                                <CheckBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AddressByNameCheckBox" IsChecked="{Binding Settings.AddressByName, Mode=TwoWay}"
                                           Content="Address me by name" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                                <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox"
+                                <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox" IsChecked="{Binding Settings.ShowControls, Mode=TwoWay}"
                                           Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
                                 <Button Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Open RPA Writer Converter →"
@@ -1555,15 +1602,15 @@
                                 </Button>
 
                                 <Button Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Content="Refresh prompts from disk"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0" Click="OnRefreshPromptsFromDisk"/>
+                                        HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="RefreshPromptsFromDiskCommand"/>
 
                                 <Button Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Content="Export documentation"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0" Click="OnExportDocumentation"/>
+                                        HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportDocumentationCommand"/>
 
                                 <Button Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0" Click="OnExportPrompts"/>
+                                        HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportPromptsCommand"/>
 
-                                <CheckBox Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox"
+                                <CheckBox Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox" IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
                                           Content="Auto-capture runtime exceptions" Margin="0,12,0,0" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>
@@ -1585,7 +1632,7 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Speech recognition" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="SpeechToTextProviderCombo" SelectedIndex="0"
+                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="SpeechToTextProviderCombo" SelectedIndex="{Binding Settings.SpeechToTextProviderIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Auto (Whisper, fallback Vosk)"/>
                                     <ComboBoxItem Content="OpenAI Whisper"/>
@@ -1593,15 +1640,15 @@
                                 </ComboBox>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Whisper STT model" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" x:Name="SpeechToTextModelBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" x:Name="SpeechToTextModelBox" Margin="0,0,0,4" Text="{Binding Settings.SpeechToTextModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Speech language" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="SpeechToTextLanguageBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="SpeechToTextLanguageBox" Margin="0,0,0,4" Text="{Binding Settings.SpeechToTextLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Vosk model directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <TextBox Grid.Row="3" Grid.Column="1" x:Name="VoskModelPathBox" Margin="0,0,0,4"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" x:Name="VoskModelPathBox" Margin="0,0,0,4" Text="{Binding Settings.VoskModelPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox"
+                                <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="SpeechAutoSendCheckBox" IsChecked="{Binding Settings.SpeechAutoSend, Mode=TwoWay}"
                                           Content="Auto-send voice input" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>

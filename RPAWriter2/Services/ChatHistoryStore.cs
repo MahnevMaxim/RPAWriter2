@@ -25,6 +25,9 @@ namespace RPAWriter2.Services
         private static string ConnectionString =>
             "Data Source=" + DatabasePath + ";Version=3;Foreign Keys=True;Default Timeout=5;";
 
+        /// <summary>Workspace id used to scope all operations; an empty value is the legacy/global scope.</summary>
+        public static string WorkspaceId { get; set; } = "";
+
         private const string CreateMessagesSql = @"
 CREATE TABLE IF NOT EXISTS messages (
     conversation_id TEXT NOT NULL,
@@ -54,8 +57,10 @@ CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     created_at_utc TEXT NOT NULL,
-    updated_at_utc TEXT NOT NULL
-);" + CreateMessagesSql;
+    updated_at_utc TEXT NOT NULL,
+    workspace_id TEXT NOT NULL DEFAULT ''
+);
+" + CreateMessagesSql;
                 command.ExecuteNonQuery();
             }
 
@@ -63,10 +68,17 @@ CREATE TABLE IF NOT EXISTS conversations (
             // legacy "role" column (history is reset when the old schema is detected).
             using (var connection = Open())
             {
+                EnsureColumn(connection, "conversations", "workspace_id", "TEXT NOT NULL DEFAULT ''");
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
                 EnsureColumn(connection, "messages", "checkpoint_hash", "TEXT NULL");
+
+                using (var index = connection.CreateCommand())
+                {
+                    index.CommandText = "CREATE INDEX IF NOT EXISTS idx_conversations_workspace ON conversations(workspace_id);";
+                    index.ExecuteNonQuery();
+                }
 
                 if (HasColumn(connection, "messages", "role"))
                 {
@@ -93,9 +105,11 @@ CREATE TABLE IF NOT EXISTS conversations (
                 command.CommandText = @"
 SELECT id, title, created_at_utc, updated_at_utc
 FROM conversations
+WHERE workspace_id = @workspace OR workspace_id = ''
 ORDER BY updated_at_utc DESC
 LIMIT @limit;";
                 command.Parameters.AddWithValue("@limit", limit);
+                command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                 using (var reader = command.ExecuteReader())
                 {
                     while (reader.Read())
@@ -169,12 +183,13 @@ ORDER BY position;";
                 {
                     upsert.Transaction = transaction;
                     upsert.CommandText = @"
-INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc)
-VALUES (@id, @title, @created, @updated);";
+INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, workspace_id)
+VALUES (@id, @title, @created, @updated, @workspace);";
                     upsert.Parameters.AddWithValue("@id", conversation.Id);
                     upsert.Parameters.AddWithValue("@title", string.IsNullOrWhiteSpace(conversation.Title) ? "New chat" : conversation.Title);
                     upsert.Parameters.AddWithValue("@created", ToTimestamp(conversation.CreatedAtUtc));
                     upsert.Parameters.AddWithValue("@updated", ToTimestamp(conversation.UpdatedAtUtc));
+                    upsert.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                     upsert.ExecuteNonQuery();
                 }
 
@@ -230,8 +245,9 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
             using (var connection = Open())
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "DELETE FROM conversations WHERE id = @id;";
+                command.CommandText = "DELETE FROM conversations WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
                 command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                 command.ExecuteNonQuery();
             }
         }
@@ -242,7 +258,10 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
             using (var connection = Open())
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "DELETE FROM messages; DELETE FROM conversations;";
+                command.CommandText = @"
+DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE workspace_id = @workspace OR workspace_id = '');
+DELETE FROM conversations WHERE workspace_id = @workspace OR workspace_id = '';";
+                command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                 command.ExecuteNonQuery();
             }
         }
@@ -316,8 +335,9 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
         {
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc FROM conversations WHERE id = @id;";
+                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc FROM conversations WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
                 command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                 using (var reader = command.ExecuteReader())
                 {
                     return reader.Read() ? ReadConversationMeta(reader) : null;

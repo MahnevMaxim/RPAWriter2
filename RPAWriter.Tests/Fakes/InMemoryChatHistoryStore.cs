@@ -17,6 +17,12 @@ namespace RPAWriter.Tests.Fakes
         private readonly Dictionary<string, ChatConversation> _stored =
             new Dictionary<string, ChatConversation>(StringComparer.Ordinal);
 
+        private readonly Dictionary<string, string> _workspaceById =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>Workspace id used to scope list/load/save/delete; "" is the global scope.</summary>
+        public string WorkspaceId { get; set; } = "";
+
         public int InitializeCount { get; private set; }
 
         public int SaveCount { get; private set; }
@@ -45,7 +51,18 @@ namespace RPAWriter.Tests.Fakes
         public int Count => _stored.Count;
 
         /// <summary>Adds a conversation straight to storage, as if it had been saved earlier.</summary>
-        public void Seed(ChatConversation conversation) => _stored[conversation.Id] = Clone(conversation);
+        public void Seed(ChatConversation conversation)
+        {
+            _stored[conversation.Id] = Clone(conversation);
+            _workspaceById[conversation.Id] = WorkspaceId;
+        }
+
+        /// <summary>Adds a conversation under an explicit workspace id (independent of the current scope).</summary>
+        public void Seed(ChatConversation conversation, string workspaceId)
+        {
+            _stored[conversation.Id] = Clone(conversation);
+            _workspaceById[conversation.Id] = workspaceId ?? "";
+        }
 
         /// <summary>Returns the stored snapshot (a copy) or null.</summary>
         public ChatConversation Peek(string id) => id != null && _stored.TryGetValue(id, out var stored) ? Clone(stored) : null;
@@ -65,6 +82,7 @@ namespace RPAWriter.Tests.Fakes
 
             LastListLimit = limit;
             return _stored.Values
+                .Where(c => InScope(c.Id))
                 .OrderByDescending(c => c.UpdatedAtUtc)
                 .Take(limit)
                 .Select(Clone)
@@ -77,7 +95,7 @@ namespace RPAWriter.Tests.Fakes
                 throw new InvalidOperationException("conversation could not be loaded");
 
             LoadCount++;
-            return id != null && _stored.TryGetValue(id, out var conversation) ? Clone(conversation) : null;
+            return id != null && InScope(id) && _stored.TryGetValue(id, out var conversation) ? Clone(conversation) : null;
         }
 
         public void SaveConversation(ChatConversation conversation)
@@ -87,6 +105,7 @@ namespace RPAWriter.Tests.Fakes
 
             SaveCount++;
             _stored[conversation.Id] = Clone(conversation);
+            _workspaceById[conversation.Id] = WorkspaceId ?? "";
         }
 
         public void DeleteConversation(string id)
@@ -95,7 +114,11 @@ namespace RPAWriter.Tests.Fakes
                 throw new InvalidOperationException("conversation could not be deleted");
 
             DeleteCount++;
-            _stored.Remove(id);
+            if (id != null && InScope(id))
+            {
+                _stored.Remove(id);
+                _workspaceById.Remove(id);
+            }
         }
 
         public void DeleteAllConversations()
@@ -104,8 +127,16 @@ namespace RPAWriter.Tests.Fakes
                 throw new InvalidOperationException("history could not be cleared");
 
             DeleteAllCount++;
-            _stored.Clear();
+            foreach (var id in _stored.Keys.Where(InScope).ToList())
+            {
+                _stored.Remove(id);
+                _workspaceById.Remove(id);
+            }
         }
+
+        private bool InScope(string id) =>
+            _workspaceById.TryGetValue(id, out var workspaceId)
+            && (workspaceId == (WorkspaceId ?? "") || workspaceId == "");
 
         private static ChatConversation Clone(ChatConversation source)
         {

@@ -6,6 +6,7 @@ using System.Linq;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
 using RPAWriter.Models;
+using RPAWriter.Mvvm;
 using RPAWriter.Tests.Fakes;
 
 namespace RPAWriter.Tests
@@ -28,9 +29,16 @@ namespace RPAWriter.Tests
             _uiState = new InMemoryUiStateStore();
         }
 
-        private ChatModel CreateModel(bool withUiState = true)
+        private ChatModel CreateModel(bool withUiState = true, bool withActiveChat = true)
         {
-            return new ChatModel(_store, withUiState ? _uiState : null);
+            var model = new ChatModel(_store, withUiState ? _uiState : null);
+
+            // Most scenarios start from an open chat; the "closed" state (no active conversation) is the
+            // model's state right after construction and is asserted by its own tests.
+            if (withActiveChat)
+                model.EnsureActiveConversation();
+
+            return model;
         }
 
         private static ChatMessage UserText(string text)
@@ -60,15 +68,16 @@ namespace RPAWriter.Tests
         [Test]
         public void CanBeConstructedWithoutViewModelAndView()
         {
-            var model = CreateModel();
+            var model = CreateModel(withActiveChat: false);
 
             Assert.That(model.ViewModel, Is.Null, "a model must start without a view model");
             Assert.That(model.Messages, Is.Empty);
             Assert.That(model.Pending, Is.Empty);
             Assert.That(model.Attachments, Is.Empty);
             Assert.That(model.History, Is.Empty);
-            Assert.That(model.ActiveChatConversation, Is.Not.Null);
-            Assert.That(model.ActiveConversationId, Is.Not.Empty);
+            Assert.That(model.ActiveChatConversation, Is.Null, "a chat starts closed: no conversation is active");
+            Assert.That(model.ActiveConversationId, Is.Empty);
+            Assert.That(model.HasActiveConversation, Is.False);
             Assert.That(model.ViewMode, Is.EqualTo(ChatViewMode.Conversation));
             Assert.That(model.Mode, Is.EqualTo(AgentMode.Plan));
             Assert.That(model.Phase, Is.EqualTo(AgentPhase.Idle));
@@ -399,8 +408,9 @@ namespace RPAWriter.Tests
         [Test]
         public void SaveHistoryNow_DoesNothingWithoutActiveConversation()
         {
-            var model = CreateModel();
-            model.ActiveChatConversation = null;
+            var model = CreateModel(withActiveChat: false);
+            model.Run();
+            model.AppendMessage(UserText("hello"));
 
             model.SaveHistoryNow();
 
@@ -582,6 +592,7 @@ namespace RPAWriter.Tests
 
             model.DeleteConversation("a");
 
+            Assert.That(model.ActiveChatConversation, Is.Null, "deleting the active chat leaves no active chat");
             Assert.That(model.ActiveConversationId, Is.Not.EqualTo("a"));
             Assert.That(model.Messages, Is.Empty);
         }
@@ -652,6 +663,144 @@ namespace RPAWriter.Tests
         }
 
         #endregion New chat / open / delete / clear
+
+        #region Closing the chat / reopening it
+
+        [Test]
+        public void CloseActiveChat_SavesTheTranscriptBeforeClosing()
+        {
+            var model = CreateModel();
+            model.Run();
+            model.AppendMessage(UserText("closed chat"));
+            var id = model.ActiveConversationId;
+
+            model.CloseActiveChat();
+
+            var stored = _store.Peek(id);
+            Assert.That(stored, Is.Not.Null, "closing must flush the transcript first");
+            Assert.That(stored.Messages.Select(m => m.Text), Is.EqualTo(new[] { "closed chat" }));
+        }
+
+        [Test]
+        public void CloseActiveChat_LeavesNoActiveConversation()
+        {
+            var model = CreateModel();
+            model.Run();
+            model.AppendMessage(UserText("hello"));
+            model.Enqueue("queued");
+
+            model.CloseActiveChat();
+
+            Assert.That(model.ActiveChatConversation, Is.Null, "closing is expressed by null and nothing else");
+            Assert.That(model.ActiveConversationId, Is.Empty);
+            Assert.That(model.HasActiveConversation, Is.False);
+            Assert.That(model.Messages, Is.Empty, "a closed chat owns no transcript");
+            Assert.That(model.PinnedMessage, Is.Null);
+            Assert.That(model.Pending, Is.Empty);
+            Assert.That(model.IsDirty, Is.False);
+        }
+
+        [Test]
+        public void CloseActiveChat_KeepsTheChatInHistoryAndDropsItsIndicator()
+        {
+            var model = CreateModel();
+            model.Run();
+            model.AppendMessage(UserText("hello"));
+            var id = model.ActiveConversationId;
+            model.SaveHistoryNow();
+            Assert.That(model.History.Single(c => c.Id == id).IsActive, Is.True);
+
+            model.CloseActiveChat();
+
+            Assert.That(model.History.Select(c => c.Id), Contains.Item(id), "the closed chat stays reopenable");
+            Assert.That(model.History.Count(c => c.IsActive), Is.Zero);
+        }
+
+        [Test]
+        public void CloseActiveChat_SwitchesToTheHistoryView()
+        {
+            var model = CreateModel();
+
+            model.CloseActiveChat();
+
+            Assert.That(model.ViewMode, Is.EqualTo(ChatViewMode.History));
+            Assert.That(model.IsHistoryView, Is.True);
+        }
+
+        [Test]
+        public void CloseActiveChat_WritesAnEmptyRememberedId()
+        {
+            var model = CreateModel();
+            model.Run();
+
+            model.CloseActiveChat();
+            model.PersistUiState(MainTab.Chat);
+
+            Assert.That(_uiState.State.LastConversationId, Is.Empty,
+                "a closed chat must not be restored on the next start");
+            Assert.That(_uiState.State.ChatViewMode, Is.EqualTo(ChatViewMode.History));
+        }
+
+        [Test]
+        public void ShowHistoryView_KeepsTheConversationActive()
+        {
+            var model = CreateModel();
+            model.Run();
+            model.AppendMessage(UserText("hello"));
+            var id = model.ActiveConversationId;
+
+            model.ShowHistoryView();
+            model.AppendMessage(AgentText("answer"));
+
+            Assert.That(model.ActiveConversationId, Is.EqualTo(id), "browsing history is not closing the chat");
+
+            model.SaveHistoryNow();
+            Assert.That(_store.Peek(id).Messages.Select(m => m.Text), Is.EqualTo(new[] { "hello", "answer" }),
+                "messages keep landing in the active chat while the history list is open");
+        }
+
+        [Test]
+        public void EnsureActiveConversation_CreatesOneConversationOnly()
+        {
+            var model = CreateModel(withActiveChat: false);
+
+            var first = model.EnsureActiveConversation();
+            var second = model.EnsureActiveConversation();
+
+            Assert.That(first, Is.Not.Null);
+            Assert.That(second, Is.SameAs(first));
+            Assert.That(model.HasActiveConversation, Is.True);
+        }
+
+        [Test]
+        public void EnsureActiveConversation_ReopensAClosedChatWithAFreshConversation()
+        {
+            var model = CreateModel();
+            model.Run();
+            model.AppendMessage(UserText("old"));
+            var closedId = model.ActiveConversationId;
+            model.CloseActiveChat();
+
+            var reopened = model.EnsureActiveConversation();
+
+            Assert.That(reopened, Is.Not.Null);
+            Assert.That(reopened.Id, Is.Not.EqualTo(closedId));
+            Assert.That(model.Messages, Is.Empty);
+        }
+
+        [Test]
+        public void EnsureActiveConversation_DropsWhatWasLeftWhileTheChatWasClosed()
+        {
+            var model = CreateModel(withActiveChat: false);
+            model.AppendMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = "leftover" });
+
+            model.EnsureActiveConversation();
+
+            Assert.That(model.Messages, Is.Empty, "a closed chat owns no transcript");
+            Assert.That(model.IsDirty, Is.False);
+        }
+
+        #endregion Closing the chat / reopening it
 
         #region Active conversation indicator
 
@@ -877,6 +1026,17 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void ResolveConversationToOpen_EmptyIdReturnsNullEvenWhenHistoryIsNotEmpty()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+
+            Assert.That(model.ResolveConversationToOpen(""), Is.Null,
+                "an empty id means the chat was closed: nothing is guessed");
+        }
+
+        [Test]
         public void ModeAndPhase_RaisePropertyChanged()
         {
             var model = CreateModel();
@@ -888,6 +1048,160 @@ namespace RPAWriter.Tests
 
             Assert.That(changed, Does.Contain(nameof(ChatModel.Mode)));
             Assert.That(changed, Does.Contain(nameof(ChatModel.Phase)));
+        }
+
+        [Test]
+        public void CanResume_RequiresABreakpointAndAnIdlePhase()
+        {
+            var model = CreateModel();
+
+            model.HasResumableRun = true;
+            model.Phase = AgentPhase.Streaming;
+            Assert.That(model.CanResume, Is.False, "an active turn hides the Resume button");
+
+            model.Phase = AgentPhase.Idle;
+            Assert.That(model.CanResume, Is.True);
+
+            model.Phase = AgentPhase.Error;
+            Assert.That(model.CanResume, Is.False, "after a failure the turn cannot be resumed");
+
+            model.Phase = AgentPhase.Idle;
+            model.HasResumableRun = false;
+            Assert.That(model.CanResume, Is.False, "without a breakpoint there is nothing to resume");
+        }
+
+        [Test]
+        public void CanResume_RaisesPropertyChangedWhenThePhaseChanges()
+        {
+            var model = CreateModel();
+            model.HasResumableRun = true;
+            var changed = new List<string>();
+            ((INotifyPropertyChanged)model).PropertyChanged += (sender, e) => changed.Add(e.PropertyName);
+
+            model.Phase = AgentPhase.Streaming;
+
+            Assert.That(changed, Does.Contain(nameof(ChatModel.CanResume)));
+        }
+
+        [Test]
+        public void HasResumableRun_DoesNotChangeThePhase()
+        {
+            var model = CreateModel();
+            model.Phase = AgentPhase.Error;
+
+            model.HasResumableRun = true;
+
+            Assert.That(model.Phase, Is.EqualTo(AgentPhase.Error));
+        }
+
+        [Test]
+        public void SwitchMode_RecordsTheSwitchInTheTranscript()
+        {
+            var model = CreateModel();
+            model.Run();
+
+            model.SwitchMode(AgentMode.Act);
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
+            var entry = model.Messages.Last();
+            Assert.That(entry.Kind, Is.EqualTo(ChatMessageKind.ModeSwitch));
+            Assert.That(entry.Text, Is.EqualTo("Mode: Act"));
+            Assert.That(entry.Mode, Is.EqualTo("Act"));
+            Assert.That(model.IsDirty, Is.True);
+        }
+
+        [Test]
+        public void SwitchMode_RecordsTheSwitchWhenTheBindingAppliedTheModeFirst()
+        {
+            var model = CreateModel();
+            model.Run();
+
+            // The two-way toggle binding may write Mode before the host handles the event.
+            model.Mode = AgentMode.Help;
+            model.SwitchMode(AgentMode.Help);
+
+            Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
+            Assert.That(model.Messages.Last().Text, Is.EqualTo("Mode: Help"));
+        }
+
+        [Test]
+        public void SwitchMode_DoesNotTouchThePhase()
+        {
+            var model = CreateModel();
+            model.Phase = AgentPhase.Streaming;
+
+            model.SwitchMode(AgentMode.Help);
+
+            Assert.That(model.Phase, Is.EqualTo(AgentPhase.Streaming));
+        }
+
+        [Test]
+        public void DoItCommand_SwitchesToActAndSendsTheCommand()
+        {
+            var sink = new RecordingChatSink();
+            var model = new ChatModel(_store, _uiState, null, sink);
+            model.Run();
+
+            model.DoItCommand();
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
+            Assert.That(sink.Prompts, Does.Contain("Do it!!!"));
+            Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
+            Assert.That(model.Messages.Last(m => m.Kind == ChatMessageKind.ModeSwitch).Text, Is.EqualTo("Mode: Act"));
+        }
+
+        [Test]
+        public void DoItCommand_DoesNotRecordADuplicateWhenAlreadyAct()
+        {
+            var sink = new RecordingChatSink();
+            var model = new ChatModel(_store, _uiState, null, sink);
+            model.Run();
+
+            model.SwitchMode(AgentMode.Act); // the user already switched to Act once
+            model.DoItCommand();
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
+            Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
+            Assert.That(sink.Prompts, Does.Contain("Do it!!!"));
+        }
+
+        [Test]
+        public void DoItCommand_SendsNothingWithoutASink()
+        {
+            var model = CreateModel();
+
+            Assert.DoesNotThrow(() => model.DoItCommand());
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
+            Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void DoItCommand_ReportsSendingFailuresThroughNotify()
+        {
+            var sink = new RecordingChatSink { SendError = new Exception("boom") };
+            var model = new ChatModel(_store, _uiState, null, sink);
+            model.Run();
+            var notifications = new List<Notify>();
+            model.Notify += (sender, notify) => notifications.Add(notify);
+
+            model.DoItCommand();
+
+            Assert.That(notifications, Has.Count.EqualTo(1));
+            Assert.That(notifications[0].Message, Does.Contain("boom"));
+            Assert.That(notifications[0].NotifyLevel, Is.EqualTo(NotifyLevel.Error));
+        }
+
+        [Test]
+        public void RestoreMode_SetsTheModeWithoutRecordingATranscriptEntry()
+        {
+            var model = CreateModel();
+            model.Run();
+
+            model.RestoreMode(AgentMode.Help);
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Help));
+            Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(0));
         }
 
         #endregion View mode and UI state
@@ -942,7 +1256,8 @@ namespace RPAWriter.Tests
                 "OpenConversationCommand",
                 "DeleteConversationCommand",
                 "ClearHistoryCommand",
-                "RefreshHistoryCommand"
+                "RefreshHistoryCommand",
+                "DoItCommand"
             };
 
             foreach (var name in commandNames)

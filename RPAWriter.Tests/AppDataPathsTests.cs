@@ -13,6 +13,7 @@ namespace RPAWriter.Tests
         public void SetUp()
         {
             ResetVersionScope();
+            ResetWorkspaceScope();
         }
 
         // ---------- InitializeScope ----------
@@ -127,12 +128,91 @@ namespace RPAWriter.Tests
             Assert.That(AppDataPaths.VersionScope, Is.Empty);
         }
 
+        // ---------- workspace scope ----------
+
+        [Test]
+        public void SetWorkspaceScope_EmptyOrNull_ClearsWorkspaceId()
+        {
+            AppDataPaths.SetWorkspaceScope("abc123");
+            AppDataPaths.SetWorkspaceScope(null);
+
+            Assert.That(AppDataPaths.WorkspaceId, Is.Empty);
+            Assert.That(AppDataPaths.WorkspaceScopedRoot, Is.Empty);
+        }
+
+        [Test]
+        public void SetWorkspaceScope_SetsWorkspaceIdAndRoot()
+        {
+            AppDataPaths.InitializeScope("17.0");
+            AppDataPaths.SetWorkspaceScope("abc123");
+
+            var expected = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RPAWriter2", "17", "workspaces", "abc123");
+
+            Assert.That(AppDataPaths.WorkspaceId, Is.EqualTo("abc123"));
+            Assert.That(AppDataPaths.WorkspaceScopedRoot, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ResolveWorkspace_BuildsPathUnderWorkspacesRoot()
+        {
+            AppDataPaths.InitializeScope("17.0");
+            AppDataPaths.SetWorkspaceScope("other");
+
+            var expected = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RPAWriter2", "17", "workspaces", "abc123", "ui_state.json");
+
+            // Explicit id ignores the current scope.
+            Assert.That(AppDataPaths.ResolveWorkspace("abc123", "ui_state.json"), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ResolveWorkspaceCurrent_FallsBackToScopedRootWithoutWorkspace()
+        {
+            AppDataPaths.InitializeScope("17.0");
+
+            var expected = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RPAWriter2", "17", "ui_state.json");
+
+            Assert.That(AppDataPaths.ResolveWorkspaceCurrent("ui_state.json"), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ResolveWorkspaceCurrent_UsesWorkspaceFolderWhenScoped()
+        {
+            AppDataPaths.InitializeScope("17.0");
+            AppDataPaths.SetWorkspaceScope("abc123");
+
+            var expected = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RPAWriter2", "17", "workspaces", "abc123", "ui_state.json");
+
+            Assert.That(AppDataPaths.ResolveWorkspaceCurrent("ui_state.json"), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void EnsureWorkspaceDirectory_WithoutWorkspace_DoesNotThrow()
+        {
+            Assert.DoesNotThrow(() => AppDataPaths.EnsureWorkspaceDirectory());
+        }
+
         // ---------- helpers ----------
 
         private static void ResetVersionScope()
         {
             var field = typeof(AppDataPaths).GetField(
                 "<VersionScope>k__BackingField",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            field?.SetValue(null, "");
+        }
+
+        private static void ResetWorkspaceScope()
+        {
+            var field = typeof(AppDataPaths).GetField(
+                "<WorkspaceId>k__BackingField",
                 BindingFlags.NonPublic | BindingFlags.Static);
             field?.SetValue(null, "");
         }

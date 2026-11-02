@@ -86,6 +86,18 @@ namespace RPAWriter.Core.Services
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
 
+        /// <summary>
+        /// Maximum number of consecutive identical tool calls (same name + same arguments) before
+        /// the stagnant-loop guard stops the run. 0 disables the guard.
+        /// </summary>
+        public int MaxStagnantRepeats { get; set; } = 3;
+
+        /// <summary>
+        /// When true, the first time the stagnant-loop threshold is hit the model gets a one-time
+        /// nudge to change its approach instead of being stopped immediately.
+        /// </summary>
+        public bool StagnantLoopNudge { get; set; } = false;
+
         // ---- Agent permissions: category-level gates for the agent tools. ----
         /// <summary>Allow tools that read files/specs/KB/logs.</summary>
         public bool AllowReadFiles { get; set; } = true;
@@ -149,36 +161,11 @@ namespace RPAWriter.Core.Services
 
         /// <summary>Recently used production robot names (most recent first).</summary>
         public List<string> RobotNameHistory { get; set; } = new List<string>();
-    }
 
-    /// <summary>Loads/saves settings at %AppData%\RPAWriter2\&lt;version&gt;\settings.json.</summary>
-    public static class SettingsStore
-    {
-        public static string SettingsDirectory => AppDataPaths.Resolve();
-
-        public static string SettingsFile => Path.Combine(SettingsDirectory, "settings.json");
-
-        public static SettingsData Load()
-        {
-            try
-            {
-                if (File.Exists(SettingsFile))
-                {
-                    var json = File.ReadAllText(SettingsFile);
-                    var settings = JsonConvert.DeserializeObject<SettingsData>(json) ?? new SettingsData();
-                    Normalize(settings);
-                    return settings;
-                }
-            }
-            catch
-            {
-                // ignore read errors — fall back to defaults
-            }
-            var defaults = new SettingsData();
-            Normalize(defaults);
-            return defaults;
-        }
-
+        /// <summary>
+        /// Normalizes the settings in place: clamps out-of-range numbers and resets invalid enum
+        /// strings to their defaults. Pure and independent of any store.
+        /// </summary>
         public static void Normalize(SettingsData settings)
         {
             if (settings == null) return;
@@ -213,6 +200,8 @@ namespace RPAWriter.Core.Services
                 settings.ToolResultMaxChars = 12000;
             if (settings.MaxIterations <= 0)
                 settings.MaxIterations = 8;
+            if (settings.MaxStagnantRepeats < 0)
+                settings.MaxStagnantRepeats = 3;
             if (settings.SubagentMaxIterations <= 0)
                 settings.SubagentMaxIterations = 4;
             if (settings.SubagentMaxDepth < 1)
@@ -243,6 +232,35 @@ namespace RPAWriter.Core.Services
                 settings.SpeechToTextLanguage = "ru";
             if (settings.RobotNameHistory == null)
                 settings.RobotNameHistory = new List<string>();
+        }
+    }
+
+    /// <summary>Loads/saves settings at %AppData%\RPAWriter2\&lt;version&gt;\settings.json.</summary>
+    public static class SettingsStore
+    {
+        public static string SettingsDirectory => AppDataPaths.Resolve();
+
+        public static string SettingsFile => Path.Combine(SettingsDirectory, "settings.json");
+
+        public static SettingsData Load()
+        {
+            try
+            {
+                if (File.Exists(SettingsFile))
+                {
+                    var json = File.ReadAllText(SettingsFile);
+                    var settings = JsonConvert.DeserializeObject<SettingsData>(json) ?? new SettingsData();
+                    SettingsData.Normalize(settings);
+                    return settings;
+                }
+            }
+            catch
+            {
+                // ignore read errors — fall back to defaults
+            }
+            var defaults = new SettingsData();
+            SettingsData.Normalize(defaults);
+            return defaults;
         }
 
         public static void Save(SettingsData settings)

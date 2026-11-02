@@ -43,6 +43,13 @@ namespace RPAWriter.Core.AgentTools
         public string Detail { get; set; } = "";
     }
 
+    /// <summary>Raised when the stagnant-loop guard blocks a repeated identical tool call.</summary>
+    public sealed class AgentToolRepetitionArgs : EventArgs
+    {
+        public string ToolName { get; set; } = "";
+        public int Threshold { get; set; }
+    }
+
     /// <summary>
     /// A resumable snapshot of an in-progress agent loop. The UI stores the last reported
     /// snapshot while the run is streaming so a manual Cancel can be continued from the same
@@ -67,6 +74,9 @@ namespace RPAWriter.Core.AgentTools
         private static string ProtocolRecoveryNudge =>
             PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-protocol-recovery-nudge.txt", PromptDefaults.ProtocolRecoveryNudge);
 
+        private static string StagnantLoopNudge =>
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-stagnant-loop-nudge.txt", PromptDefaults.StagnantLoopNudge);
+
         private readonly IAiProvider _ai;
         private readonly AgentToolRegistry _registry;
         private readonly Func<AgentMode, string> _systemPromptFactory;
@@ -85,6 +95,9 @@ namespace RPAWriter.Core.AgentTools
 
         /// <summary>Raised for every recovery retry (overflow compact or max-tokens nudge).</summary>
         public event EventHandler<AgentRetryArgs> RetryOccurred;
+
+        /// <summary>Raised when the stagnant-loop guard blocks a repeated identical tool call.</summary>
+        public event EventHandler<AgentToolRepetitionArgs> ToolRepetitionDetected;
 
         /// <summary>Backward-compatible constructor: a fixed iteration cap with default budget thresholds.</summary>
         public AgentRunner(
@@ -217,6 +230,8 @@ namespace RPAWriter.Core.AgentTools
             IProgress<AgentResumeSnapshot> resumeProgress)
         {
             var protocolAttempts = 0;
+            var detector = new ToolRepetitionDetector(effectiveBudget.MaxStagnantRepeats);
+            var stagnantNudgeSent = false;
 
             for (var i = startIteration; i < maxIterations; i++)
             {
@@ -246,6 +261,11 @@ namespace RPAWriter.Core.AgentTools
                     foreach (var call in nativeCalls)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        var repetition = EvaluateRepetition(detector, call.Name, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, call.Id);
+                        if (repetition == RepetitionAction.Stop)
+                            return new AgentRunResult { FinalText = StagnantLoopFinalText(call.Name, effectiveBudget.MaxStagnantRepeats), Reasoning = response.Reasoning };
+                        if (repetition == RepetitionAction.Nudge)
+                            break; // skip the rest of this turn and re-prompt the model
                         var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                         if (finalText != null)
                             return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
@@ -273,6 +293,11 @@ namespace RPAWriter.Core.AgentTools
                 foreach (var call in action.ToolCalls)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    var repetition = EvaluateRepetition(detector, call.ToolName, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, null);
+                    if (repetition == RepetitionAction.Stop)
+                        return new AgentRunResult { FinalText = StagnantLoopFinalText(call.ToolName, effectiveBudget.MaxStagnantRepeats), Reasoning = response.Reasoning };
+                    if (repetition == RepetitionAction.Nudge)
+                        break; // skip the rest of this turn and re-prompt the model
                     var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                     if (finalText != null)
                         return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
@@ -284,6 +309,59 @@ namespace RPAWriter.Core.AgentTools
                 FinalText = "Достигнут лимит шагов агента (" + maxIterations + "). Уточните запрос или разбейте задачу.",
                 Reasoning = ""
             };
+        }
+
+        private enum RepetitionAction
+        {
+            Execute,
+            Nudge,
+            Stop
+        }
+
+        /// <summary>
+        /// Reports a tool call to the repetition guard and decides how the loop must proceed.
+        /// When <see cref="ContextBudget.StagnantLoopNudge"/> is enabled, the first threshold hit
+        /// feeds a one-time nudge back to the model instead of stopping immediately.
+        /// </summary>
+        private RepetitionAction EvaluateRepetition(
+            ToolRepetitionDetector detector,
+            string toolName,
+            JObject arguments,
+            ContextBudget budget,
+            ref bool nudgeSent,
+            List<ChatMessageData> messages,
+            string toolCallId)
+        {
+            if (!detector.IsBlocked(toolName, arguments))
+                return RepetitionAction.Execute;
+
+            ToolRepetitionDetected?.Invoke(this, new AgentToolRepetitionArgs
+            {
+                ToolName = toolName ?? "",
+                Threshold = budget.MaxStagnantRepeats
+            });
+
+            if (budget.StagnantLoopNudge && !nudgeSent)
+            {
+                nudgeSent = true;
+                var toolRole = budget.UseToolRole ? "tool" : "user";
+                messages.Add(new ChatMessageData
+                {
+                    Role = toolRole,
+                    Content = StagnantLoopNudge,
+                    ToolCallId = toolCallId ?? ""
+                });
+                return RepetitionAction.Nudge;
+            }
+
+            return RepetitionAction.Stop;
+        }
+
+        private static string StagnantLoopFinalText(string toolName, int threshold)
+        {
+            return "Обнаружено зацикливание: агент несколько раз подряд вызвал инструмент «" +
+                (toolName ?? "") + "» с теми же аргументами (порог " + threshold + "). " +
+                "Остановлено, чтобы не сжигать бюджет. Уточните запрос или попросите агента сменить подход.";
         }
 
         private async Task<PreparedContext> PrepareContextAsync(

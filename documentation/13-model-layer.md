@@ -277,13 +277,18 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 
 Что при этом изменилось по правилам:
 
-- `ChatConversation` реализует `INotifyPropertyChanged` и получила `IsActive` — на нём держится зелёный
-  индикатор активной беседы в списке истории. Флаг **не** сериализуется в SQLite.
+- `ChatConversation` реализует `INotifyPropertyChanged` и получила `IsActive` — производный флаг для зелёного
+  индикатора активной беседы в списке истории. Источник истины один — `ChatModel.ActiveChatConversation`,
+  `IsActive` только проецируется из него и **не** сериализуется в SQLite.
 - `PendingChatMessage` → `PendingMessage`; `DeliveryIcon` (`MaterialIconKind`) удалён из модели,
   иконку выдаёт `RPAWriter2/Converters/PendingDeliveryToGeometryConverter` по значению `Delivery`.
 - `ChatHistoryStore` и `UiStateStore` остались статическими «сырыми» хранилищами в `RPAWriter2/Services`;
   модели работают через `IChatHistoryStore`/`IUiStateStore`, которые адаптируют
   `SqliteChatHistoryStore` и `JsonUiStateStore`.
+- Рабочие пространства (фаза B, см. `14-workspaces-and-mvvm-plan.md`): `IChatHistoryStore` получил
+  `WorkspaceId` (история фильтруется по открытому решению), `ui_state.json` пишется per-workspace,
+  лог-пути настроек скоупятся через `WorkspaceLogSettings`/`IWorkspaceLogSettingsStore`, а API-ключ
+  вынесен в `ISecretsStore` (`DpapiSecretsStore` в VSIX).
 - `ModelArchitectureTests.ChatDomainTypes_LiveInCore` и `PendingMessage_ExposesNoIconProperty`
   не дают вернуть эти типы обратно в VSIX-проект или протащить в них иконки.
 
@@ -295,7 +300,7 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 ## 17. `ChatModel` — эталон модели продукта (после фазы C)
 
 `RPAWriter.Models/ChatModel.cs` — первая модель, полностью живущая по правилам этого документа:
-создаётся без ViewModel и View, состояние и сценарии покрыты 63 тестами `ChatModelTests`.
+создаётся без ViewModel и View, состояние и сценарии покрыты 81 тестом `ChatModelTests`.
 
 ### 17.1. Что модель владеет
 
@@ -305,19 +310,23 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 | Очередь сообщений | `Pending` | `Enqueue`/`DequeueNext`, приоритет `PendingDelivery.Steer` |
 | Вложения | `Attachments` | очищаются хостом после отправки |
 | История | `History` | заполняется из `IChatHistoryStore.ListConversations()` |
-| Активная беседа | `ActiveChatConversation`, `ActiveConversationId` | сеттер двигает `IsActive` по всей истории |
+| Активная беседа | `ActiveChatConversation` (проекции: `ActiveConversationId`, `HasActiveConversation`) | **единственный** источник истины; сеттер через `UpdateActiveFlags()` двигает `IsActive` по всей истории, проекции состояние не хранят. Закрытый чат — это `null` (см. §17.7) |
 | Режим вкладки | `ViewMode` (`ChatViewMode`) | персистится в `ui_state.json` |
 | Pinned | `PinnedMessage`, `HasPinnedMessage` | первое сообщение пользователя, иначе первое сообщение |
-| Состояние агента | `Mode`, `Phase` (`AgentMode`, `AgentPhase`) | читается футером через хост |
+| Состояние агента | `Mode`, `Phase` (`AgentMode`, `AgentPhase`) | футер читает их биндингами, хост только присваивает (см. §20) |
+| Точка возобновления | `HasResumableRun` (проекция: `CanResume`) | модель хранит только признак; снимок агента остаётся в хосте (§17.3) |
 | Флаг изменений | `IsDirty` | `true` после любого добавления в transcript |
 | Ошибка операции | `LastError` | модель не бросает и не показывает диалоги сама |
 
 Сценарии: `Run()`, `Closing()`, `StartNewChat()`, `OpenConversation(id)`, `DeleteConversation(id)`,
 `ClearHistory()`, `ResetConversation()`, `SaveHistoryNow()`, `RefreshHistory()`, `RefreshPinnedMessage()`,
-`Enqueue()`, `DequeueNext()`, `ShowConversationView()`, `ShowHistoryView()`,
-`LoadUiState()`, `PersistUiState(activeTab)`, `ResolveConversationToOpen(id)`.
+`Enqueue()`, `DequeueNext()`, `ShowConversationView()`, `ShowHistoryView()`, `SwitchMode(mode)`,
+`RestoreMode(mode)`, `LoadUiState()`, `PersistUiState(activeTab)`, `ResolveConversationToOpen(id)`,
+`CloseActiveChat()`, `EnsureActiveConversation()`.
 Команды для `Cmd`: `NewChatCommand`, `OpenConversationCommand(object)`, `DeleteConversationCommand(object)`,
-`ClearHistoryCommand`, `RefreshHistoryCommand` — все `public`, без перегрузок (требование `BaseModel.SendCommand`).
+`ClearHistoryCommand`, `RefreshHistoryCommand`, `DoItCommand` — все `public`, без перегрузок
+(требование `BaseModel.SendCommand`). `DoItCommand` переключает агента в Act и отправляет «Do it!!!»
+через внедряемый `IChatPromptSink`.
 
 ### 17.2. Как модель реагирует на изменения коллекции
 
@@ -342,6 +351,11 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 | `MessageDialog.Show(...)` при удалении/очистке | модальный диалог — View; модель лишь сообщает результат и `LastError` |
 | Публикация `PersistUiState` по событиям вкладок | активная вкладка — состояние View, передаётся в модель параметром |
 
+Футер (`Cancel`, `Do it!!!`, `Resume task`, цвет рамки ввода) в этот список больше не входит: он
+целиком на биндингах (§20), хост лишь присваивает `Phase` и `HasResumableRun`. Снимок возобновления
+(`AgentResumeSnapshot`, `_resumableMode`, `_resumableBudget`) остаётся здесь — это инфраструктура
+раннера, а не данные беседы.
+
 ### 17.4. Приём «алиасы» при инкрементальном переносе
 
 Чтобы перенести 4800 строк code-behind без «красной» сборки, поля контрола заменены свойствами,
@@ -358,26 +372,69 @@ private ChatViewMode _chatViewMode { get => _chatModel.ViewMode; set => _chatMod
 ```
 
 Это временный мост: на фазе E обработчики и XAML переходят на биндинги, алиасы удаляются.
-Правило: алиас только читает/пишет модель, никакой логики в нём нет.
+Правило: алиас только читает/пишет модель, никакой логики в нём нет и собственного «текущего чата»
+он не хранит — активность живёт только в `ChatModel.ActiveChatConversation`.
+
+Алиасы `_mode` и `_phase` уже удалены: футер работает на биндингах, а хост обращается к
+`_chatModel.Mode` / `_chatModel.Phase` напрямую (§20). Остались `_messages`, `_pendingMessages`,
+`_attachments`, `_conversations`, `_currentConversation`, `_chatViewMode`, `_pinnedMessage`.
 
 ### 17.5. Зелёный индикатор активной беседы
 
-`ChatConversation.IsActive` выставляется моделью (`ActiveChatConversation` → `UpdateActiveFlags()`),
+Единственное определение «какая беседа активна» — свойство `ChatModel.ActiveChatConversation`
+(беседа активна, пока оно не `null`). Остальное — только производные проекции, которые состояние
+не хранят: `ActiveConversationId`, `HasActiveConversation` и `ChatConversation.IsActive`.
+`IsActive` выставляется исключительно моделью (`ActiveChatConversation` → `UpdateActiveFlags()`),
 в SQLite не пишется. В `ToolWindow1Control.xaml` (карточка истории) добавлен `Ellipse` с
 `Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"`. Проверки в тестах:
 `OnlyTheActiveConversationIsMarkedActive`, `RefreshHistory_ClearsStaleIndicators`,
 `StartNewChat_ClearsActiveIndicators`.
 
+Закрытый чат (`ActiveChatConversation == null`) гасит индикатор у всех карточек: `UpdateActiveFlags()`
+проверяет пустой `ActiveConversationId`. Это же состояние проверяют `CloseActiveChat_*` и
+`EnsureActiveConversation_*` (§17.7).
+
 ### 17.6. Тестовое покрытие модели
 
 | Фикстура | Что покрывает | Тестов |
 |---|---|---|
-| `ChatModelTests` | конструктор без VM/View, `Run`/`Closing`, pinned, save/title/`IsDirty`, New/Open/Delete/Clear, `IsActive`, очередь, view mode и UI-state, команды через рефлексию | 63 |
+| `ChatModelTests` | конструктор без VM/View, `Run`/`Closing`, pinned, save/title/`IsDirty`, New/Open/Delete/Clear, `IsActive`, очередь, view mode и UI-state, режим/фаза и `CanResume`, `SwitchMode`, команды через рефлексию, закрытие и переоткрытие чата (§17.7) | 81 |
+| `AgentModeNamesTests` | маппинг `AgentMode` ↔ «Plan»/«Act»/«Help»: round-trip, регистронезависимость, фолбэк на `Plan` | 11 |
 | `ChatMessageMapperTests` | маппинг `ChatMessage ↔ ChatHistoryMessage` (checkpoint, question, tool call/blocked, текст), `BuildTitle` | 14 |
 | `ModelArchitectureTests` | TFM и UI-free границы + `ChatModel_ExposesNoLayoutState` | 14 |
 
 Фейки сценария живут в `RPAWriter.Tests/Fakes`: `InMemoryChatHistoryStore` (глубокие копии при
 save/load, «новые сверху», падение по требованию) и `InMemoryUiStateStore`.
+
+### 17.7. Закрытие чата, история и отправка
+
+Два действия вкладки Chat разведены по семантике: «✕» (закрыть чат) и «History» (листать сохранённые
+чаты). Источник истины один — `ActiveChatConversation`: закрыт чат или активен, видно только по нему.
+
+| Действие | `ViewMode` | `ActiveChatConversation` | Что происходит |
+|---|---|---|---|
+| ✕ в шапке беседы (`OnCloseChat`) | `History` | `null` | `SaveHistoryNow()`, затем очистка транскрипта и очереди; беседа остаётся в `History`, но не активна |
+| «History» в тулбаре (`OnShowHistory`) | `History` | без изменений | только листание истории: активная беседа жива, новые сообщения продолжают падать в неё |
+| «Send errors» / «Send to RPA Writer» / «Send exception to RPA Writer» / баннеры уведомлений | `Conversation` | `null` → новая беседа | `EnsureChatReadyToReceive()` = `EnsureActiveConversation()` + `ShowConversationView()` до отправки |
+| «New chat» (`OnNewChat`) | `Conversation` | новая беседа | `StartNewChat()`: сохранить текущую, очистить, активировать новую |
+
+Правила, которые из этого следуют:
+
+- **`null` — штатное состояние.** Модель создаётся без беседы (конструктор `ChatModel` её не творит),
+  `Run()` только грузит историю. Любой сценарий, которому нужен транскрипт, сначала зовёт
+  `EnsureActiveConversation()`.
+- **`EnsureActiveConversation()` идемпотентен** и на закрытом чате очищает остатки
+  (`ClearConversationState`): закрытый чат не владеет транскриптом, поэтому то, что добавлено после
+  закрытия, не переезжает в новую беседу.
+- **Восстановление сессии не угадывает.** `CloseActiveChat()` пишет `LastConversationId = ""` (через
+  `PersistUiState`), и `ResolveConversationToOpen("")` возвращает `null`: закрытый чат не воскресает.
+  Хост показывает историю, а свежий чат открывает только когда истории нет вообще.
+- **Персистентность закрытия не касается.** `SaveHistoryNow()` при `null` выходит сразу, `Closing()`
+  безопасен, `IsActive` у всех карточек гаснет сам (§17.5).
+
+Проверки: `CloseActiveChat_*`, `ShowHistoryView_KeepsTheConversationActive`, `EnsureActiveConversation_*`,
+`DeleteConversation_ResetsActiveConversationWhenItIsDeleted`,
+`ResolveConversationToOpen_EmptyIdReturnsNullEvenWhenHistoryIsNotEmpty`.
 
 ---
 
@@ -544,4 +601,67 @@ if (string.IsNullOrWhiteSpace(_robotName))
 
 `LogAnalyzerTests` — добавлены значение по умолчанию имени робота и уведомление `CanLoadTasks`
 (гвард во View читает именно его); `ChatModelTests` — запуск дочерней модели, старт модели,
-назначенной после `Run()`, и уведомление `ChatModel.LogAnalyzer`. Всего в `RPAWriter.Tests` — 769 тестов.
+назначенной после `Run()`, и уведомление `ChatModel.LogAnalyzer`. Всего в `RPAWriter.Tests` — 786 тестов.
+
+---
+
+## 20. Футер чата: режим, фаза и Resume на биндингах (фаза E)
+
+Второе место после панели Analyze logs, где состояние агента перестало дублироваться в хосте.
+
+### 20.1. Что связано и чем
+
+| Контрол | Привязка |
+|---|---|
+| `ModeToggle` (`SegmentedToggle`) | `SelectedValue={Binding Chat.Mode, Converter={StaticResource ModeToToggle}, Mode=TwoWay}` |
+| `InputBox` (рамка) | `Style` c `DataTrigger` по `{Binding Chat.Mode}`: Plan → `Mode.PlanBrush`, Act → `Mode.ActBrush`, Help → `Mode.HelpBrush` |
+| `CancelButton` | `Visibility={Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}` |
+| `DoItButton` | `Command={Binding Cmd}` + `CommandParameter="DoItCommand"`, `IsEnabled={Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}` |
+| `ResumeButton` | `Visibility={Binding Chat.CanResume, Converter={StaticResource BoolToVis}}` |
+
+В биндингах нет ни одного сравнения enum: два экземпляра `EnumMatchConverter` с параметрами
+`Match="Streaming"`, `WhenMatch`/`WhenDifferent` дают и `Visibility`, и `bool`. Значения
+`WhenMatch="Visible"` / `"False"` конвертер приводит к типу цели (`Visibility`, `bool`), поэтому
+отдельные конвертеры «под фазу» не нужны и коллекция `Converters` не растёт.
+
+Имена режима («Plan»/«Act»/«Help») живут в Core — `AgentModeNames.ToValue`/`Parse`. Один маппинг
+нужен трём местам: конвертеру `AgentModeToToggleValueConverter` (в обе стороны), записи в
+транскрипте (сеттер `ChatModel.Mode`) и `ChatMessage.Mode`; покрыто `AgentModeNamesTests`.
+
+### 20.2. Флаг возобновления: модель хранит признак, хост — снимок
+
+`ChatModel` получил `HasResumableRun` (признак) и `CanResume` (проекция «признак есть и
+`Phase == Idle`»). Снимок (`AgentResumeSnapshot`, режим, `ContextBudget`) остался в хосте: это
+инфраструктура раннера, а не данные беседы (§17.3). Раньше видимость кнопки двигали руками из
+четырёх мест (`OnCancelSend`, `catch (OperationCanceledException)`, `ResetResume`, `SetPhase`) —
+теперь достаточно присвоить признак, кнопка перерисуется сама.
+
+### 20.3. Ловушки, которые проверили
+
+- `SegmentedToggle` — двусторонний DP: внутренний `ListBox` поднимает `SelectionChanged` и при
+  программной установке значения, поэтому `OnModeChanged` во время восстановления подавлен флагом
+  `_restoringUiState` (иначе восстановление делало бы лишний persist).
+- Запись «Mode: …» в транскрипт пишет **сеттер `ChatModel.Mode`**, а не `SwitchMode`: сеттер
+  идемпотентен (пишет только при реальной смене значения), поэтому двойная запись исключена и при
+  клике по тумблеру, и при программном переключении из `DoItCommand` (раунд-трип
+  «модель → тумблер → `OnModeChanged`» больше не дублирует запись). `OnModeChanged` теперь только
+  персистит. Восстановление сессии идёт мимо сеттера через `ChatModel.RestoreMode(...)`, поэтому
+  при загрузке вкладки запись не появляется.
+- `Style` у `InputBox` задан явно, поэтому он наследует прежний вид через
+  `BasedOn="{StaticResource {x:Type TextBox}}"`: локальный стиль иначе «съел» бы неявный стиль
+  `TextBox` из ресурсов окна (фон, кисть каретки, padding).
+- Локальные `Visibility="Collapsed"` у `CancelButton`/`ResumeButton` удалены: начальные значения
+  совпадают с дефолтом модели (`Phase = Idle`, `HasResumableRun = false`), поэтому при загрузке
+  ничего не «мигает».
+
+### 20.4. Что осталось в хосте
+
+`StartChatStatus`/`StopChatStatus`/`ShowChatStatusError` присваивают `Phase`, `ResetResume` и
+`OnCancelSend` — `HasResumableRun`. Статусные тексты (`AgentStatusText`, `AgentErrorText`) и
+таймер — по-прежнему View. Удалены `SetPhase`, `UpdateResumeButtonVisibility`, `ApplyModeBrush`,
+`AppendModeSwitch`, алиасы `_mode`/`_phase` и поле `_resumeAvailable`.
+
+Разметка проверена не только сборкой: `EnumMatchConverter`, `AgentModeToToggleValueConverter` и вся
+связка «`DataTrigger` по enum + `BasedOn` неявного стиля + TwoWay-конвертер» прогнаны на отдельном
+WPF-стенде (загружается `Window` с теми же привязками, 19 проверок, 0 ошибок биндинга) — WPF
+молча игнорирует неверные пути биндингов, поэтому одной компиляции XAML недостаточно.

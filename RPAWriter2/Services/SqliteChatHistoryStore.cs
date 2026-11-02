@@ -11,6 +11,12 @@ namespace RPAWriter2.Services
     /// </summary>
     public sealed class SqliteChatHistoryStore : IChatHistoryStore
     {
+        public string WorkspaceId
+        {
+            get => ChatHistoryStore.WorkspaceId;
+            set => ChatHistoryStore.WorkspaceId = value ?? "";
+        }
+
         public void Initialize() => ChatHistoryStore.Initialize();
 
         public IReadOnlyList<ChatConversation> ListConversations(int limit = 50)

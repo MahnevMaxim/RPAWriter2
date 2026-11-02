@@ -50,34 +50,28 @@ namespace RPAWriter2
     {
         private SettingsData _settings;
         private IAiProvider _ai;
-        private SpecModel _currentSpec;
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
         private OutputWindowService _outputWindow;
         private readonly GitService _git = new GitService();
         private readonly CheckpointServiceFactory _checkpoints = new CheckpointServiceFactory();
-        private readonly ChatModel _chatModel = new ChatModel(new SqliteChatHistoryStore(), new JsonUiStateStore());
+        private readonly ChatModel _chatModel;
         private readonly ChatViewModel _chatViewModel = new ChatViewModel();
+        private readonly SettingsModel _settingsModel;
+        private readonly SettingsViewModel _settingsViewModel = new SettingsViewModel();
+        private readonly SpecTabModel _specTabModel;
+        private readonly SpecTabViewModel _specTabViewModel = new SpecTabViewModel();
+        private readonly KnowledgeBaseModel _knowledgeBaseModel;
+        private readonly KnowledgeBaseViewModel _knowledgeBaseViewModel = new KnowledgeBaseViewModel();
+        private readonly VsWorkspaceProvider _workspaceProvider = new VsWorkspaceProvider();
 
-        /// <summary>Agent mode (Plan/Act/Help); owned by <see cref="ChatModel"/>.</summary>
-        private AgentMode _mode
-        {
-            get => _chatModel.Mode;
-            set => _chatModel.Mode = value;
-        }
-
-        /// <summary>Phase of the current agent turn; owned by <see cref="ChatModel"/>.</summary>
-        private AgentPhase _phase
-        {
-            get => _chatModel.Phase;
-            set => _chatModel.Phase = value;
-        }
+        // Mode and phase are read from _chatModel directly: the footer controls bind to them, so
+        // there is nothing left for the host to mirror (documentation/13-model-layer.md, phase E).
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
         private AgentResumeSnapshot? _resumableSnapshot;
         private AgentMode _resumableMode;
         private ContextBudget? _resumableBudget;
-        private bool _resumeAvailable;
         private ITokenUsageProvider? _tokenUsage;
         private int _lastEstimatedInputTokens;
         private IMessageNotifier? _messageNotifier;
@@ -92,7 +86,6 @@ namespace RPAWriter2
         // code keeps working while the bindings move over (phase E) and the tests cover the model.
         private ObservableCollection<ChatMessage> _messages => _chatModel.Messages;
         private ObservableCollection<PendingMessage> _pendingMessages => _chatModel.Pending;
-        private readonly ObservableCollection<ChatMessage> _specMessages = new ObservableCollection<ChatMessage>();
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private ObservableCollection<ChatAttachment> _attachments => _chatModel.Attachments;
@@ -101,15 +94,11 @@ namespace RPAWriter2
         private CancellationTokenSource? _chatCts;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
-        private CancellationTokenSource? _kbImportCts;
-        private volatile bool _kbImportPaused;
-        private CancellationTokenSource? _securityAuditCts;
         private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private DateTime _chatStartedAt;
-        private const string SpecLockedMessage = "The spec file is open in another application (e.g. Word/Excel). Close it and try again.";
         private const string CommitBranchName = "dev";
 
         private static string CommitMessageSystemPrompt =>
@@ -126,6 +115,11 @@ namespace RPAWriter2
         private const int MaxErrorsWithContext = 10;
         private ObservableCollection<ChatConversation> _conversations => _chatModel.History;
 
+        /// <summary>
+        /// Pass-through alias of <see cref="ChatModel.ActiveChatConversation"/>: the model stays the
+        /// only source of "which chat is active", so do not add local fields that remember the current
+        /// conversation.
+        /// </summary>
         private ChatConversation _currentConversation
         {
             get => _chatModel.ActiveChatConversation;
@@ -157,6 +151,13 @@ namespace RPAWriter2
 
         public MainWindowControl()
         {
+            ApplyWorkspaceScope();
+
+            _chatModel = new ChatModel(
+                new SqliteChatHistoryStore(),
+                new JsonUiStateStore(),
+                chatSink: new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
+                workspaceProvider: _workspaceProvider);
             this.InitializeComponent();
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
@@ -172,13 +173,59 @@ namespace RPAWriter2
             ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
             ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
             AttachmentsList.ItemsSource = _attachments;
-            SpecMessages.Messages = _specMessages;
             SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
             _packagesView.Filter = FilterPackages;
             PackagesList.ItemsSource = _packagesView;
-            LoadSettings();
+            _settingsModel = new SettingsModel(
+                new JsonSettingsStore(),
+                new JsonWorkspaceLogSettingsStore(),
+                _workspaceProvider,
+                new DpapiSecretsStore(),
+                () => _ai,
+                new VsFolderPicker(GetOwner),
+                new VsSolutionPathProvider(),
+                new VsFileWriter(),
+                new VsFileOpener(),
+                () => LogService.CurrentLogFilePath,
+                () => LogService.CurrentChatLogFilePath);
+            _settingsModel.SettingsSaved += OnSettingsModelSaved;
+            _settingsModel.Notify += OnSettingsNotify;
+            MvvmFactory.Attach(_settingsModel, _settingsViewModel, SettingsTab);
+            _settings = _settingsModel.ToSettingsData();
+            ApiKeyBox.Password = _settings.ApiKey ?? "";
+            ApiKeyBox.PasswordChanged += OnApiKeyChanged;
+
+            _specTabModel = new SpecTabModel(
+                () => _ai,
+                new VsSolutionPathProvider(),
+                new VsFilePicker(),
+                new VsFolderPicker(GetOwner),
+                new VsFileWriter(),
+                new MessageBoxFileOverwritePrompter(),
+                Confirm,
+                new VsDocumentOpener(),
+                new OpenXmlDocumentReader(),
+                new RobotGenerator(),
+                kbPath => new FileKnowledgeBase(kbPath),
+                () => _settings,
+                SynchronizationContext.Current);
+            _specTabModel.Notify += OnSpecTabNotify;
+            MvvmFactory.Attach(_specTabModel, _specTabViewModel, SpecTab);
+
+            _knowledgeBaseModel = new KnowledgeBaseModel(
+                () => _ai,
+                () => _settings,
+                kbPath => new FileKnowledgeBase(kbPath),
+                new VsFileWriter(),
+                SynchronizationContext.Current);
+            _knowledgeBaseModel.Notify += OnKnowledgeBaseNotify;
+            _knowledgeBaseModel.PropertyChanged += OnKnowledgeBaseModelPropertyChanged;
+            MvvmFactory.Attach(_knowledgeBaseModel, _knowledgeBaseViewModel, KnowledgeBaseTab);
+
+            SpecMessages.Messages = _specTabModel.SpecMessages;
+
             MaterialIconDataProvider.InitializeGeometryParser(s => Geometry.Parse(s));
             PopulateControlsGallery();
             ShowPendingOptionsWarnings();
@@ -191,7 +238,10 @@ namespace RPAWriter2
             _outputWindow = new OutputWindowService();
             RebuildAgentTools();
             HookSolutionEvents();
+            _workspaceProvider.WorkspaceChanged += OnWorkspaceChanged;
+            _workspaceProvider.Initialize();
             UpdateCreateRobotVisibility();
+            UpdateWorkspaceIndicator();
             _chatModel.LogAnalyzer = CreateLogAnalyzer();
             MvvmFactory.Attach(_chatModel, _chatViewModel, this);
             _chatModel.PropertyChanged += OnChatModelPropertyChanged;
@@ -203,70 +253,6 @@ namespace RPAWriter2
         {
             if (e.PropertyName == nameof(ChatModel.PinnedMessage))
                 RefreshPinnedMessage();
-        }
-
-        private void LoadSettings()
-        {
-            _settings = SettingsStore.Load();
-            BaseUrlBox.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl) ? "https://api.openai.com/v1" : _settings.BaseUrl;
-            ApiKeyBox.Password = _settings.ApiKey ?? "";
-            ModelBox.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "gpt-4o-mini" : _settings.Model;
-            TemperatureSlider.Value = _settings.Temperature;
-            UpdateTemperatureLabel();
-            KbPathBox.Text = _settings.KnowledgeBasePath ?? "";
-            RobotsRootPathBox.Text = _settings.RobotsRootPath ?? "";
-            RobotTemplateNameBox.Text = _settings.RobotTemplateName ?? "";
-            ShowRobotCreatorCheckBox.IsChecked = _settings.ShowRobotCreator;
-            PackagesPathBox.Text = _settings.PackagesPath ?? "";
-            RulesPathBox.Text = _settings.RulesPath ?? "";
-            ContextWindowBox.Text = (_settings.ContextWindowSize > 0 ? _settings.ContextWindowSize : 409600).ToString();
-            CompactThresholdBox.Text = _settings.CompactThreshold.ToString(CultureInfo.InvariantCulture);
-            ReserveFractionBox.Text = _settings.ReserveFraction.ToString(CultureInfo.InvariantCulture);
-            KeepRecentBox.Text = _settings.KeepRecentMessages.ToString();
-            ToolResultMaxCharsBox.Text = _settings.ToolResultMaxChars.ToString();
-            MaxIterationsBox.Text = _settings.MaxIterations.ToString();
-            AutoCompactCheckBox.IsChecked = _settings.AutoCompact;
-            UseToolRoleCheckBox.IsChecked = _settings.UseToolRole;
-            ToolCallingModeCombo.SelectedIndex = string.Equals(_settings.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            MemoryBankModeCombo.SelectedIndex = MemoryBankModeToIndex(_settings.MemoryBankMode);
-            SecurityAuditModeCombo.SelectedIndex = string.Equals(_settings.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            LogFilePathBox.Text = _settings.LogFilePath ?? "";
-            ChatLogFilePathBox.Text = _settings.ChatLogFilePath ?? "";
-            LogProvidersPathBox.Text = _settings.LogProvidersPath ?? "";
-            TimeoutSecondsBox.Text = _settings.TimeoutSeconds.ToString();
-            RetryTimeoutMinutesBox.Text = _settings.RetryTimeoutMinutes.ToString();
-            RetryBaseDelaySecondsBox.Text = _settings.RetryBaseDelaySeconds.ToString();
-            RetryMaxDelaySecondsBox.Text = _settings.RetryMaxDelaySeconds.ToString();
-            InputPriceBox.Text = _settings.InputPricePerMillion.ToString(CultureInfo.InvariantCulture);
-            CacheHitPriceBox.Text = _settings.CacheHitPricePerMillion.ToString(CultureInfo.InvariantCulture);
-            OutputPriceBox.Text = _settings.OutputPricePerMillion.ToString(CultureInfo.InvariantCulture);
-            UserNameBox.Text = _settings.UserName ?? "";
-            SkillsPathBox.Text = _settings.SkillsPath ?? "";
-            AddressByNameCheckBox.IsChecked = _settings.AddressByName;
-            AllowSubagentsCheckBox.IsChecked = _settings.AllowSubagents;
-            CheckpointsEnabledCheckBox.IsChecked = _settings.CheckpointsEnabled;
-            SubagentMaxIterationsBox.Text = _settings.SubagentMaxIterations.ToString();
-            SubagentMaxDepthBox.Text = _settings.SubagentMaxDepth.ToString();
-            ReasoningEffortCombo.SelectedIndex = ReasoningEffortToIndex(_settings.ReasoningEffort);
-            ShowControlsCheckBox.IsChecked = _settings.ShowControls;
-            ApplyControlsVisibility();
-            SpeechToTextProviderCombo.SelectedIndex = SpeechToTextProviderToIndex(_settings.SpeechToTextProvider);
-            SpeechToTextModelBox.Text = _settings.SpeechToTextModel ?? "whisper-1";
-            SpeechToTextLanguageBox.Text = _settings.SpeechToTextLanguage ?? "ru";
-            VoskModelPathBox.Text = _settings.VoskModelPath ?? "";
-            SpeechAutoSendCheckBox.IsChecked = _settings.SpeechAutoSend;
-            AutoCaptureRuntimeExceptionsCheckBox.IsChecked = _settings.AutoCaptureRuntimeExceptions;
-        }
-
-        private void OnTemperatureChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            UpdateTemperatureLabel();
-        }
-
-        private void UpdateTemperatureLabel()
-        {
-            if (TemperatureValueText != null)
-                TemperatureValueText.Text = Math.Round(TemperatureSlider.Value, 1).ToString("0.0", CultureInfo.InvariantCulture);
         }
 
         private void RecreateAiProvider()
@@ -286,31 +272,7 @@ namespace RPAWriter2
 
         private string KbPath()
         {
-            return (KbPathBox?.Text ?? "").Trim();
-        }
-
-        private string? RequireKbPath()
-        {
-            var p = KbPath();
-            if (string.IsNullOrWhiteSpace(p))
-            {
-                AppendChat("Specify the knowledge base directory in the \"Settings\" tab first.");
-                SetOutput("Knowledge base directory is not configured. Set the path in the \"Settings\" tab.");
-                MainTabs.SelectedItem = SettingsTab;
-                return null;
-            }
-            return p;
-        }
-
-        private string? RequireKbPathForKnowledgeBase()
-        {
-            var p = KbPath();
-            if (string.IsNullOrWhiteSpace(p))
-            {
-                SetKbStatus("Knowledge base directory is not configured. Set the path in the \"Settings\" tab.");
-                return null;
-            }
-            return p;
+            return (_settings?.KnowledgeBasePath ?? "").Trim();
         }
 
         private void AppendChat(string text)
@@ -335,16 +297,6 @@ namespace RPAWriter2
         private void AppendCompaction(string text)
         {
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.Compaction, Text = text });
-        }
-
-        private void AppendModeSwitch(AgentMode mode)
-        {
-            AppendChatMessage(new ChatMessage
-            {
-                Kind = ChatMessageKind.ModeSwitch,
-                Mode = mode.ToString(),
-                Text = "Mode: " + mode.ToString()
-            });
         }
 
         /// <summary>
@@ -710,29 +662,6 @@ namespace RPAWriter2
             return service;
         }
 
-        private void AppendSpecMessage(ChatMessage message)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => AppendSpecMessage(message)));
-                return;
-            }
-            SpecMessages.Append(message);
-            CopySpecAllButton.Visibility = Visibility.Visible;
-        }
-
-        private void AppendSpecText(string text)
-        {
-            AppendSpecMessage(new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = text });
-        }
-
-        private ChatMessage AppendSpecStreaming()
-        {
-            var message = new ChatMessage { Kind = ChatMessageKind.SystemNotice, IsThinking = true, Text = "Thinking\u2026" };
-            AppendSpecMessage(message);
-            return message;
-        }
-
         private void OnCopyMessageSample(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrEmpty(sample.Text))
@@ -786,7 +715,7 @@ namespace RPAWriter2
         private void OnCopySpecOutput(object sender, RoutedEventArgs e)
         {
             var sb = new StringBuilder();
-            foreach (var m in _specMessages)
+            foreach (var m in _specTabModel.SpecMessages)
             {
                 if (sb.Length > 0) sb.AppendLine().AppendLine();
                 sb.Append(FormatMessageForCopy(m));
@@ -807,32 +736,6 @@ namespace RPAWriter2
                 sb.Append(message.Reasoning);
             }
             return sb.ToString();
-        }
-
-        private void SetOutput(string text)
-        {
-            AppendSpecText(text);
-        }
-
-        private void SetKbStatus(string status)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetKbStatus(status)));
-                return;
-            }
-            KbStatusText.Text = status;
-        }
-
-        private void SetKbProgress(double value)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetKbProgress(value)));
-                return;
-            }
-            KbProgressBar.Value = value;
-            KbProgressBar.Visibility = Visibility.Visible;
         }
 
         private void HookTokenUsage()
@@ -960,23 +863,6 @@ namespace RPAWriter2
                 " body=" + (e.Body ?? "").Replace("\r", " ").Replace("\n", " "));
         }
 
-        private void AppendKbMessage(string text)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => AppendKbMessage(text)));
-                return;
-            }
-            KbMessagesBox.AppendText(text + Environment.NewLine);
-            if (KbAutoScrollCheckBox.IsChecked == true)
-                KbMessagesBox.ScrollToEnd();
-        }
-
-        private void OnRobotImportMessage(object? sender, string message)
-        {
-            AppendKbMessage(message);
-        }
-
         private void OnTokenUsageUpdated(object? sender, TokenUsage usage)
         {
             if (!Dispatcher.CheckAccess())
@@ -1020,7 +906,6 @@ namespace RPAWriter2
         private void ShowError(Exception ex)
         {
             AppendExtensionError(ex);
-            SetOutput(ex.ToString());
         }
 
         private void ShowNotice(string message, NotificationKind kind = NotificationKind.Info)
@@ -1028,6 +913,41 @@ namespace RPAWriter2
             NoticeBar.Kind = kind;
             NoticeBar.Message = message;
             NoticeBar.Visibility = Visibility.Visible;
+        }
+
+        private bool Confirm(string title, string message)
+            => MessageDialog.Show(title, message, MessageDialogCommandSet.YesNo) == MessageDialogCommand.Yes;
+
+        private void OnSpecTabNotify(object? sender, Notify notify)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnSpecTabNotify(sender, notify)));
+                return;
+            }
+            ShowNotice(notify.Message, (NotificationKind)notify.NotifyLevel);
+        }
+
+        private void OnKnowledgeBaseNotify(object? sender, Notify notify)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnKnowledgeBaseNotify(sender, notify)));
+                return;
+            }
+            ShowNotice(notify.Message, (NotificationKind)notify.NotifyLevel);
+        }
+
+        private void OnKnowledgeBaseModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(KnowledgeBaseModel.MessagesText))
+                return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_knowledgeBaseModel.AutoScroll)
+                    KbMessagesBox.ScrollToEnd();
+            }));
         }
 
         private void HideNotice()
@@ -1080,22 +1000,6 @@ namespace RPAWriter2
             RestorePackagesPanel.Visibility = noSolution ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        private void ShowImportProgress(string status)
-        {
-            ImportStatusText.Text = status;
-            ImportProgressPanel.Visibility = Visibility.Visible;
-        }
-
-        private void SetImportStatus(string status)
-        {
-            ImportStatusText.Text = status;
-        }
-
-        private void HideImportProgress()
-        {
-            ImportProgressPanel.Visibility = Visibility.Collapsed;
-        }
-
         /// <summary>Returns the open solution's directory, or null when no solution is open.</summary>
         private string? GetOpenSolutionDirectory()
         {
@@ -1113,23 +1017,103 @@ namespace RPAWriter2
             }
         }
 
-        /// <summary>Copies the spec file, unchanged, into the docs folder at the solution root.</summary>
-        private static void SaveImportedSpec(string sourcePath, string solutionDir)
+        /// <summary>Sets the global workspace scope from the provider and creates the workspace folder.</summary>
+        private void ApplyWorkspaceScope()
         {
-            var docsDir = Path.Combine(solutionDir, "docs");
-            Directory.CreateDirectory(docsDir);
-            File.Copy(sourcePath, Path.Combine(docsDir, Path.GetFileName(sourcePath)), overwrite: true);
+            var workspace = _workspaceProvider.GetCurrentWorkspace();
+            var workspaceId = workspace?.Id ?? "";
+            AppDataPaths.SetWorkspaceScope(workspaceId);
+            if (workspace == null)
+                return;
+
+            AppDataPaths.EnsureWorkspaceDirectory();
+
+            // First open of this workspace: seed ui_state.json from the global one so the last
+            // active tab/conversation carries over once, without clobbering an existing file.
+            try
+            {
+                var globalUiState = AppDataPaths.Resolve("ui_state.json");
+                var workspaceUiState = AppDataPaths.ResolveWorkspaceCurrent("ui_state.json");
+                if (File.Exists(globalUiState) && !File.Exists(workspaceUiState))
+                    File.Copy(globalUiState, workspaceUiState);
+            }
+            catch
+            {
+                // migration is best-effort
+            }
+        }
+
+        private void OnWorkspaceChanged(object? sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnWorkspaceChanged(sender, e)));
+                return;
+            }
+
+            ApplyWorkspaceScope();
+            _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            _settingsModel.ReloadWorkspaceScope();
+            _settings = _settingsModel.ToSettingsData();
+            LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
+            UpdateWorkspaceIndicator();
+            UpdateCreateRobotVisibility();
+        }
+
+        private void UpdateWorkspaceIndicator()
+        {
+            if (WorkspaceIndicatorText == null)
+                return;
+
+            var workspace = _workspaceProvider.GetCurrentWorkspace();
+            if (workspace == null)
+            {
+                WorkspaceIndicatorText.Text = "No workspace open";
+                WorkspaceIndicatorText.ToolTip = null;
+                return;
+            }
+
+            WorkspaceIndicatorText.Text = "Workspace: " + workspace.Name;
+            WorkspaceIndicatorText.ToolTip = workspace.Path;
+        }
+
+        private void OnResetWorkspace(object sender, RoutedEventArgs e)
+        {
+            var workspace = _workspaceProvider.GetCurrentWorkspace();
+            if (workspace == null)
+            {
+                ShowNotice("No workspace is open.", NotificationKind.Info);
+                return;
+            }
+
+            if (!Confirm("Reset workspace", "Clear workspace-scoped settings, chat history and UI state for \"" + workspace.Name + "\"?"))
+                return;
+
+            var workspaceDir = AppDataPaths.ResolveWorkspace(workspace.Id);
+            try
+            {
+                if (Directory.Exists(workspaceDir))
+                    Directory.Delete(workspaceDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                ShowNotice("Failed to reset workspace: " + ex.Message, NotificationKind.Error);
+                return;
+            }
+
+            // Re-scope: recreates a fresh workspace directory and reloads empty history/settings.
+            ApplyWorkspaceScope();
+            _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            _settingsModel.ReloadWorkspaceScope();
+            _settings = _settingsModel.ToSettingsData();
+            LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
+            UpdateWorkspaceIndicator();
+            ShowNotice("Workspace state reset.", NotificationKind.Info);
         }
 
 #pragma warning disable VSTHRD100 // WPF event handlers are async void
         private async void OnSend(object sender, RoutedEventArgs e)
         {
-            await SendMessageAsync();
-        }
-
-        private async void OnDoItClick(object sender, RoutedEventArgs e)
-        {
-            InputBox.Text = "Do it!!!";
             await SendMessageAsync();
         }
 
@@ -1250,23 +1234,6 @@ namespace RPAWriter2
                 : recording
                     ? Brushes.Red
                     : (Brush)FindResource("Dark.Text");
-        }
-
-        private static int SpeechToTextProviderToIndex(string value)
-        {
-            if (string.Equals(value, "OpenAiWhisper", StringComparison.OrdinalIgnoreCase)) return 1;
-            if (string.Equals(value, "Vosk", StringComparison.OrdinalIgnoreCase)) return 2;
-            return 0;
-        }
-
-        private static string SpeechToTextProviderIndexToName(int index)
-        {
-            switch (index)
-            {
-                case 1: return "OpenAiWhisper";
-                case 2: return "Vosk";
-                default: return "Auto";
-            }
         }
 
         private void OnAttach(object sender, RoutedEventArgs e)
@@ -1400,543 +1367,6 @@ namespace RPAWriter2
             {
                 return Encoding.Default.GetString(bytes);
             }
-        }
-
-        private async void OnImportSpec(object sender, RoutedEventArgs e)
-        {
-            var solutionDir = GetOpenSolutionDirectory();
-            if (solutionDir == null)
-            {
-                ShowNotice("Spec import is only available when a solution is open.", NotificationKind.Warning);
-                return;
-            }
-
-            var dlg = new OpenFileDialog
-            {
-                Title = "Select spec",
-                Filter = "Specs (*.docx;*.doc;*.xlsx;*.xls;*.txt;*.md)|*.docx;*.doc;*.xlsx;*.xls;*.txt;*.md|All files (*.*)|*.*"
-            };
-            if (dlg.ShowDialog() != true) return;
-
-            if (FileLockDetector.IsFileLocked(dlg.FileName))
-            {
-                ShowNotice(SpecLockedMessage, NotificationKind.Error);
-                return;
-            }
-
-            ShowImportProgress("Reading file…");
-            try
-            {
-                var docsDir = Path.Combine(solutionDir, "docs");
-                Directory.CreateDirectory(docsDir);
-
-                // Unchanged copy of the original spec file.
-                SaveImportedSpec(dlg.FileName, solutionDir);
-
-                var mediaDir = Path.Combine(docsDir, "media");
-                var spec = new OpenXmlDocumentReader().Read(dlg.FileName, mediaDir);
-
-                // 1. Structured spec.md (headings, lists, tables).
-                WriteMarkdownWithConfirm(Path.Combine(docsDir, "spec.md"), spec.MarkdownText, "spec.md");
-
-                // 2. Decompose the spec into tasks.
-                SetImportStatus("Parsing tasks (AI)…");
-                var parsing = AppendSpecStreaming();
-                parsing.Reasoning = "Decomposing the specification into tasks\u2026";
-                var tasks = await _ai.DecomposeTasksAsync(spec.RawText);
-                spec.Tasks = tasks.ToList();
-                parsing.IsThinking = false;
-                parsing.Text = "Parsed " + tasks.Count + " tasks.";
-
-                // 3. Structured tasks.md.
-                var tasksMarkdown = MarkdownContent.TasksToMarkdown(spec);
-                WriteMarkdownWithConfirm(Path.Combine(docsDir, "tasks.md"), tasksMarkdown, "tasks.md");
-
-                _currentSpec = spec;
-                HideNotice();
-
-                var sb = new StringBuilder();
-                sb.AppendLine("Spec: " + spec.Name);
-                sb.AppendLine();
-                sb.AppendLine(spec.RawText);
-                sb.AppendLine();
-                sb.AppendLine("Tasks: " + spec.Tasks.Count);
-                foreach (var t in spec.Tasks)
-                    sb.AppendLine("- " + (t.Action ?? "") + " → " + (t.Target ?? "") + " [" + (t.ActivityType ?? "") + "]");
-                SetOutput(sb.ToString());
-
-                AppendSpecText("Imported spec: " + spec.Name + " (tasks: " + spec.Tasks.Count + ")");
-            }
-            catch (Exception ex) when (FileLockDetector.IsFileLocked(ex))
-            {
-                ShowNotice(SpecLockedMessage, NotificationKind.Error);
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex);
-            }
-            finally
-            {
-                HideImportProgress();
-            }
-        }
-
-        /// <summary>Deletes all files and subfolders inside the solution's docs folder after confirmation.</summary>
-        private void OnClearSpec(object sender, RoutedEventArgs e)
-        {
-            var solutionDir = GetOpenSolutionDirectory();
-            if (solutionDir == null)
-            {
-                ShowNotice("Clear docs is only available when a solution is open.", NotificationKind.Warning);
-                return;
-            }
-
-            var docsDir = Path.Combine(solutionDir, "docs");
-            if (!Directory.Exists(docsDir))
-            {
-                ShowNotice("No docs folder to clear.", NotificationKind.Info);
-                return;
-            }
-
-            var result = MessageDialog.Show(
-                "Clear docs",
-                "Delete all files and folders in the docs folder?\n\n" + docsDir + "\n\nThis cannot be undone.",
-                MessageDialogCommandSet.YesNo);
-            if (result != MessageDialogCommand.Yes)
-                return;
-
-            try
-            {
-                var removed = 0;
-                foreach (var file in Directory.GetFiles(docsDir, "*", SearchOption.AllDirectories))
-                {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                    File.Delete(file);
-                    removed++;
-                }
-
-                foreach (var dir in Directory.GetDirectories(docsDir, "*", SearchOption.AllDirectories)
-                                             .OrderByDescending(d => d.Length))
-                {
-                    Directory.Delete(dir);
-                }
-
-                _currentSpec = null;
-                ShowNotice("Cleared " + removed + " file(s) from docs.", NotificationKind.Success);
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to clear docs folder: " + ex.Message);
-            }
-        }
-
-        private async void OnGenerateAlgorithm(object sender, RoutedEventArgs e)
-        {
-            var solutionDir = GetOpenSolutionDirectory();
-            if (solutionDir == null)
-            {
-                ShowNotice("Generate algorithm is only available when a solution is open.", NotificationKind.Warning);
-                return;
-            }
-
-            var algorithmGenerator = _ai as IAlgorithmGenerator;
-            if (algorithmGenerator == null)
-            {
-                ShowNotice("The current AI provider does not support algorithm generation.", NotificationKind.Warning);
-                return;
-            }
-
-            var docsDir = Path.Combine(solutionDir, "docs");
-            Directory.CreateDirectory(docsDir);
-
-            var specMarkdown = ResolveSpecMarkdown(docsDir);
-            if (specMarkdown == null)
-            {
-                ShowNotice("Import a spec first or ensure docs/spec.md exists.", NotificationKind.Warning);
-                return;
-            }
-
-            ShowImportProgress("Generating algorithm…");
-            try
-            {
-                var drafts = new List<string>();
-                for (var i = 0; i < 3; i++)
-                {
-                    SetImportStatus("Generating algorithm draft " + (i + 1) + "/3…");
-                    var streaming = AppendSpecStreaming();
-                    streaming.Reasoning = "Generating algorithm draft " + (i + 1) + "/3…";
-                    var draft = await algorithmGenerator.GenerateAlgorithmDraftAsync(specMarkdown);
-                    streaming.IsThinking = false;
-                    streaming.Text = "Draft " + (i + 1) + " generated.";
-                    drafts.Add(draft);
-                    File.WriteAllText(Path.Combine(docsDir, "alg-" + (i + 1) + ".md"), draft);
-                    AppendSpecText("Wrote alg-" + (i + 1) + ".md");
-                }
-
-                SetImportStatus("Reconciling drafts…");
-                var consolidating = AppendSpecStreaming();
-                consolidating.Reasoning = "Reconciling drafts…";
-                var consolidated = await algorithmGenerator.ConsolidateAlgorithmAsync(specMarkdown, drafts);
-                consolidating.IsThinking = false;
-                consolidating.Text = "Algorithm consolidated.";
-
-                File.WriteAllText(Path.Combine(docsDir, "alg.md"), consolidated.AlgorithmMarkdown ?? "");
-                File.WriteAllText(Path.Combine(docsDir, "questions.md"), consolidated.QuestionsMarkdown ?? "");
-                AppendSpecText("Wrote alg.md and questions.md");
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex);
-            }
-            finally
-            {
-                HideImportProgress();
-            }
-        }
-
-        private string? ResolveSpecMarkdown(string docsDir)
-        {
-            if (_currentSpec != null && !string.IsNullOrWhiteSpace(_currentSpec.MarkdownText))
-                return _currentSpec.MarkdownText;
-
-            var specPath = Path.Combine(docsDir, "spec.md");
-            return File.Exists(specPath) ? File.ReadAllText(specPath) : null;
-        }
-
-        /// <summary>
-        /// Saves an md file. If it already exists — offers full overwrite,
-        /// partial fix via diff, or leaving it unchanged.
-        /// </summary>
-        private void WriteMarkdownWithConfirm(string path, string content, string displayName)
-        {
-            if (!File.Exists(path))
-            {
-                File.WriteAllText(path, content);
-                AppendSpecText("Created " + displayName + ".");
-                return;
-            }
-
-            var choice = MessageBox.Show(
-                "File " + displayName + " already exists.\n\n" +
-                "Yes — overwrite it entirely.\n" +
-                "No — find discrepancies and propose a partial fix.\n" +
-                "Cancel — leave it unchanged.",
-                "File already exists",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Question);
-
-            switch (choice)
-            {
-                case MessageBoxResult.Yes:
-                    File.WriteAllText(path, content);
-                    AppendSpecText(displayName + " overwritten.");
-                    break;
-
-                case MessageBoxResult.No:
-                    var existing = File.ReadAllText(path);
-                    var diff = TextDiff.Diff(existing, content);
-                    var summary = diff.HasChanges ? diff.Summary : "No discrepancies found.";
-                    SetOutput(summary);
-                    if (diff.HasChanges)
-                    {
-                        var apply = MessageBox.Show(
-                            summary + "\n\nApply the fixes (overwrite)?",
-                            "Partial fix — " + displayName,
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Question);
-                        if (apply == MessageBoxResult.Yes)
-                        {
-                            File.WriteAllText(path, content);
-                            AppendSpecText("Fixes applied to " + displayName + ".");
-                        }
-                        else
-                        {
-                            AppendSpecText(displayName + " left unchanged.");
-                        }
-                    }
-                    else
-                    {
-                        AppendSpecText(displayName + " has not changed.");
-                    }
-                    break;
-
-                default: // Cancel
-                    AppendSpecText(displayName + " left unchanged.");
-                    break;
-            }
-        }
-
-        private async void OnFindSimilar(object sender, RoutedEventArgs e)
-        {
-            if (_currentSpec == null) { ShowNotice("Import a spec first."); return; }
-            try
-            {
-                var kbPath = RequireKbPath();
-                if (kbPath == null) return;
-                var kb = new FileKnowledgeBase(kbPath);
-                var matches = new List<SimilarTaskMatch>();
-                foreach (var task in _currentSpec.Tasks)
-                    matches.AddRange(await kb.FindSimilarTasksAsync(task, 3));
-
-                var sb = new StringBuilder();
-                foreach (var m in matches)
-                    sb.AppendLine("[" + m.Score.ToString("P0") + "] " + m.Solution.Name + " — " + string.Join("; ", m.Reasons));
-                SetOutput(sb.Length == 0 ? "No similar tasks found." : sb.ToString());
-                AppendSpecText("Similar tasks found: " + matches.Count);
-            }
-            catch (Exception ex) { ShowError(ex); }
-        }
-
-        private async void OnGenerateRobot(object sender, RoutedEventArgs e)
-        {
-            if (_currentSpec == null) { ShowNotice("Import a spec first."); return; }
-            try
-            {
-                var kbPath = RequireKbPath();
-                if (kbPath == null) return;
-                var kb = new FileKnowledgeBase(kbPath);
-                var pipeline = new RpaPipelineService(new OpenXmlDocumentReader(), _ai, kb, new RobotGenerator());
-                var result = await pipeline.GenerateRobotFromSpecAsync(_currentSpec.SourcePath);
-
-                var dir = Path.GetDirectoryName(_currentSpec.SourcePath);
-                var baseName = Path.GetFileNameWithoutExtension(_currentSpec.SourcePath);
-                var xamlPath = Path.Combine(dir, baseName + ".xaml");
-                var csPath = Path.Combine(dir, baseName + ".Actions.cs");
-                File.WriteAllText(xamlPath, result.Xaml);
-                File.WriteAllText(csPath, result.CSharpCode);
-
-                SetOutput(result.Xaml + "\n\n--- C# ---\n\n" + result.CSharpCode);
-                AppendSpecText("Robot generated and saved next to the spec: " + xamlPath + ", " + csPath);
-            }
-            catch (Exception ex) { ShowError(ex); }
-        }
-
-        /// <summary>
-        /// Runs a read-only security audit over every robot solution (RPA-&lt;number&gt;.sln/.slnx)
-        /// located in the same directory as the currently open solution and in the sibling robot
-        /// folders (uppercase "RPA-" prefix) at the same level. Shows the discovered solutions on
-        /// the Spec tab, audits each one with the AI provider, writes the combined report to the
-        /// current solution's docs folder and opens it in Visual Studio.
-        /// </summary>
-        private async void OnRobotSecurityAudit(object sender, RoutedEventArgs e)
-        {
-            if (_securityAuditCts != null)
-            {
-                ShowNotice("Security audit is already running.", NotificationKind.Warning);
-                return;
-            }
-
-            if (_ai == null)
-            {
-                ShowNotice("The AI provider is not available. Configure it in the Settings tab first.", NotificationKind.Warning);
-                return;
-            }
-
-            var baseDirectory = GetOpenSolutionDirectory();
-            if (string.IsNullOrWhiteSpace(baseDirectory))
-            {
-                baseDirectory = PickSecurityAuditDirectory();
-                if (baseDirectory == null) return;
-            }
-
-            var solutions = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(baseDirectory);
-            if (solutions.Count == 0)
-            {
-                ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + " or its sibling RPA-* folders. Select the directory that contains them.", NotificationKind.Warning);
-                var picked = PickSecurityAuditDirectory();
-                if (picked == null) return;
-                baseDirectory = picked;
-                solutions = RobotSecurityAuditService.FindRobotSolutionsInSiblingFolders(baseDirectory);
-                if (solutions.Count == 0)
-                {
-                    ShowNotice("No robot solutions (RPA-<number>.sln/.slnx) found in " + baseDirectory + " or its sibling RPA-* folders.", NotificationKind.Error);
-                    return;
-                }
-            }
-
-            var targetDirectory = GetOpenSolutionDirectory() ?? baseDirectory;
-            var docsDirectory = Path.Combine(targetDirectory, "docs");
-            var reportPath = Path.Combine(docsDirectory, "security_audit.md");
-
-            _securityAuditCts = new CancellationTokenSource();
-            AppendSpecText("Auditing " + solutions.Count + " robot solution(s)...");
-
-            var mode = string.Equals(_settings?.SecurityAuditMode, "CredentialsOnly", StringComparison.OrdinalIgnoreCase)
-                ? SecurityAuditMode.CredentialsOnly
-                : SecurityAuditMode.Full;
-
-            var service = new RobotSecurityAuditService(_ai);
-            service.MessageReported += OnSecurityAuditMessage;
-            try
-            {
-                await service.AuditAsync(solutions, reportPath, cancellationToken: _securityAuditCts.Token, mode: mode);
-                ShowNotice("Security audit completed. Report: " + reportPath, NotificationKind.Success);
-
-                var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
-                if (dte != null && File.Exists(reportPath))
-                {
-                    try { await VsDocumentService.OpenOrActivateAsync(dte, reportPath); }
-                    catch (Exception ex) { LogService.Error(ex, "Failed to open the security audit report."); }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                AppendSpecText("Security audit stopped by user.");
-            }
-            catch (Exception ex)
-            {
-                LogService.Error(ex, "Security audit failed.");
-                ShowError(ex);
-                AppendSpecText("Security audit failed.\n\n" + ex);
-            }
-            finally
-            {
-                service.MessageReported -= OnSecurityAuditMessage;
-                _securityAuditCts.Dispose();
-                _securityAuditCts = null;
-            }
-        }
-
-        private string? PickSecurityAuditDirectory()
-        {
-            using (var dialog = new System.Windows.Forms.FolderBrowserDialog
-            {
-                Description = "Select the directory that contains robot solutions (RPA-<number>.sln/.slnx).",
-                ShowNewFolderButton = true
-            })
-            {
-                var configured = (RobotsRootPathBox?.Text ?? "").Trim();
-                if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
-                    dialog.SelectedPath = configured;
-
-                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                    return dialog.SelectedPath;
-            }
-            return null;
-        }
-
-        private void OnSecurityAuditMessage(object? sender, string message)
-        {
-            LogService.Info("Security audit: " + message);
-            AppendSpecText(message);
-        }
-
-        private async void OnFormKnowledgeBase(object sender, RoutedEventArgs e)
-        {
-            await RunKnowledgeBaseImport(GetKnowledgeBaseFormationMode());
-        }
-
-        private KnowledgeBaseFormationMode GetKnowledgeBaseFormationMode()
-        {
-            return KbModeCombo.SelectedIndex == 1
-                ? KnowledgeBaseFormationMode.Continue
-                : KnowledgeBaseFormationMode.Override;
-        }
-
-        private async Task RunKnowledgeBaseImport(KnowledgeBaseFormationMode mode)
-        {
-            var kbPath = RequireKbPathForKnowledgeBase();
-            if (kbPath == null) return;
-
-            var robotsRoot = (RobotsRootPathBox?.Text ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(robotsRoot))
-            {
-                SetKbStatus("Specify the robot solutions directory in the \"Settings\" tab first.");
-                return;
-            }
-            if (!Directory.Exists(robotsRoot))
-            {
-                SetKbStatus("Robot solutions directory does not exist: " + robotsRoot);
-                return;
-            }
-
-            _kbImportPaused = false;
-            _kbImportCts = new CancellationTokenSource();
-            SetKbImportRunning(true);
-            SetKbStatus(mode == KnowledgeBaseFormationMode.Continue ? "Resuming import…" : "Importing robots…");
-            KbProgressBar.Value = 0;
-            KbProgressBar.Visibility = Visibility.Visible;
-            var service = new RobotKnowledgeBaseImportService(_ai);
-            service.MessageReported += OnRobotImportMessage;
-            try
-            {
-                var progress = new Progress<string>(SetKbStatus);
-                var progressValue = new Progress<double>(SetKbProgress);
-                var result = await service.ImportFromRobotsAsync(
-                    robotsRoot, kbPath, progress, progressValue, _kbImportCts.Token, () => _kbImportPaused, mode);
-
-                var sb = new StringBuilder();
-                sb.AppendLine("Robots processed: " + result.RobotsProcessed);
-                sb.AppendLine("Spec files written: " + result.SpecFilesWritten);
-                sb.AppendLine("Task files written: " + result.TaskFilesWritten);
-                sb.AppendLine("Tasks added to index: " + result.TasksAdded);
-                foreach (var warning in result.Warnings)
-                    sb.AppendLine("Warning: " + warning);
-                AppendKbMessage(sb.ToString().TrimEnd());
-                var importSummary = "Knowledge base imported from robots: " + result.RobotsProcessed + " robot(s), " + result.TasksAdded + " task(s).";
-                AppendChat(importSummary);
-                SetKbStatus(importSummary);
-            }
-            catch (OperationCanceledException)
-            {
-                AppendKbMessage("Import stopped by user.");
-                SetKbStatus("Import stopped.");
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex);
-                AppendKbMessage("Import failed.\n\n" + ex.ToString() + "\n\nSelect \"Continue (resume)\" and run again to resume from the last completed robot.");
-                SetKbStatus("Import failed. Select \"Continue (resume)\" and run again to resume from the last completed robot.");
-            }
-            finally
-            {
-                service.MessageReported -= OnRobotImportMessage;
-                KbProgressBar.Visibility = Visibility.Collapsed;
-                SetKbImportRunning(false);
-                _kbImportCts.Dispose();
-                _kbImportCts = null;
-            }
-        }
-
-        private void SetKbImportRunning(bool running)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetKbImportRunning(running)));
-                return;
-            }
-            KbImportButton.IsEnabled = !running;
-            KbModeCombo.IsEnabled = !running;
-            KbPauseButton.IsEnabled = running;
-            KbStopButton.IsEnabled = running;
-            if (!running)
-            {
-                KbPauseButton.Content = "Pause";
-                _kbImportPaused = false;
-            }
-        }
-
-        private void OnPauseKnowledgeBaseImport(object sender, RoutedEventArgs e)
-        {
-            if (_kbImportCts == null) return;
-            _kbImportPaused = !_kbImportPaused;
-            if (_kbImportPaused)
-            {
-                KbPauseButton.Content = "Resume";
-                SetKbStatus("Paused — click Resume to continue.");
-            }
-            else
-            {
-                KbPauseButton.Content = "Pause";
-                SetKbStatus("Importing robots…");
-            }
-        }
-
-        private void OnStopKnowledgeBaseImport(object sender, RoutedEventArgs e)
-        {
-            _kbImportCts?.Cancel();
-            KbStopButton.IsEnabled = false;
-            SetKbStatus("Stopping…");
         }
 
         private async void OnDeploy(object sender, RoutedEventArgs e)
@@ -2137,28 +1567,6 @@ namespace RPAWriter2
             catch (Exception ex) { ShowError(ex); }
         }
 
-        private void OnConvertMarkdownToDocx(object sender, RoutedEventArgs e)
-        {
-            var dlg = new OpenFileDialog
-            {
-                Title = "Markdown file",
-                Filter = "Markdown (*.md;*.markdown)|*.md;*.markdown|All files (*.*)|*.*"
-            };
-            if (dlg.ShowDialog() != true) return;
-
-            try
-            {
-                var dir = Path.GetDirectoryName(dlg.FileName);
-                var baseName = Path.GetFileNameWithoutExtension(dlg.FileName);
-                var outputPath = Path.Combine(dir, baseName + ".docx");
-                var result = new MarkdownToDocxConverter().Convert(dlg.FileName, outputPath);
-                AppendSpecText(
-                    "Converted " + Path.GetFileName(dlg.FileName) + " → " + Path.GetFileName(outputPath) +
-                    " (paragraphs: " + result.Paragraphs + ", images: " + result.Images + ", tables: " + result.Tables + ").");
-            }
-            catch (Exception ex) { ShowError(ex); }
-        }
-
         private async void OnRestorePackages(object sender, RoutedEventArgs e)
         {
             try
@@ -2330,7 +1738,7 @@ namespace RPAWriter2
 
         private string? RequirePackagesPath()
         {
-            var path = (PackagesPathBox?.Text ?? "").Trim();
+            var path = (_settings?.PackagesPath ?? "").Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
                 SetPackagesStatus("Packages directory is not configured. Set the path in the \"Settings\" tab.");
@@ -2416,21 +1824,6 @@ namespace RPAWriter2
             e.Handled = e.Text.Any(c => !char.IsDigit(c));
         }
 
-        private async void OnRefreshKnowledgeBase(object sender, RoutedEventArgs e)
-        {
-            var kbPath = RequireKbPathForKnowledgeBase();
-            if (kbPath == null) return;
-            try
-            {
-                var kb = new FileKnowledgeBase(kbPath);
-                var records = await kb.GetAllAsync();
-                KbStatusText.Text = "Solutions in the knowledge base: " + records.Count;
-                foreach (var r in records)
-                    AppendKbMessage((r.Name ?? "<unnamed>") + " — tasks: " + (r.Tasks?.Count ?? 0));
-            }
-            catch (Exception ex) { ShowError(ex); }
-        }
-
 #pragma warning restore VSTHRD100
 
         private void StartChatStatus()
@@ -2440,7 +1833,7 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(StartChatStatus));
                 return;
             }
-            SetPhase(AgentPhase.Streaming);
+            _chatModel.Phase = AgentPhase.Streaming;
             AgentErrorText.Text = "";
             AgentErrorText.Visibility = Visibility.Collapsed;
             AgentStatusText.Visibility = Visibility.Visible;
@@ -2471,38 +1864,18 @@ namespace RPAWriter2
             AgentStatusText.Visibility = Visibility.Collapsed;
             AgentErrorText.Text = "";
             AgentErrorText.Visibility = Visibility.Collapsed;
-            SetPhase(AgentPhase.Idle);
+            _chatModel.Phase = AgentPhase.Idle;
         }
 
-        /// <summary>Switches the footer to the given phase and updates the dependent controls.</summary>
-        private void SetPhase(AgentPhase phase)
-        {
-            if (_phase == phase)
-                return;
-            _phase = phase;
-            SendButton.IsEnabled = true; // sending now queues while busy
-            DoItButton.IsEnabled = phase != AgentPhase.Streaming;
-            CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
-            UpdateResumeButtonVisibility();
-        }
-
-        /// <summary>Shows the Resume button only when a cancelled run left a resumable breakpoint and the chat is idle.</summary>
-        private void UpdateResumeButtonVisibility()
-        {
-            if (ResumeButton == null)
-                return;
-            ResumeButton.Visibility = _resumeAvailable && _resumableSnapshot != null && _phase == AgentPhase.Idle
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-        }
-
-        /// <summary>Drops any resumable breakpoint and hides the Resume button.</summary>
+        /// <summary>
+        /// Drops any resumable breakpoint. The "Resume task" button hides by itself: its visibility is
+        /// bound to <see cref="ChatModel.CanResume"/>, which turns false as soon as the flag is cleared.
+        /// </summary>
         private void ResetResume()
         {
-            _resumeAvailable = false;
+            _chatModel.HasResumableRun = false;
             _resumableSnapshot = null;
             _resumableBudget = null;
-            UpdateResumeButtonVisibility();
         }
 
         private void ShowChatStatusError(string message)
@@ -2518,13 +1891,13 @@ namespace RPAWriter2
             AgentStatusText.Visibility = Visibility.Collapsed;
             AgentErrorText.Text = "Error: " + message;
             AgentErrorText.Visibility = Visibility.Visible;
-            SetPhase(AgentPhase.Error);
+            _chatModel.Phase = AgentPhase.Error;
         }
 
         private void OnCancelSend(object sender, RoutedEventArgs e)
         {
             // Manual Cancel: remember to offer "Resume task" once the run has stopped.
-            _resumeAvailable = true;
+            _chatModel.HasResumableRun = true;
             _pendingMessages.Clear();
             _chatCts?.Cancel();
         }
@@ -2947,6 +2320,10 @@ namespace RPAWriter2
 
         private async void OnSendErrors(object sender, RoutedEventArgs e)
         {
+            // "Send errors" is an external entry point: it needs a chat even when the report turns out to
+            // be the "nothing to send" notice.
+            EnsureChatReadyToReceive();
+
             try
             {
                 var errors = await _buildFeedback.GetCompilationErrorsAsync();
@@ -3038,6 +2415,10 @@ namespace RPAWriter2
 
             if (_agentRunner == null) return;
 
+            // A closed chat has no transcript to write into: activate a conversation before the message
+            // (or the queue entry) is created.
+            _chatModel.EnsureActiveConversation();
+
             // Agent busy — enqueue instead of dropping the message.
             if (_chatCts != null)
             {
@@ -3121,18 +2502,22 @@ namespace RPAWriter2
 
             ResetResume();
 
-            var modeName = _mode.ToString();
+            var modeName = AgentModeNames.ToValue(_chatModel.Mode);
             var history = BuildTranscript();
+            // The turn runs inside an active conversation: activate it before the message is appended
+            // (EnsureActiveConversation drops what was left of a closed chat) and set the title on it.
+            var conversation = _chatModel.EnsureActiveConversation();
+            if (string.IsNullOrEmpty(conversation.Title))
+                conversation.Title = ChatMessageMapper.BuildTitle(uiText);
+
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
-            if (string.IsNullOrEmpty(_currentConversation.Title))
-                _currentConversation.Title = ChatMessageMapper.BuildTitle(uiText);
 
             var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
             var budget = BuildContextBudget();
-            await RunAgentTurnAsync(_mode, budget, "input chars=" + promptText.Length + ", images=" + images.Count, thinking,
-                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _mode, budget, ct, progress, resumeProgress));
+            await RunAgentTurnAsync(_chatModel.Mode, budget, "input chars=" + promptText.Length + ", images=" + images.Count, thinking,
+                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _chatModel.Mode, budget, ct, progress, resumeProgress));
         }
 
         /// <summary>
@@ -3230,7 +2615,7 @@ namespace RPAWriter2
                 if (_messages.Contains(thinking))
                     AppendChat("Request cancelled.");
 
-                if (_resumeAvailable && resumableSnapshot != null)
+                if (_chatModel.HasResumableRun && resumableSnapshot != null)
                 {
                     _resumableSnapshot = resumableSnapshot;
                     _resumableMode = mode;
@@ -3241,8 +2626,9 @@ namespace RPAWriter2
                     ResetResume();
                 }
 
+                // StopChatStatus moves the chat to Idle, which is what makes the Resume button
+                // visible through ChatModel.CanResume - the host touches no control here.
                 StopChatStatus();
-                UpdateResumeButtonVisibility();
                 LogService.ChatInfo("Agent chat request cancelled.");
             }
             catch (Exception ex)
@@ -3330,6 +2716,11 @@ namespace RPAWriter2
         /// Sends an externally produced message (e.g. an Error List item selected by the user)
         /// to the agent chat. When the agent is still processing a previous request, the message
         /// is queued and processed after the current turn completes.
+        /// <para>
+        /// A closed chat (the close button of the conversation header) is reopened first, so every
+        /// external entry point — "Send errors", "Send to RPA Writer", "Send exception to RPA Writer",
+        /// notification banners — lands in a real conversation instead of disappearing.
+        /// </para>
         /// </summary>
         public async Task SubmitErrorToChatAsync(string text)
         {
@@ -3337,6 +2728,9 @@ namespace RPAWriter2
                 return;
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            // Model scenario: activates a conversation when the chat is closed and brings its view back.
+            EnsureChatReadyToReceive();
 
             if (_chatCts != null)
             {
@@ -3384,6 +2778,8 @@ namespace RPAWriter2
                 ToolResultMaxChars = _settings.ToolResultMaxChars,
                 UseToolRole = _settings.UseToolRole,
                 MaxIterations = _settings.MaxIterations,
+                MaxStagnantRepeats = _settings.MaxStagnantRepeats,
+                StagnantLoopNudge = _settings.StagnantLoopNudge,
                 AutoCompact = _settings.AutoCompact
             };
         }
@@ -3418,7 +2814,7 @@ namespace RPAWriter2
             {
                 Kind = ChatMessageKind.Subagent,
                 Payload = new SubagentPayload { Item = item },
-                Mode = _mode.ToString()
+                Mode = AgentModeNames.ToValue(_chatModel.Mode)
             });
             Dispatcher.BeginInvoke(new Action(() => item.Status = "running"));
 
@@ -3444,7 +2840,7 @@ namespace RPAWriter2
 
             try
             {
-                var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), task, _mode, budget, ct);
+                var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), task, _chatModel.Mode, budget, ct);
                 var finalText = result?.FinalText ?? "";
                 Dispatcher.BeginInvoke(new Action(() => { item.Status = "completed"; item.Result = finalText; }));
                 return finalText;
@@ -3471,6 +2867,7 @@ namespace RPAWriter2
                 _agentRunner.ToolExecuted -= OnAgentToolExecuted;
                 _agentRunner.ContextCompacted -= OnAgentContextCompacted;
                 _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
+                _agentRunner.ToolRepetitionDetected -= OnAgentToolRepetition;
             }
             var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
                 ? ToolCallingMode.Native
@@ -3480,12 +2877,18 @@ namespace RPAWriter2
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
+            _agentRunner.ToolRepetitionDetected += OnAgentToolRepetition;
             UpdateMemoryBankUi();
         }
 
         private void OnAgentRetryOccurred(object? sender, AgentRetryArgs e)
         {
             LogService.ChatWarn("Agent retry: " + (e.Kind ?? "") + " attempt " + e.Attempt + "/" + e.AttemptLimit + " - " + (e.Detail ?? ""));
+        }
+
+        private void OnAgentToolRepetition(object? sender, AgentToolRepetitionArgs e)
+        {
+            LogService.ChatWarn("Stagnant loop detected: tool \"" + (e.ToolName ?? "") + "\" repeated " + e.Threshold + " times in a row.");
         }
 
         private void OnAgentContextCompacted(object? sender, EventArgs e)
@@ -3687,48 +3090,6 @@ namespace RPAWriter2
             return allowed;
         }
 
-        private static int MemoryBankModeToIndex(string value)
-        {
-            if (string.Equals(value, "Tool", StringComparison.OrdinalIgnoreCase)) return 1;
-            if (string.Equals(value, "Convention", StringComparison.OrdinalIgnoreCase)) return 2;
-            return 0; // Disabled
-        }
-
-        private static string MemoryBankIndexToMode(int index)
-        {
-            if (index == 2) return "Convention";
-            if (index == 1) return "Tool";
-            return "Disabled";
-        }
-
-        private static int ReasoningEffortToIndex(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return 0;
-            if (string.Equals(value, "none", StringComparison.OrdinalIgnoreCase)) return 1;
-            if (string.Equals(value, "minimal", StringComparison.OrdinalIgnoreCase)) return 2;
-            if (string.Equals(value, "low", StringComparison.OrdinalIgnoreCase)) return 3;
-            if (string.Equals(value, "medium", StringComparison.OrdinalIgnoreCase)) return 4;
-            if (string.Equals(value, "high", StringComparison.OrdinalIgnoreCase)) return 5;
-            if (string.Equals(value, "xhigh", StringComparison.OrdinalIgnoreCase)) return 6;
-            if (string.Equals(value, "max", StringComparison.OrdinalIgnoreCase)) return 7;
-            return 0;
-        }
-
-        private static string ReasoningEffortIndexToName(int index)
-        {
-            switch (index)
-            {
-                case 1: return "none";
-                case 2: return "minimal";
-                case 3: return "low";
-                case 4: return "medium";
-                case 5: return "high";
-                case 6: return "xhigh";
-                case 7: return "max";
-                default: return "";
-            }
-        }
-
         private MemoryBankMode ParseMemoryBankMode()
         {
             var value = _settings?.MemoryBankMode;
@@ -3741,21 +3102,21 @@ namespace RPAWriter2
         {
             var factory = new AgentToolFactory(
                 _ai,
-                () => _currentSpec,
+                () => _specTabModel.CurrentSpec,
                 KbPath,
-                () => (RobotsRootPathBox?.Text ?? "").Trim(),
-                () => (RobotTemplateNameBox?.Text ?? "").Trim(),
+                () => (_settings?.RobotsRootPath ?? "").Trim(),
+                () => (_settings?.RobotTemplateName ?? "").Trim(),
                 GetOpenSolutionDirectory,
                 () => _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2),
                 _buildFeedback,
                 _robotTemplate,
                 AskQuestionAsync,
-                () => (SkillsPathBox?.Text ?? "").Trim(),
+                () => (_settings?.SkillsPath ?? "").Trim(),
                 memoryBankMode,
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
-                () => _mode);
+                () => _chatModel.Mode);
             factory.PixMwfStore = PixMwfMappingStore.Shared;
             return factory.CreateRegistry();
         }
@@ -3799,11 +3160,9 @@ namespace RPAWriter2
             {
                 var state = _chatModel.LoadUiState();
 
-                _mode = state.AgentMode;
-                ModeToggle.SelectedValue = _mode == AgentMode.Act ? "Act"
-                    : _mode == AgentMode.Help ? "Help"
-                    : "Plan";
-                ApplyModeBrush();
+                // The toggle and the input border follow the model through bindings; RestoreMode
+                // assigns the mode without recording a "Mode: ..." transcript entry.
+                _chatModel.RestoreMode(state.AgentMode);
 
                 SelectTabByHeader(state.ActiveTab);
 
@@ -3815,10 +3174,22 @@ namespace RPAWriter2
                 {
                     var toOpen = _chatModel.ResolveConversationToOpen(state.LastConversationId);
                     if (toOpen != null)
+                    {
                         OpenConversation(toOpen.Id, markDirty: false);
+                        ShowConversationView();
+                    }
+                    else if (string.IsNullOrWhiteSpace(state.LastConversationId) && _conversations.Count > 0)
+                    {
+                        // The previous session ended with the chat closed: nothing is activated, so the
+                        // history stays on screen (the conversation view needs an active chat).
+                        ShowHistoryView();
+                    }
                     else
+                    {
+                        // The remembered chat was deleted in another session - start a fresh one.
                         StartNewChat(markDirty: false);
-                    ShowConversationView();
+                        ShowConversationView();
+                    }
                 }
             }
             finally
@@ -3956,6 +3327,17 @@ namespace RPAWriter2
             PersistUiState();
         }
 
+        /// <summary>
+        /// Makes sure the chat can receive a message and shows it. Every entry point that produces a message
+        /// outside the input box calls this: a closed chat gets a fresh conversation (the model scenario)
+        /// instead of swallowing the message, and the tab returns to the conversation view.
+        /// </summary>
+        private void EnsureChatReadyToReceive()
+        {
+            _chatModel.EnsureActiveConversation();
+            ShowConversationView();
+        }
+
         private void ShowConversationView()
         {
             _chatModel.ShowConversationView();
@@ -3981,12 +3363,34 @@ namespace RPAWriter2
             HistoryViewPanel.Visibility = conversation ? Visibility.Collapsed : Visibility.Visible;
         }
 
+        /// <summary>
+        /// The close button of the conversation header: closes the chat. Closing means "no active
+        /// conversation" — the model saves the transcript, drops it from memory and sets
+        /// <see cref="ChatModel.ActiveChatConversation"/> to <c>null</c> - so nothing keeps landing in the
+        /// chat and the next start does not restore it.
+        /// <para>
+        /// This is not "History": browsing the saved chats (<see cref="OnShowHistory"/>) keeps the
+        /// conversation active.
+        /// </para>
+        /// </summary>
         private void OnCloseChat(object sender, RoutedEventArgs e)
         {
-            SaveHistoryNow();
-            ShowHistoryView();
+            // A turn that is still streaming has no conversation to write into any more.
+            _chatCts?.Cancel();
+
+            _chatModel.CloseActiveChat();
+
+            // The model switched the view to History; the host only applies the layout and drops the
+            // agent state that belonged to the closed conversation.
+            ApplyChatViewMode();
+            ResetAgentStateAfterConversationRemoved();
         }
 
+        /// <summary>
+        /// Browses the saved chats: the view switches to the history list while the active conversation
+        /// stays active. Messages produced by any entry point keep landing in it and bring the
+        /// conversation view back (<see cref="EnsureChatReadyToReceive"/>).
+        /// </summary>
         private void OnShowHistory(object sender, RoutedEventArgs e)
         {
             SaveHistoryNow();
@@ -4179,103 +3583,21 @@ namespace RPAWriter2
             return null;
         }
 
+        /// <summary>
+        /// Mode toggle handler. The two-way binding has already written <see cref="ChatModel.Mode"/>
+        /// (whose setter records the transcript entry), so the host only persists the session.
+        /// </summary>
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
-            var selected = ModeToggle?.SelectedValue?.ToString();
-            _mode = selected == "Act" ? AgentMode.Act
-                  : selected == "Help" ? AgentMode.Help
-                  : AgentMode.Plan;
-            ApplyModeBrush();
             if (_restoringUiState)
                 return;
-            AppendModeSwitch(_mode);
-            PersistUiState();
-        }
 
-        private void ApplyModeBrush()
-        {
-            if (InputBox == null)
-                return;
-            var key = _mode == AgentMode.Act ? "Mode.ActBrush"
-                    : _mode == AgentMode.Help ? "Mode.HelpBrush"
-                    : "Mode.PlanBrush";
-            InputBox.BorderBrush = (Brush)FindResource(key);
+            PersistUiState();
         }
 
         private void OnOpenConverterToolWindow(object sender, RoutedEventArgs e)
         {
             ConverterToolWindowCommand.Instance?.ShowWindow();
-        }
-
-        private void OnRefreshPromptsFromDisk(object sender, RoutedEventArgs e)
-        {
-            if (_ai is IPromptReloadable reloadable)
-            {
-                reloadable.ReloadPromptsFromDisk();
-                AppendChat("Prompts reloaded from disk: " + PromptPaths.ResolvePromptsDirectory());
-            }
-            else
-            {
-                AppendChat("Prompts reload is unavailable for the current provider (stub/offline).");
-            }
-        }
-
-        private void OnExportDocumentation(object sender, RoutedEventArgs e)
-        {
-            ExportDirectory(HelpDocumentation.ResolveDocsDirectory(), "Docs", "Documentation");
-        }
-
-        private void OnExportPrompts(object sender, RoutedEventArgs e)
-        {
-            ExportDirectory(PromptPaths.ResolvePromptsDirectory(), "Prompts", "Prompts");
-        }
-
-        private void ExportDirectory(string sourceDir, string targetSubFolder, string label)
-        {
-            if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
-            {
-                LogService.Warn(label + " directory not found.");
-                return;
-            }
-
-            var initial = GetOpenSolutionDirectory() ?? string.Empty;
-            var targetRoot = FolderPicker.PickFolder("Select a folder to export " + label + " to", initial, GetOwner());
-            if (string.IsNullOrWhiteSpace(targetRoot))
-                return;
-
-            try
-            {
-                var targetDir = Path.Combine(targetRoot, targetSubFolder);
-                CopyDirectory(sourceDir, targetDir);
-                var message = label + " exported to " + targetDir;
-                ShowSettingsToast(message);
-                LogService.Info(message);
-            }
-            catch (Exception ex)
-            {
-                LogService.Error(ex, "Failed to export " + label + ".");
-            }
-        }
-
-        private static void CopyDirectory(string sourceDir, string targetDir)
-        {
-            Directory.CreateDirectory(targetDir);
-
-            foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
-            {
-                var relative = dir.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                Directory.CreateDirectory(Path.Combine(targetDir, relative));
-            }
-
-            foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
-            {
-                var relative = file.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                var dest = Path.Combine(targetDir, relative);
-                var destDir = Path.GetDirectoryName(dest);
-                if (!string.IsNullOrWhiteSpace(destDir))
-                    Directory.CreateDirectory(destDir);
-                File.Copy(file, dest, true);
-            }
         }
 
         private IntPtr GetOwner()
@@ -4286,14 +3608,14 @@ namespace RPAWriter2
 
         private const double SettingsToastMaxHeight = 160.0;
 
-        private void ShowSettingsToast(string text)
+        private void ShowSettingsToast(string text, NotificationKind kind = NotificationKind.Success)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text)));
+                Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text, kind)));
                 return;
             }
-            SettingsToast.Kind = NotificationKind.Success;
+            SettingsToast.Kind = kind;
             SettingsToast.Message = text ?? "";
             SettingsToast.Visibility = Visibility.Visible;
             _settingsToastTimer.Stop();
@@ -4424,56 +3746,11 @@ namespace RPAWriter2
             DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
         }
 
-        private void OnSaveSettings(object sender, RoutedEventArgs e)
+        private void OnSettingsModelSaved(object? sender, EventArgs e)
         {
-            _settings.BaseUrl = BaseUrlBox.Text.Trim();
-            _settings.ApiKey = ApiKeyBox.Password.Trim();
-            _settings.Model = ModelBox.Text.Trim();
-            _settings.Temperature = Math.Round(TemperatureSlider.Value, 1);
-            _settings.ReasoningEffort = ReasoningEffortIndexToName(ReasoningEffortCombo?.SelectedIndex ?? 0);
-            _settings.KnowledgeBasePath = KbPathBox.Text.Trim();
-            _settings.RobotsRootPath = RobotsRootPathBox.Text.Trim();
-            _settings.RobotTemplateName = RobotTemplateNameBox.Text.Trim();
-            _settings.ShowRobotCreator = ShowRobotCreatorCheckBox?.IsChecked ?? true;
-            _settings.PackagesPath = PackagesPathBox.Text.Trim();
-            _settings.RulesPath = RulesPathBox.Text.Trim();
-            _settings.SkillsPath = SkillsPathBox.Text.Trim();
-            _settings.ContextWindowSize = ParseContextWindowSize();
-            _settings.CompactThreshold = ParseFraction(CompactThresholdBox?.Text, 0.85, 0.0, 1.0);
-            _settings.ReserveFraction = ParseFraction(ReserveFractionBox?.Text, 0.12, 0.0, 0.5);
-            _settings.KeepRecentMessages = ParsePositiveInt(KeepRecentBox?.Text, 6);
-            _settings.ToolResultMaxChars = ParsePositiveInt(ToolResultMaxCharsBox?.Text, 12000);
-            _settings.MaxIterations = ParsePositiveInt(MaxIterationsBox?.Text, 8);
-            _settings.AutoCompact = AutoCompactCheckBox?.IsChecked ?? true;
-            _settings.UseToolRole = UseToolRoleCheckBox?.IsChecked ?? true;
-            _settings.ToolCallingMode = (ToolCallingModeCombo?.SelectedIndex ?? 0) == 1 ? "Native" : "JsonChat";
-            _settings.MemoryBankMode = MemoryBankIndexToMode(MemoryBankModeCombo?.SelectedIndex ?? 0);
-            _settings.SecurityAuditMode = (SecurityAuditModeCombo?.SelectedIndex ?? 0) == 1 ? "CredentialsOnly" : "Full";
-            _settings.LogFilePath = LogFilePathBox.Text.Trim();
-            _settings.ChatLogFilePath = ChatLogFilePathBox.Text.Trim();
-            _settings.LogProvidersPath = LogProvidersPathBox.Text.Trim();
+            _settings = _settingsModel.ToSettingsData();
+            ApiKeyBox.Password = _settings.ApiKey ?? "";
             _chatModel.LogAnalyzer?.InvalidateProviders();
-            _settings.TimeoutSeconds = ParsePositiveInt(TimeoutSecondsBox?.Text, 300);
-            _settings.RetryTimeoutMinutes = ParsePositiveInt(RetryTimeoutMinutesBox?.Text, 30);
-            _settings.RetryBaseDelaySeconds = ParsePositiveInt(RetryBaseDelaySecondsBox?.Text, 1);
-            _settings.RetryMaxDelaySeconds = ParsePositiveInt(RetryMaxDelaySecondsBox?.Text, 30);
-            _settings.InputPricePerMillion = ParsePrice(InputPriceBox?.Text, 0.27);
-            _settings.CacheHitPricePerMillion = ParsePrice(CacheHitPriceBox?.Text, 0.07);
-            _settings.OutputPricePerMillion = ParsePrice(OutputPriceBox?.Text, 1.10);
-            _settings.UserName = UserNameBox.Text.Trim();
-            _settings.AddressByName = AddressByNameCheckBox?.IsChecked ?? false;
-            _settings.AllowSubagents = AllowSubagentsCheckBox?.IsChecked ?? false;
-            _settings.CheckpointsEnabled = CheckpointsEnabledCheckBox?.IsChecked ?? true;
-            _settings.ShowControls = ShowControlsCheckBox?.IsChecked ?? false;
-            _settings.SubagentMaxIterations = ParsePositiveInt(SubagentMaxIterationsBox?.Text, 4);
-            _settings.SubagentMaxDepth = ParsePositiveInt(SubagentMaxDepthBox?.Text, 2);
-            _settings.SpeechToTextProvider = SpeechToTextProviderIndexToName(SpeechToTextProviderCombo?.SelectedIndex ?? 0);
-            _settings.SpeechToTextModel = (SpeechToTextModelBox?.Text ?? "").Trim();
-            _settings.SpeechToTextLanguage = (SpeechToTextLanguageBox?.Text ?? "").Trim();
-            _settings.VoskModelPath = (VoskModelPathBox?.Text ?? "").Trim();
-            _settings.SpeechAutoSend = SpeechAutoSendCheckBox?.IsChecked ?? false;
-            _settings.AutoCaptureRuntimeExceptions = AutoCaptureRuntimeExceptionsCheckBox?.IsChecked ?? true;
-            SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
             _stt = SpeechToTextFactory.Create(_settings);
@@ -4481,6 +3758,21 @@ namespace RPAWriter2
             ApplyControlsVisibility();
             UpdateCreateRobotVisibility();
             ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
+        }
+
+        private void OnSettingsNotify(object? sender, Notify notify)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnSettingsNotify(sender, notify)));
+                return;
+            }
+            ShowSettingsToast(notify.Message, (NotificationKind)notify.NotifyLevel);
+        }
+
+        private void OnApiKeyChanged(object sender, RoutedEventArgs e)
+        {
+            _settingsModel.ApiKey = ApiKeyBox.Password ?? "";
         }
 
         private void ApplyControlsVisibility()
@@ -4748,110 +4040,6 @@ namespace RPAWriter2
             HideOptionsWarning();
         }
 
-        private void OnOpenLog(object sender, RoutedEventArgs e)
-        {
-            OpenLogFile(LogService.CurrentLogFilePath, "Log file path is not available.", "log");
-        }
-
-        private void OnOpenChatLog(object sender, RoutedEventArgs e)
-        {
-            OpenLogFile(LogService.CurrentChatLogFilePath, "Chat log file path is not available.", "chat log");
-        }
-
-        private void OpenLogFile(string logFile, string unavailableMessage, string logKind)
-        {
-            if (string.IsNullOrWhiteSpace(logFile))
-            {
-                AppendExtensionError(unavailableMessage);
-                return;
-            }
-
-            try
-            {
-                var dir = Path.GetDirectoryName(logFile);
-                if (!string.IsNullOrWhiteSpace(dir))
-                    Directory.CreateDirectory(dir);
-                if (!File.Exists(logFile))
-                    File.WriteAllText(logFile, "");
-
-                var editor = FindNotepadPlusPlus();
-                if (!string.IsNullOrWhiteSpace(editor))
-                    System.Diagnostics.Process.Start(new ProcessStartInfo(editor, "\"" + logFile + "\"") { UseShellExecute = true });
-                else
-                    System.Diagnostics.Process.Start(new ProcessStartInfo("notepad.exe", "\"" + logFile + "\"") { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to open " + logKind + ": " + ex.Message);
-                LogService.Error(ex, "Failed to open " + logKind + " file.");
-            }
-        }
-
-        private static string FindNotepadPlusPlus()
-        {
-            var candidates = new List<string>
-            {
-                ReadAppPath("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\notepad++.exe"),
-                ReadAppPath("HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\notepad++.exe")
-            };
-
-            var prog = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            var progX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-
-            if (!string.IsNullOrWhiteSpace(prog)) candidates.Add(Path.Combine(prog, "Notepad++", "notepad++.exe"));
-            if (!string.IsNullOrWhiteSpace(progX86)) candidates.Add(Path.Combine(progX86, "Notepad++", "notepad++.exe"));
-            if (!string.IsNullOrWhiteSpace(local)) candidates.Add(Path.Combine(local, "Notepad++", "notepad++.exe"));
-            if (!string.IsNullOrWhiteSpace(roaming)) candidates.Add(Path.Combine(roaming, "Notepad++", "notepad++.exe"));
-
-            foreach (var candidate in candidates)
-            {
-                if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
-                    return candidate;
-            }
-            return null;
-        }
-
-        private static string ReadAppPath(string registryKeyPath)
-        {
-            try
-            {
-                return Registry.GetValue(registryKeyPath, "", null) as string;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private int ParseContextWindowSize()
-        {
-            if (int.TryParse((ContextWindowBox?.Text ?? "").Trim(), out var value) && value > 0)
-                return value;
-            return 409600;
-        }
-
-        private static double ParseFraction(string text, double fallback, double min, double max)
-        {
-            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value >= min && value <= max)
-                return value;
-            return fallback;
-        }
-
-        private static int ParsePositiveInt(string text, int fallback)
-        {
-            if (int.TryParse((text ?? "").Trim(), out var value) && value > 0)
-                return value;
-            return fallback;
-        }
-
-        private static double ParsePrice(string text, double fallback)
-        {
-            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value >= 0)
-                return value;
-            return fallback;
-        }
         private static List<MessageSample> CreateMessageSamples(int autoHideSeconds)
         {
             var blue = Rgb(0x64, 0xB5, 0xF6);

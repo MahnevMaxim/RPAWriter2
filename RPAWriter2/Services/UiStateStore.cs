@@ -9,7 +9,7 @@ namespace RPAWriter2.Services
     /// <summary>Loads/saves the UI state JSON at %AppData%\RPAWriter2\&lt;version&gt;\ui_state.json.</summary>
     public static class UiStateStore
     {
-        public static string StateFile => AppDataPaths.Resolve("ui_state.json");
+        public static string StateFile => AppDataPaths.ResolveWorkspaceCurrent("ui_state.json");
 
         public static UiStateData Load()
         {

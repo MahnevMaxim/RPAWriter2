@@ -29,6 +29,18 @@ namespace RPAWriter.Core.Context
         /// <summary>Maximum number of agent-loop iterations per run.</summary>
         public int MaxIterations { get; set; } = 8;
 
+        /// <summary>
+        /// Maximum number of consecutive identical tool calls (same name + same arguments) before
+        /// the stagnant-loop guard stops the run. 0 disables the guard.
+        /// </summary>
+        public int MaxStagnantRepeats { get; set; } = 3;
+
+        /// <summary>
+        /// When true, the first time the stagnant-loop threshold is hit the model gets a one-time
+        /// nudge to change its approach instead of being stopped immediately.
+        /// </summary>
+        public bool StagnantLoopNudge { get; set; } = false;
+
         /// <summary>When false, automatic compaction before a request is disabled (manual compaction still works).</summary>
         public bool AutoCompact { get; set; } = true;
 

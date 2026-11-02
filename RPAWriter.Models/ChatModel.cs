@@ -29,12 +29,20 @@ namespace RPAWriter.Models
     {
         private readonly IChatHistoryStore _historyStore;
         private readonly IUiStateStore _uiStateStore;
+        private readonly IChatPromptSink _chatSink;
+        private readonly IWorkspaceProvider _workspaceProvider;
 
+        /// <summary>
+        /// Backing field of <see cref="ActiveChatConversation"/> — the single source of truth for
+        /// "which chat is active". Activity is never stored, cached or mirrored anywhere else.
+        /// </summary>
         private ChatConversation _activeChatConversation;
         private ChatViewMode _viewMode = ChatViewMode.Conversation;
         private ChatMessage _pinnedMessage;
         private AgentMode _mode = AgentMode.Plan;
         private AgentPhase _phase = AgentPhase.Idle;
+        private bool _hasResumableRun;
+        private bool _suppressModeSwitch;
         private bool _isDirty;
         private bool _suppressDirty;
         private bool _initialized;
@@ -47,10 +55,12 @@ namespace RPAWriter.Models
         /// <paramref name="logAnalyzer"/> is the child model of the "Analyze logs" panel; the host may
         /// assign it later through <see cref="LogAnalyzer"/> instead, and it may stay <c>null</c>.
         /// </summary>
-        public ChatModel(IChatHistoryStore historyStore, IUiStateStore uiStateStore = null, LogAnalyzer logAnalyzer = null)
+        public ChatModel(IChatHistoryStore historyStore, IUiStateStore uiStateStore = null, LogAnalyzer logAnalyzer = null, IChatPromptSink chatSink = null, IWorkspaceProvider workspaceProvider = null)
         {
             _historyStore = historyStore ?? throw new ArgumentNullException(nameof(historyStore));
             _uiStateStore = uiStateStore;
+            _chatSink = chatSink;
+            _workspaceProvider = workspaceProvider;
             LogAnalyzer = logAnalyzer;
 
             Messages = new ObservableCollection<ChatMessage>();
@@ -58,7 +68,10 @@ namespace RPAWriter.Models
             Attachments = new ObservableCollection<ChatAttachment>();
             History = new ObservableCollection<ChatConversation>();
 
-            _activeChatConversation = CreateConversation();
+            // No conversation is created here: "no active chat" is the model's ordinary starting
+            // state (see CloseActiveChat). The host activates a conversation as soon as something
+            // has to be displayed or sent (EnsureActiveConversation, StartNewChat, OpenConversation).
+            _activeChatConversation = null;
             Messages.CollectionChanged += OnMessagesChanged;
         }
 
@@ -94,8 +107,22 @@ namespace RPAWriter.Models
         public ObservableCollection<ChatConversation> History { get; }
 
         /// <summary>
-        /// Conversation currently shown in the conversation view. Setting it moves the green
-        /// "active" indicator in the history list (<see cref="ChatConversation.IsActive"/>).
+        /// The active conversation — the one and only definition of "which chat is active":
+        /// a chat is active while this property is not <c>null</c>.
+        /// <para>
+        /// Assigning this property is the only way activity changes (open, new chat, restore, close,
+        /// delete). Every other member that looks like an activity flag is a derived projection and is
+        /// never a second source: <see cref="ActiveConversationId"/>, <see cref="HasActiveConversation"/>
+        /// and <see cref="ChatConversation.IsActive"/> (recomputed from here by
+        /// <see cref="UpdateActiveFlags"/>). Do not duplicate the state — read this property instead of
+        /// caching, copying or persisting "is active" anywhere else.
+        /// </para>
+        /// <para>
+        /// "Closed" is expressed by <c>null</c> and by nothing else — not by <see cref="ViewMode"/>, not
+        /// by <see cref="UiStateData.LastConversationId"/> and not by a host flag (a running agent turn is
+        /// no activity flag either). A closed chat owns no transcript and is reopened lazily by
+        /// <see cref="EnsureActiveConversation"/>.
+        /// </para>
         /// </summary>
         public ChatConversation ActiveChatConversation
         {
@@ -111,8 +138,16 @@ namespace RPAWriter.Models
             }
         }
 
+        /// <summary>
+        /// Id of <see cref="ActiveChatConversation"/> — a read-only projection, not a second source of
+        /// activity. Never cache it and never branch on it instead of the property itself.
+        /// </summary>
         public string ActiveConversationId => _activeChatConversation?.Id ?? "";
 
+        /// <summary>
+        /// Convenience projection: <c>true</c> when <see cref="ActiveChatConversation"/> is set.
+        /// Derived only - never mirror or persist it.
+        /// </summary>
         public bool HasActiveConversation => !string.IsNullOrWhiteSpace(ActiveConversationId);
 
         /// <summary>
@@ -154,18 +189,125 @@ namespace RPAWriter.Models
 
         public bool HasPinnedMessage => _pinnedMessage != null;
 
-        /// <summary>Agent mode (Plan/Act/Help) of the current session.</summary>
+        /// <summary>
+        /// Agent mode (Plan/Act/Help) of the current session. Assigning it records the switch in the
+        /// transcript, so the mode is owned entirely by the model and the two-way toggle binding only
+        /// reflects it. <see cref="RestoreMode"/> is the one assignment that does not record.
+        /// </summary>
         public AgentMode Mode
         {
             get => _mode;
-            set => SetProperty(ref _mode, value);
+            set
+            {
+                if (!SetProperty(ref _mode, value))
+                    return;
+
+                RecordModeSwitch(value);
+            }
         }
 
-        /// <summary>Phase of the current agent turn (drives the footer buttons in the view).</summary>
+        /// <summary>
+        /// Phase of the current agent turn. Drives the footer through bindings (Cancel while
+        /// <see cref="AgentPhase.Streaming"/>, "Do it!!!" otherwise), so the host only assigns it
+        /// and never touches the controls.
+        /// </summary>
         public AgentPhase Phase
         {
             get => _phase;
-            set => SetProperty(ref _phase, value);
+            set
+            {
+                if (!SetProperty(ref _phase, value))
+                    return;
+
+                // The Resume button is a projection of the phase as well.
+                OnPropertyChanged(nameof(CanResume));
+            }
+        }
+
+        /// <summary>
+        /// True while a cancelled turn left a breakpoint the host can still continue. Only the flag
+        /// lives here: the breakpoint itself (agent snapshot, mode, context budget) is runner
+        /// infrastructure and stays with the host.
+        /// </summary>
+        public bool HasResumableRun
+        {
+            get => _hasResumableRun;
+            set
+            {
+                if (!SetProperty(ref _hasResumableRun, value))
+                    return;
+
+                OnPropertyChanged(nameof(CanResume));
+            }
+        }
+
+        /// <summary>
+        /// Read-only projection behind the "Resume task" button: a breakpoint exists and no turn is
+        /// running. Derived only - never persisted or mirrored in a second field.
+        /// </summary>
+        public bool CanResume => _hasResumableRun && _phase == AgentPhase.Idle;
+
+        /// <summary>
+        /// Applies a user-initiated mode switch. The <see cref="Mode"/> setter records the transcript
+        /// entry, so this is a thin alias that keeps the public scenario name used by callers and tests.
+        /// </summary>
+        public void SwitchMode(AgentMode mode)
+        {
+            Mode = mode;
+        }
+
+        /// <summary>
+        /// Restores the persisted mode without recording a transcript entry. The host uses this on
+        /// startup instead of assigning <see cref="Mode"/> directly, so a session reload never adds a
+        /// spurious "Mode: ..." line to the restored transcript.
+        /// </summary>
+        public void RestoreMode(AgentMode mode)
+        {
+            _suppressModeSwitch = true;
+            try
+            {
+                Mode = mode;
+            }
+            finally
+            {
+                _suppressModeSwitch = false;
+            }
+        }
+
+        /// <summary>
+        /// Quick command behind the "Do it!!!" footer button: switches the agent to Act mode and sends
+        /// the "Do it!!!" text through the injected <see cref="IChatPromptSink"/>. A missing sink makes
+        /// the command a pure mode switch (headless tests); send failures are reported through
+        /// <see cref="NotifyMessage"/>.
+        /// </summary>
+        public async void DoItCommand()
+        {
+            SwitchMode(AgentMode.Act);
+
+            if (_chatSink == null)
+                return;
+
+            try
+            {
+                await _chatSink.SendPromptAsync("Do it!!!");
+            }
+            catch (Exception ex)
+            {
+                NotifyMessage(new Notify { Message = ex.Message, NotifyLevel = NotifyLevel.Error });
+            }
+        }
+
+        private void RecordModeSwitch(AgentMode mode)
+        {
+            if (_suppressModeSwitch)
+                return;
+
+            AppendMessage(new ChatMessage
+            {
+                Kind = ChatMessageKind.ModeSwitch,
+                Mode = AgentModeNames.ToValue(mode),
+                Text = "Mode: " + AgentModeNames.ToValue(mode)
+            });
         }
 
         /// <summary>
@@ -201,6 +343,8 @@ namespace RPAWriter.Models
 
             _initialized = true;
             LogAnalyzer?.Run();
+
+            _historyStore.WorkspaceId = _workspaceProvider?.GetCurrentWorkspace()?.Id ?? "";
 
             try
             {
@@ -324,26 +468,94 @@ namespace RPAWriter.Models
         }
 
         /// <summary>
+        /// Re-scopes history to another workspace after the open solution changed. The active
+        /// conversation is flushed to its previous scope first, then closed; the list is reloaded
+        /// from the new scope.
+        /// </summary>
+        public void SetWorkspaceScope(string workspaceId)
+        {
+            // Flush while still scoped to the previous workspace, then switch and reload.
+            SaveHistoryNow();
+            _historyStore.WorkspaceId = workspaceId ?? "";
+            ClearConversationState(markDirty: false);
+            ActiveChatConversation = null;
+            ViewMode = ChatViewMode.History;
+            LastError = "";
+            RefreshHistory();
+        }
+
+        /// <summary>
         /// Starts a new empty conversation: saves the current one first, clears the transcript and
         /// the queue, then switches the tab back to the conversation view.
         /// </summary>
         public void StartNewChat(bool markDirty = true)
         {
             SaveHistoryNow();
-            ResetToFreshConversation(markDirty);
+            ClearConversationState(markDirty);
+            ActiveChatConversation = CreateConversation();
             ViewMode = ChatViewMode.Conversation;
         }
 
         /// <summary>
         /// Resets the in-memory conversation without persisting it (used after delete/clear, so the
-        /// tab does not keep showing a conversation that no longer exists).
+        /// tab does not keep showing a conversation that no longer exists). The tab is left without an
+        /// active conversation — the same "closed" state <see cref="CloseActiveChat"/> produces.
         /// </summary>
         public void ResetConversation()
         {
-            ResetToFreshConversation(markDirty: false);
+            ClearConversationState(markDirty: false);
+            ActiveChatConversation = null;
         }
 
-        private void ResetToFreshConversation(bool markDirty)
+        /// <summary>
+        /// Returns the active conversation, creating one when the chat is closed. Every entry point that
+        /// produces a message on the user's behalf (Send errors, "Send to RPA Writer", "Send exception to
+        /// RPA Writer", notification banners) calls this first, so a message can never be written into a
+        /// transcript that belongs to no conversation — such a message would be neither displayed nor
+        /// saved.
+        /// <para>
+        /// Idempotent: with a conversation already active it only returns it.
+        /// </para>
+        /// </summary>
+        public ChatConversation EnsureActiveConversation()
+        {
+            if (_activeChatConversation != null)
+                return _activeChatConversation;
+
+            // A closed chat owns no transcript: drop whatever was appended while it was closed, so it
+            // does not leak into the conversation created here.
+            ClearConversationState(markDirty: false);
+            ActiveChatConversation = CreateConversation();
+            return _activeChatConversation;
+        }
+
+        /// <summary>
+        /// Closes the chat (the close button of the conversation header): flushes the transcript, drops
+        /// it from memory and leaves the tab without an active conversation —
+        /// <see cref="ActiveChatConversation"/> becomes <c>null</c>, so the next <see cref="PersistUiState"/>
+        /// writes an empty <see cref="UiStateData.LastConversationId"/> and the closed chat is not
+        /// restored on the next start. The conversation stays in <see cref="History"/> and can be
+        /// reopened at any time.
+        /// <para>
+        /// Closing is not <see cref="ShowHistoryView"/>: browsing the history keeps the conversation
+        /// active, so messages keep landing in it and the tab returns to the conversation view.
+        /// </para>
+        /// </summary>
+        public void CloseActiveChat()
+        {
+            SaveHistoryNow();
+            ClearConversationState(markDirty: false);
+            ActiveChatConversation = null;
+            ViewMode = ChatViewMode.History;
+        }
+
+        /// <summary>
+        /// Clears what belongs to the conversation in memory (transcript, queue, pinned entry) and
+        /// detaches it without creating a replacement: the caller decides whether the tab continues with
+        /// a fresh conversation (<see cref="StartNewChat"/>, <see cref="EnsureActiveConversation"/>) or
+        /// with none at all (<see cref="CloseActiveChat"/>, <see cref="ResetConversation"/>).
+        /// </summary>
+        private void ClearConversationState(bool markDirty)
         {
             Pending.Clear();
 
@@ -351,7 +563,7 @@ namespace RPAWriter.Models
             try
             {
                 Messages.Clear();
-                ActiveChatConversation = CreateConversation();
+                ActiveChatConversation = null;
             }
             finally
             {
@@ -459,6 +671,8 @@ namespace RPAWriter.Models
         /// <summary>
         /// Persists the active conversation: stores the transcript snapshot, derives the title from
         /// the first user message when it is still empty and refreshes the history list.
+        /// A closed chat has nothing to save: with <see cref="ActiveChatConversation"/> <c>null</c> the call
+        /// returns immediately.
         /// Best effort: a failure never interrupts the chat.
         /// </summary>
         public void SaveHistoryNow()
@@ -493,27 +707,34 @@ namespace RPAWriter.Models
 
         /// <summary>
         /// Picks the conversation to restore at startup: the remembered id when it still exists,
-        /// otherwise the most recent one, otherwise <c>null</c>.
+        /// otherwise the most recent one. An empty id means the previous session ended with the chat
+        /// closed (<see cref="CloseActiveChat"/> persists it that way) and returns <c>null</c>: nothing is
+        /// guessed, so a chat the user closed does not come back on the next start.
         /// </summary>
         public ChatConversation ResolveConversationToOpen(string id)
         {
-            if (!string.IsNullOrWhiteSpace(id))
+            if (string.IsNullOrWhiteSpace(id))
+                return null;
+
+            try
             {
-                try
-                {
-                    var stored = _historyStore.LoadConversation(id);
-                    if (stored != null)
-                        return stored;
-                }
-                catch
-                {
-                    // fall back to the most recent conversation below
-                }
+                var stored = _historyStore.LoadConversation(id);
+                if (stored != null)
+                    return stored;
+            }
+            catch
+            {
+                // fall back to the most recent conversation below
             }
 
             return History.FirstOrDefault();
         }
 
+        /// <summary>
+        /// Projects <see cref="ActiveChatConversation"/> onto the history list and is the single writer
+        /// of <see cref="ChatConversation.IsActive"/>. Called from the property setter and after every
+        /// history reload; no other code path (the view included) may set that flag.
+        /// </summary>
         private void UpdateActiveFlags()
         {
             var activeId = ActiveConversationId;
@@ -564,6 +785,7 @@ namespace RPAWriter.Models
             _uiStateStore.Save(new UiStateData
             {
                 ChatViewMode = ViewMode,
+                // Restore hint for the next session only — not an activity flag.
                 LastConversationId = ActiveConversationId,
                 AgentMode = Mode,
                 ActiveTab = activeTab

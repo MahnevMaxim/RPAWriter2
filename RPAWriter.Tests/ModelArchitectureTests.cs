@@ -255,6 +255,61 @@ namespace RPAWriter.Tests
                 "Log analysis types must live in RPAWriter.Core: " + string.Join(", ", wrongAssembly));
         }
 
+        /// <summary>Workspace identity and scoping contracts are host-agnostic domain types in Core.</summary>
+        [Test]
+        public void WorkspaceTypes_LiveInCore()
+        {
+            var expected = new[]
+            {
+                typeof(RPAWriter.Core.Services.WorkspaceIdentity),
+                typeof(RPAWriter.Core.Services.WorkspaceInfo),
+                typeof(RPAWriter.Core.Services.WorkspaceLogSettings),
+                typeof(RPAWriter.Core.Contracts.IWorkspaceProvider),
+                typeof(RPAWriter.Core.Contracts.ISecretsStore),
+                typeof(RPAWriter.Core.Contracts.IWorkspaceLogSettingsStore)
+            };
+
+            var wrongAssembly = expected
+                .Where(t => t.Assembly != CoreAssembly)
+                .Select(t => t.FullName)
+                .ToArray();
+
+            Assert.That(wrongAssembly, Is.Empty,
+                "Workspace types must live in RPAWriter.Core: " + string.Join(", ", wrongAssembly));
+        }
+
+        /// <summary>The Spec tab model lives in the models assembly, next to <see cref="ChatModel"/>.</summary>
+        [Test]
+        public void SpecTabModel_LivesInModelsAssembly()
+        {
+            Assert.That(typeof(RPAWriter.Models.SpecTabModel).Assembly, Is.EqualTo(ModelsAssembly));
+        }
+
+        /// <summary>The Knowledge base tab model lives in the models assembly, next to <see cref="ChatModel"/>.</summary>
+        [Test]
+        public void KnowledgeBaseModel_LivesInModelsAssembly()
+        {
+            Assert.That(typeof(RPAWriter.Models.KnowledgeBaseModel).Assembly, Is.EqualTo(ModelsAssembly));
+        }
+
+        /// <summary>Layout state (panel visibility, focus) is view state: rule 10.</summary>
+        [Test]
+        public void TabModels_ExposeNoLayoutState()
+        {
+            var violations = new[]
+            {
+                typeof(RPAWriter.Models.SpecTabModel),
+                typeof(RPAWriter.Models.KnowledgeBaseModel)
+            }
+            .SelectMany(t => t.GetProperties())
+            .Where(p => p.Name.IndexOf("Visib", StringComparison.OrdinalIgnoreCase) >= 0)
+            .Select(p => p.DeclaringType.Name + "." + p.Name)
+            .ToArray();
+
+            Assert.That(violations, Is.Empty,
+                "Layout state must stay in the view: " + string.Join(", ", violations));
+        }
+
         private static void AssertNetStandard(Assembly assembly)
         {
             var attribute = assembly.GetCustomAttribute<TargetFrameworkAttribute>();
