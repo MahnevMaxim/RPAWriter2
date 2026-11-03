@@ -74,6 +74,7 @@ namespace RPAWriter2
         private ContextBudget? _resumableBudget;
         private ITokenUsageProvider? _tokenUsage;
         private int _lastEstimatedInputTokens;
+        private int _compactionDepth;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
         private IPromptNotifier? _promptNotifier;
@@ -94,11 +95,9 @@ namespace RPAWriter2
         private CancellationTokenSource? _chatCts;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
-        private readonly DispatcherTimer _chatStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        private DateTime _chatStartedAt;
         private const string CommitBranchName = "dev";
 
         private static string CommitMessageSystemPrompt =>
@@ -158,6 +157,10 @@ namespace RPAWriter2
                 new JsonUiStateStore(),
                 chatSink: new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
                 workspaceProvider: _workspaceProvider);
+            // The geometry parser must be ready before InitializeComponent: the
+            // ClearInputButton icon (MaterialIconKind.Broom) is resolved via a binding
+            // during XAML load and would otherwise fall back to an empty geometry.
+            MaterialIconDataProvider.InitializeGeometryParser(s => Geometry.Parse(s));
             this.InitializeComponent();
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
@@ -226,7 +229,6 @@ namespace RPAWriter2
 
             SpecMessages.Messages = _specTabModel.SpecMessages;
 
-            MaterialIconDataProvider.InitializeGeometryParser(s => Geometry.Parse(s));
             PopulateControlsGallery();
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
@@ -315,6 +317,7 @@ namespace RPAWriter2
             };
             _activeQuestion = message;
             AppendChatMessage(message);
+            _chatModel.PauseStatus();
 
             LogService.ChatInfo("Question shown: \"" + (question ?? "").Replace("\r", " ").Replace("\n", " ") + "\" (options=" + (options?.Count ?? 0) + "); alreadyActive=" + alreadyActive + ".");
 
@@ -325,6 +328,7 @@ namespace RPAWriter2
                 try
                 {
                     var answer = await tcs.Task;
+                    _chatModel.ResumeStatus();
                     LogService.ChatInfo("Question completed: answer=\"" + (answer ?? "").Replace("\r", " ").Replace("\n", " ") + "\", canceled=" + tcs.Task.IsCanceled + ".");
                     return answer;
                 }
@@ -876,31 +880,13 @@ namespace RPAWriter2
         private void UpdateTokenUsageDisplay()
         {
             var provider = _tokenUsage;
-            if (provider == null)
-            {
-                TokenUsageText.Text = "Context window: —";
-                ContextFillBar.Value = 0;
-                ChatTokenUsageText.Text = "Context window: —";
-                ChatContextFillBar.Value = 0;
-                return;
-            }
-            var usage = provider.TotalTokenUsage;
-            var occupied = _lastEstimatedInputTokens;
-            var text = "Context window: " + occupied.ToString("N0") +
-                       " / " + provider.ContextWindowSize.ToString("N0") + " tokens" +
-                       "    total " + usage.TotalTokens.ToString("N0");
-            if (usage.CacheHitTokens > 0)
-                text += " · cache hit " + usage.CacheHitTokens.ToString("N0");
-            if (usage.EstimatedCostUsd > 0)
-                text += " · $" + usage.EstimatedCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
-            TokenUsageText.Text = text;
-            ChatTokenUsageText.Text = text;
+            var budget = BuildContextBudget();
 
-            var ratio = provider.ContextWindowSize > 0
-                ? Math.Min(100.0, 100.0 * occupied / provider.ContextWindowSize)
-                : 0.0;
-            ContextFillBar.Value = ratio;
-            ChatContextFillBar.Value = ratio;
+            ChatContextIndicator.UsedTokens = _lastEstimatedInputTokens;
+            ChatContextIndicator.ContextWindowSize = provider?.ContextWindowSize ?? 0;
+            ChatContextIndicator.CompactThresholdTokens = provider != null ? budget.CompactThresholdTokens : 0;
+            ChatContextIndicator.MaxInputTokens = provider != null ? budget.MaxInputTokens : 0;
+            ChatContextIndicator.SessionUsage = provider?.TotalTokenUsage;
         }
 
         private void ShowError(Exception ex)
@@ -1833,22 +1819,7 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(StartChatStatus));
                 return;
             }
-            _chatModel.Phase = AgentPhase.Streaming;
-            AgentErrorText.Text = "";
-            AgentErrorText.Visibility = Visibility.Collapsed;
-            AgentStatusText.Visibility = Visibility.Visible;
-            _chatStartedAt = DateTime.UtcNow;
-            _chatStatusTimer.Tick -= OnChatStatusTick;
-            _chatStatusTimer.Tick += OnChatStatusTick;
-            _chatStatusTimer.Start();
-            OnChatStatusTick(null, EventArgs.Empty);
-        }
-
-        private void OnChatStatusTick(object? sender, EventArgs e)
-        {
-            var elapsed = (int)(DateTime.UtcNow - _chatStartedAt).TotalSeconds;
-            var status = elapsed < 2 ? "Sending request…" : "Thinking…";
-            AgentStatusText.Text = status + " (" + elapsed + " s)";
+            _chatModel.StartStatus();
         }
 
         private void StopChatStatus()
@@ -1858,13 +1829,7 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(StopChatStatus));
                 return;
             }
-            _chatStatusTimer.Stop();
-            _chatStatusTimer.Tick -= OnChatStatusTick;
-            AgentStatusText.Text = "";
-            AgentStatusText.Visibility = Visibility.Collapsed;
-            AgentErrorText.Text = "";
-            AgentErrorText.Visibility = Visibility.Collapsed;
-            _chatModel.Phase = AgentPhase.Idle;
+            _chatModel.StopStatus();
         }
 
         /// <summary>
@@ -1885,13 +1850,7 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowChatStatusError(message)));
                 return;
             }
-            _chatStatusTimer.Stop();
-            _chatStatusTimer.Tick -= OnChatStatusTick;
-            AgentStatusText.Text = "";
-            AgentStatusText.Visibility = Visibility.Collapsed;
-            AgentErrorText.Text = "Error: " + message;
-            AgentErrorText.Visibility = Visibility.Visible;
-            _chatModel.Phase = AgentPhase.Error;
+            _chatModel.ShowStatusError(message);
         }
 
         private void OnCancelSend(object sender, RoutedEventArgs e)
@@ -2868,6 +2827,8 @@ namespace RPAWriter2
                 _agentRunner.ContextCompacted -= OnAgentContextCompacted;
                 _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
                 _agentRunner.ToolRepetitionDetected -= OnAgentToolRepetition;
+                _agentRunner.CompactionStarted -= OnAgentCompactionStarted;
+                _agentRunner.CompactionFinished -= OnAgentCompactionFinished;
             }
             var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
                 ? ToolCallingMode.Native
@@ -2878,6 +2839,8 @@ namespace RPAWriter2
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
             _agentRunner.ToolRepetitionDetected += OnAgentToolRepetition;
+            _agentRunner.CompactionStarted += OnAgentCompactionStarted;
+            _agentRunner.CompactionFinished += OnAgentCompactionFinished;
             UpdateMemoryBankUi();
         }
 
@@ -2900,6 +2863,53 @@ namespace RPAWriter2
             }
             LogService.ChatInfo("Agent context compacted (summarized) to fit the context window.");
             AppendCompaction("Context compacted (summarized) to fit the context window.");
+        }
+
+        private void OnAgentCompactionStarted(object? sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAgentCompactionStarted(sender, e)));
+                return;
+            }
+            _compactionDepth++;
+            SetCompactIndicator(true);
+        }
+
+        private void OnAgentCompactionFinished(object? sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAgentCompactionFinished(sender, e)));
+                return;
+            }
+            if (_compactionDepth > 0)
+                _compactionDepth--;
+            SetCompactIndicator(_compactionDepth > 0);
+        }
+
+        /// <summary>Shows or hides the blinking red dot on the "Compact now" button.</summary>
+        private void SetCompactIndicator(bool compacting)
+        {
+            if (CompactIndicator == null)
+                return;
+
+            if (compacting)
+            {
+                CompactIndicator.Visibility = Visibility.Visible;
+                var animation = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(500))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever
+                };
+                CompactIndicator.BeginAnimation(OpacityProperty, animation);
+            }
+            else
+            {
+                CompactIndicator.BeginAnimation(OpacityProperty, null);
+                CompactIndicator.Opacity = 1.0;
+                CompactIndicator.Visibility = Visibility.Collapsed;
+            }
         }
 
         private async void OnCompactNow(object sender, RoutedEventArgs e)

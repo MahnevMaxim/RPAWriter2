@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Threading;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
@@ -49,18 +50,29 @@ namespace RPAWriter.Models
         private LogAnalyzer _logAnalyzer;
         private string _lastError = "";
 
+        private readonly Func<DateTime> _utcNow;
+        private readonly object _statusTimerGate = new object();
+        private Timer _statusTimer;
+        private DateTime _statusStartedAtUtc;
+        private TimeSpan _statusAccumulated;
+        private bool _statusPaused;
+        private int _statusElapsedSeconds;
+        private string _statusText = "";
+        private string _statusErrorText = "";
+
         /// <summary>
         /// Creates the model. <paramref name="uiStateStore"/> may be <c>null</c>: the chat then works
         /// in memory only and nothing is persisted between sessions (headless runs, tests).
         /// <paramref name="logAnalyzer"/> is the child model of the "Analyze logs" panel; the host may
         /// assign it later through <see cref="LogAnalyzer"/> instead, and it may stay <c>null</c>.
         /// </summary>
-        public ChatModel(IChatHistoryStore historyStore, IUiStateStore uiStateStore = null, LogAnalyzer logAnalyzer = null, IChatPromptSink chatSink = null, IWorkspaceProvider workspaceProvider = null)
+        public ChatModel(IChatHistoryStore historyStore, IUiStateStore uiStateStore = null, LogAnalyzer logAnalyzer = null, IChatPromptSink chatSink = null, IWorkspaceProvider workspaceProvider = null, Func<DateTime> utcNow = null)
         {
             _historyStore = historyStore ?? throw new ArgumentNullException(nameof(historyStore));
             _uiStateStore = uiStateStore;
             _chatSink = chatSink;
             _workspaceProvider = workspaceProvider;
+            _utcNow = utcNow ?? (() => DateTime.UtcNow);
             LogAnalyzer = logAnalyzer;
 
             Messages = new ObservableCollection<ChatMessage>();
@@ -248,6 +260,149 @@ namespace RPAWriter.Models
         public bool CanResume => _hasResumableRun && _phase == AgentPhase.Idle;
 
         /// <summary>
+        /// Elapsed seconds of the current turn, frozen while the agent waits for the user's answer.
+        /// Part of the chat domain (not the view): the model owns the turn timer and the view only
+        /// binds to this and <see cref="StatusText"/>.
+        /// </summary>
+        public int StatusElapsedSeconds
+        {
+            get => _statusElapsedSeconds;
+            private set => SetProperty(ref _statusElapsedSeconds, value);
+        }
+
+        /// <summary>
+        /// Shimmer status line text: "Sending request…", "Thinking… (N s)" or "Waiting for answer…".
+        /// Empty when no turn is running.
+        /// </summary>
+        public string StatusText
+        {
+            get => _statusText;
+            private set => SetProperty(ref _statusText, value);
+        }
+
+        /// <summary>
+        /// Red error line text shown when the last turn failed ("Error: …"). Empty when none.
+        /// </summary>
+        public string StatusErrorText
+        {
+            get => _statusErrorText;
+            private set => SetProperty(ref _statusErrorText, value);
+        }
+
+        /// <summary>
+        /// Starts the turn timer. The model owns the one-second ticker and only raises
+        /// <see cref="StatusElapsedSeconds"/>/<see cref="StatusText"/>; the host just binds to them.
+        /// </summary>
+        public void StartStatus()
+        {
+            lock (_statusTimerGate)
+            {
+                _statusTimer?.Dispose();
+                _statusStartedAtUtc = _utcNow();
+                _statusAccumulated = TimeSpan.Zero;
+                _statusPaused = false;
+                StatusErrorText = "";
+                Phase = AgentPhase.Streaming;
+                _statusTimer = new Timer(_ => RefreshStatus(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+                RefreshStatusCore();
+            }
+        }
+
+        /// <summary>Stops the turn timer and returns the chat to <see cref="AgentPhase.Idle"/>.</summary>
+        public void StopStatus()
+        {
+            lock (_statusTimerGate)
+            {
+                _statusTimer?.Dispose();
+                _statusTimer = null;
+                _statusPaused = false;
+                _statusAccumulated = TimeSpan.Zero;
+                StatusElapsedSeconds = 0;
+                StatusText = "";
+                StatusErrorText = "";
+                Phase = AgentPhase.Idle;
+            }
+        }
+
+        /// <summary>
+        /// Freezes the turn timer while an interactive question waits for the user's answer. The turn
+        /// stays <see cref="AgentPhase.Streaming"/> (the Cancel button remains available) but the
+        /// elapsed seconds stop counting.
+        /// </summary>
+        public void PauseStatus()
+        {
+            lock (_statusTimerGate)
+            {
+                if (_statusPaused || _statusTimer == null)
+                    return;
+
+                _statusAccumulated += _utcNow() - _statusStartedAtUtc;
+                _statusPaused = true;
+                _statusTimer?.Dispose();
+                _statusTimer = null;
+                StatusText = "Waiting for answer…";
+            }
+        }
+
+        /// <summary>Resumes the turn timer after the user answered the pending question.</summary>
+        public void ResumeStatus()
+        {
+            lock (_statusTimerGate)
+            {
+                if (!_statusPaused)
+                    return;
+
+                _statusPaused = false;
+                _statusStartedAtUtc = _utcNow();
+                _statusTimer = new Timer(_ => RefreshStatus(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+                RefreshStatusCore();
+            }
+        }
+
+        /// <summary>Stops the turn timer with an error and sets <see cref="AgentPhase.Error"/>.</summary>
+        public void ShowStatusError(string message)
+        {
+            lock (_statusTimerGate)
+            {
+                _statusTimer?.Dispose();
+                _statusTimer = null;
+                _statusPaused = false;
+                _statusAccumulated = TimeSpan.Zero;
+                StatusElapsedSeconds = 0;
+                StatusText = "";
+                StatusErrorText = string.IsNullOrEmpty(message) ? "" : "Error: " + message;
+                Phase = AgentPhase.Error;
+            }
+        }
+
+        /// <summary>
+        /// Recomputes <see cref="StatusElapsedSeconds"/> and <see cref="StatusText"/> from the clock.
+        /// Called by the internal one-second ticker; public so headless tests can advance a fake clock
+        /// and assert the elapsed computation deterministically.
+        /// </summary>
+        public void RefreshStatus()
+        {
+            lock (_statusTimerGate)
+            {
+                RefreshStatusCore();
+            }
+        }
+
+        private void RefreshStatusCore()
+        {
+            var elapsed = _statusPaused
+                ? _statusAccumulated
+                : _statusAccumulated + (_utcNow() - _statusStartedAtUtc);
+
+            var seconds = elapsed.TotalSeconds < 0 ? 0 : (int)elapsed.TotalSeconds;
+            StatusElapsedSeconds = seconds;
+
+            StatusText = _statusPaused
+                ? "Waiting for answer…"
+                : (seconds < 2 ? "Sending request…" : "Thinking…") + " (" + seconds + " s)";
+        }
+
+        /// <summary>
         /// Applies a user-initiated mode switch. The <see cref="Mode"/> setter records the transcript
         /// entry, so this is a thin alias that keeps the public scenario name used by callers and tests.
         /// </summary>
@@ -362,6 +517,11 @@ namespace RPAWriter.Models
         /// <summary>Last synchronous point to flush the transcript before the tab is unloaded.</summary>
         public override void Closing()
         {
+            lock (_statusTimerGate)
+            {
+                _statusTimer?.Dispose();
+                _statusTimer = null;
+            }
             SaveHistoryNow();
         }
 

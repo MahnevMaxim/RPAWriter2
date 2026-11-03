@@ -1,0 +1,21 @@
+<UserControl x:Class="RPAWriter2.Controls.ContextIndicator"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/ChatResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <ProgressBar x:Name="FillBar" Height="4" Minimum="0" Maximum="100" Value="0"
+                     Foreground="{StaticResource Dark.Text}"/>
+        <TextBlock x:Name="FillText" Margin="0,4,0,0" Foreground="#C8C8C8"
+                   Text="Context window: —"/>
+        <TextBlock x:Name="StatsText" Margin="0,2,0,0" Foreground="#9A9A9A"
+                   TextWrapping="Wrap" Visibility="Collapsed"/>
+    </StackPanel>
+</UserControl>

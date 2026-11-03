@@ -267,6 +267,52 @@ namespace RPAWriter.Tests
                     hasToolRole = true;
             Assert.That(hasToolRole, Is.True);
         }
+
+        [Test]
+        public async Task CompactAsync_RaisesCompactionStartedThenFinished()
+        {
+            var ai = new FakeAiProvider(new ChatResponse { Answer = "SUMMARY", FinishReason = "stop" });
+            var runner = new AgentRunner(ai, Registry(), mode => "SYS", new ContextBudget { KeepRecentMessages = 1 }, "COMPACT");
+
+            var order = new List<string>();
+            runner.CompactionStarted += (s, e) => order.Add("started");
+            runner.CompactionFinished += (s, e) => order.Add("finished");
+
+            var transcript = new List<ChatMessageData>
+            {
+                new ChatMessageData { Role = "user", Content = "one" },
+                new ChatMessageData { Role = "assistant", Content = "two" }
+            };
+            await runner.CompactAsync(transcript, new ContextBudget { KeepRecentMessages = 1 }, CancellationToken.None);
+
+            Assert.That(order, Is.EqualTo(new[] { "started", "finished" }));
+        }
+
+        [Test]
+        public async Task RunAsync_ContextOverflow_RaisesCompactionStartedAndFinished()
+        {
+            var ai = new FakeAiProvider(
+                new ProviderErrorException(ProviderErrorKind.ContextWindowExceeded, "overflow"),
+                new ChatResponse { Answer = "SUMMARY", FinishReason = "stop" },
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"recovered\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, Registry(), mode => "SYS", new ContextBudget { MaxIterations = 4, KeepRecentMessages = 1 }, "COMPACT");
+            var started = 0;
+            var finished = 0;
+            runner.CompactionStarted += (s, e) => started++;
+            runner.CompactionFinished += (s, e) => finished++;
+
+            var history = new List<ChatMessageData>
+            {
+                new ChatMessageData { Role = "user", Content = "first" },
+                new ChatMessageData { Role = "assistant", Content = "second" },
+                new ChatMessageData { Role = "user", Content = "third" }
+            };
+            await runner.RunAsync(history, "go", AgentMode.Act, new ContextBudget { MaxIterations = 4, KeepRecentMessages = 1 }, CancellationToken.None);
+
+            Assert.That(started, Is.GreaterThanOrEqualTo(1));
+            Assert.That(finished, Is.EqualTo(started));
+        }
     }
 
 }

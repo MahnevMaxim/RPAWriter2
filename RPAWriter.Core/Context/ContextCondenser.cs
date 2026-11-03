@@ -20,6 +20,12 @@ namespace RPAWriter.Core.Context
         private readonly ITokenEstimator _estimator;
         private readonly string _compactSystemPrompt;
 
+        /// <summary>Raised when condensation actually begins (a real summarize/truncate pass).</summary>
+        public event EventHandler CompactionStarted;
+
+        /// <summary>Raised when condensation finishes, regardless of success or failure.</summary>
+        public event EventHandler CompactionFinished;
+
         public ContextCondenser(IAiProvider ai, ITokenEstimator estimator, string compactSystemPrompt)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
@@ -39,21 +45,29 @@ namespace RPAWriter.Core.Context
             if (transcript.Count <= keepRecent)
                 return transcript;
 
-            var older = transcript.Take(transcript.Count - keepRecent).ToList();
-            var keep = transcript.Skip(transcript.Count - keepRecent).ToList();
-
-            var summary = await TrySummarizeAsync(older, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(summary))
+            CompactionStarted?.Invoke(this, EventArgs.Empty);
+            try
             {
-                var result = new List<ChatMessageData>
-                {
-                    new ChatMessageData { Role = "user", Content = "Summary of the earlier conversation:\n" + summary }
-                };
-                result.AddRange(keep);
-                return result;
-            }
+                var older = transcript.Take(transcript.Count - keepRecent).ToList();
+                var keep = transcript.Skip(transcript.Count - keepRecent).ToList();
 
-            return TruncateToBudget(transcript, keepRecent, budget);
+                var summary = await TrySummarizeAsync(older, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(summary))
+                {
+                    var result = new List<ChatMessageData>
+                    {
+                        new ChatMessageData { Role = "user", Content = "Summary of the earlier conversation:\n" + summary }
+                    };
+                    result.AddRange(keep);
+                    return result;
+                }
+
+                return TruncateToBudget(transcript, keepRecent, budget);
+            }
+            finally
+            {
+                CompactionFinished?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         private async Task<string> TrySummarizeAsync(List<ChatMessageData> older, CancellationToken cancellationToken)

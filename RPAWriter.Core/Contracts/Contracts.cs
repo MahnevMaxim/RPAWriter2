@@ -275,6 +275,12 @@ namespace RPAWriter.Core.Contracts
     /// </summary>
     public interface IContextCondenser
     {
+        /// <summary>Raised when condensation actually begins (a real summarize/truncate pass).</summary>
+        event EventHandler CompactionStarted;
+
+        /// <summary>Raised when condensation finishes, regardless of success or failure.</summary>
+        event EventHandler CompactionFinished;
+
         Task<IReadOnlyList<ChatMessageData>> CondenseAsync(
             IReadOnlyList<ChatMessageData> transcript,
             ContextBudget budget,

@@ -41,6 +41,16 @@ namespace RPAWriter.Tests
             return model;
         }
 
+        private ChatModel CreateModelWithClock(Func<DateTime> utcNow, bool withActiveChat = true)
+        {
+            var model = new ChatModel(_store, _uiState, null, null, null, utcNow);
+
+            if (withActiveChat)
+                model.EnsureActiveConversation();
+
+            return model;
+        }
+
         private static ChatMessage UserText(string text)
         {
             return new ChatMessage { Kind = ChatMessageKind.User, Text = text };
@@ -1203,6 +1213,156 @@ namespace RPAWriter.Tests
             Assert.That(model.Mode, Is.EqualTo(AgentMode.Help));
             Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(0));
         }
+
+        #region Turn status timer
+
+        [Test]
+        public void StartStatus_SetsStreamingPhaseAndInitialStatus()
+        {
+            var now = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var model = CreateModelWithClock(() => now);
+            try
+            {
+                model.StartStatus();
+
+                Assert.That(model.Phase, Is.EqualTo(AgentPhase.Streaming));
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(0));
+                Assert.That(model.StatusText, Is.EqualTo("Sending request… (0 s)"));
+                Assert.That(model.StatusErrorText, Is.Empty);
+            }
+            finally
+            {
+                model.StopStatus();
+            }
+        }
+
+        [Test]
+        public void StopStatus_ReturnsToIdleAndClearsTheStatus()
+        {
+            var model = CreateModelWithClock(() => DateTime.UtcNow);
+            model.StartStatus();
+
+            model.StopStatus();
+
+            Assert.That(model.Phase, Is.EqualTo(AgentPhase.Idle));
+            Assert.That(model.StatusElapsedSeconds, Is.EqualTo(0));
+            Assert.That(model.StatusText, Is.Empty);
+            Assert.That(model.StatusErrorText, Is.Empty);
+        }
+
+        [Test]
+        public void RefreshStatus_CountsTheElapsedSeconds()
+        {
+            var now = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var model = CreateModelWithClock(() => now);
+            try
+            {
+                model.StartStatus();
+                now = now.AddSeconds(5);
+
+                model.RefreshStatus();
+
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(5));
+                Assert.That(model.StatusText, Is.EqualTo("Thinking… (5 s)"));
+            }
+            finally
+            {
+                model.StopStatus();
+            }
+        }
+
+        [Test]
+        public void PauseStatus_FreezesTheElapsedTimeWhileWaitingForTheAnswer()
+        {
+            var now = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var model = CreateModelWithClock(() => now);
+            try
+            {
+                model.StartStatus();
+                now = now.AddSeconds(10);
+                model.RefreshStatus();
+
+                model.PauseStatus();
+
+                Assert.That(model.Phase, Is.EqualTo(AgentPhase.Streaming));
+                Assert.That(model.StatusText, Is.EqualTo("Waiting for answer…"));
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(10));
+
+                now = now.AddSeconds(60);
+                model.RefreshStatus();
+
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(10), "the timer must stay frozen while the question is pending");
+            }
+            finally
+            {
+                model.StopStatus();
+            }
+        }
+
+        [Test]
+        public void ResumeStatus_ContinuesFromThePausedElapsedTime()
+        {
+            var now = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var model = CreateModelWithClock(() => now);
+            try
+            {
+                model.StartStatus();
+                now = now.AddSeconds(10);
+                model.RefreshStatus();
+                model.PauseStatus();
+                now = now.AddSeconds(60);
+
+                model.ResumeStatus();
+
+                Assert.That(model.Phase, Is.EqualTo(AgentPhase.Streaming));
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(10), "the waiting time must not count into the elapsed");
+
+                now = now.AddSeconds(3);
+                model.RefreshStatus();
+                Assert.That(model.StatusElapsedSeconds, Is.EqualTo(13));
+            }
+            finally
+            {
+                model.StopStatus();
+            }
+        }
+
+        [Test]
+        public void ShowStatusError_SetsErrorPhaseAndErrorText()
+        {
+            var model = CreateModelWithClock(() => DateTime.UtcNow);
+            model.StartStatus();
+
+            model.ShowStatusError("boom");
+
+            Assert.That(model.Phase, Is.EqualTo(AgentPhase.Error));
+            Assert.That(model.StatusErrorText, Is.EqualTo("Error: boom"));
+            Assert.That(model.StatusText, Is.Empty);
+            Assert.That(model.StatusElapsedSeconds, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void StatusProperties_RaisePropertyChanged()
+        {
+            var now = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var model = CreateModelWithClock(() => now);
+            var changed = new List<string>();
+            ((INotifyPropertyChanged)model).PropertyChanged += (sender, e) => changed.Add(e.PropertyName);
+
+            model.StartStatus();
+            now = now.AddSeconds(3);
+            model.RefreshStatus();
+            model.PauseStatus();
+            model.ResumeStatus();
+            model.ShowStatusError("boom");
+            model.StopStatus();
+
+            Assert.That(changed, Does.Contain(nameof(ChatModel.StatusElapsedSeconds)));
+            Assert.That(changed, Does.Contain(nameof(ChatModel.StatusText)));
+            Assert.That(changed, Does.Contain(nameof(ChatModel.StatusErrorText)));
+        }
+
+        #endregion Turn status timer
 
         #endregion View mode and UI state
 

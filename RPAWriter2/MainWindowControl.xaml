@@ -58,6 +58,8 @@
         <conv:AgentModeToToggleValueConverter x:Key="ModeToToggle"/>
         <conv:EnumMatchConverter x:Key="PhaseStreamingVisibility" Match="Streaming"
                                  WhenMatch="Visible" WhenDifferent="Collapsed"/>
+        <conv:EnumMatchConverter x:Key="PhaseErrorVisibility" Match="Error"
+                                 WhenMatch="Visible" WhenDifferent="Collapsed"/>
         <conv:EnumMatchConverter x:Key="PhaseNotStreaming" Match="Streaming"
                                  WhenMatch="False" WhenDifferent="True"/>
         <chat:ChatMessageTemplateSelector x:Key="ChatMessageTemplateSelector"/>
@@ -673,7 +675,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                             <Grid.ColumnDefinitions>
@@ -724,11 +725,7 @@
                                 <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
                             </Button>
                         </Grid>
-                        <ProgressBar x:Name="ChatContextFillBar" Grid.Row="1" Height="4" Margin="0,6,0,0"
-                                     Minimum="0" Maximum="100" Value="0"
-                                     Foreground="{StaticResource Dark.Accent}"/>
-                        <TextBlock x:Name="ChatTokenUsageText" Grid.Row="2" Margin="0,4,0,0"
-                                   Foreground="#C8C8C8" Text="Context window: —"/>
+                        <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"/>
                     </Grid>
                 </Border>
 
@@ -754,7 +751,9 @@
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
-                                   Margin="0,3,8,0" TextWrapping="Wrap" Visibility="Collapsed">
+                                   Margin="0,3,8,0" TextWrapping="Wrap"
+                                   Text="{Binding Chat.StatusText}"
+                                   Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}">
                             <TextBlock.Foreground>
                                 <LinearGradientBrush MappingMode="RelativeToBoundingBox" SpreadMethod="Repeat"
                                                      StartPoint="0,0" EndPoint="1,0">
@@ -787,7 +786,9 @@
                         </TextBlock>
                         <TextBlock x:Name="AgentErrorText" VerticalAlignment="Center"
                                    Margin="0,0,8,0" TextWrapping="Wrap"
-                                   Foreground="{StaticResource Dark.ErrorText}" Visibility="Collapsed"/>
+                                   Foreground="{StaticResource Dark.ErrorText}"
+                                   Text="{Binding Chat.StatusErrorText}"
+                                   Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseErrorVisibility}}"/>
                     </StackPanel>
                     <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
@@ -835,7 +836,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" x:Name="InputBox"
-                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="17"
+                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
                                      VerticalScrollBarVisibility="Auto"
                                      PreviewKeyDown="OnInputKeyDown">
                                 <TextBox.Style>
@@ -881,7 +882,7 @@
                                         Style="{StaticResource IconButtonStyle}"
                                         ToolTip="Clear message">
                                     <Path Data="{Binding Source={x:Static mi:MaterialIconKind.Broom}, Converter={StaticResource MaterialIconToGeometry}}"
-                                          Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                          Fill="White" Stretch="Uniform" Width="14" Height="14"/>
                                 </Button>
                                 <Button x:Name="AttachButton" Width="26" Height="26"
                                         Click="OnAttach"
@@ -928,9 +929,16 @@
                                 <controls:SegmentedToggleItem Label="Help" Value="Help" Accent="{StaticResource Mode.HelpBrush}"/>
                             </controls:SegmentedToggle.Items>
                         </controls:SegmentedToggle>
-                        <Button x:Name="CompactNowButton" Content="Compact now" Click="OnCompactNow"
+                        <Button x:Name="CompactNowButton" Click="OnCompactNow"
                                 Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center"
-                                ToolTip="Summarize the conversation to free context space"/>
+                                ToolTip="Summarize the conversation to free context space">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="CompactIndicator" Width="7" Height="7"
+                                          Fill="Red" VerticalAlignment="Center" Margin="0,0,5,0"
+                                          Visibility="Collapsed"/>
+                                <TextBlock Text="Compact now" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                         <Button x:Name="UpdateMemoryButton" Content="Memory bank" Click="OnUpdateMemory"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Ask the agent to update the project memory bank"/>
@@ -1036,23 +1044,27 @@
                                Margin="0,16,0,8" Foreground="{StaticResource Dark.Text}"/>
 
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  HorizontalAlignment="Center" Width="420">
+                                  HorizontalAlignment="Center" MaxWidth="420">
                         <ItemsControl x:Name="HistoryList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="0,0,0,6">
-                                        <Button HorizontalContentAlignment="Stretch" Click="OnHistoryCardClick" Padding="10,8,32,8">
+                                        <Button HorizontalContentAlignment="Stretch" Click="OnHistoryCardClick" Padding="10,8,32,8" MinWidth="150">
                                             <StackPanel>
-                                                <StackPanel Orientation="Horizontal">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
                                                     <!-- Green dot = the single activity indicator of the chat: a display projection of
                                                          ChatModel.ActiveChatConversation (ChatConversation.IsActive). No other element or
                                                          field in the view tracks which chat is active. -->
-                                                    <Ellipse Width="8" Height="8" Fill="#7AC88F" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                    <Ellipse Grid.Column="0" Width="8" Height="8" Fill="#7AC88F" Margin="0,0,7,0" VerticalAlignment="Center"
                                                              ToolTip="Active chat"
                                                              Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"/>
-                                                    <TextBlock Text="{Binding CardTitle}" TextWrapping="Wrap"
+                                                    <TextBlock Grid.Column="1" Text="{Binding CardTitle}" TextWrapping="Wrap"
                                                                Foreground="{StaticResource Dark.Text}" FontWeight="SemiBold"/>
-                                                </StackPanel>
+                                                </Grid>
                                                 <TextBlock Text="{Binding DisplayDate}" Margin="0,4,0,0"
                                                            Foreground="#9E9E9E"/>
                                             </StackPanel>
@@ -1286,7 +1298,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBox Grid.Row="0" x:Name="KbStatusText" IsReadOnly="True"
                              Height="80" MaxLines="3"
@@ -1297,13 +1308,7 @@
                     <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
                                  Minimum="0" Maximum="100" Value="{Binding KnowledgeBase.Progress, Mode=OneWay}"
                                  Foreground="{StaticResource Dark.Accent}" Visibility="{Binding KnowledgeBase.IsImporting, Converter={StaticResource BoolToVis}}"/>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
-                        <ProgressBar x:Name="ContextFillBar" Width="120" Height="12"
-                                     Minimum="0" Maximum="100" Value="0"
-                                     Foreground="{StaticResource Dark.Accent}" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="TokenUsageText" Margin="8,0,0,0" Foreground="#C8C8C8"
-                                   TextWrapping="Wrap" VerticalAlignment="Center" Text="Context window: —"/>
-                    </StackPanel>
+
                 </Grid>
 
                 <Grid Grid.Row="2" Margin="0,4,0,6">

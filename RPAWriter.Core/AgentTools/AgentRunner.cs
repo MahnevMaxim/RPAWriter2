@@ -93,6 +93,12 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Raised when the context is automatically compacted, so the UI can show a notice.</summary>
         public event EventHandler ContextCompacted;
 
+        /// <summary>Raised when context condensation begins, so the UI can show a busy indicator.</summary>
+        public event EventHandler CompactionStarted;
+
+        /// <summary>Raised when context condensation finishes, so the UI can hide the busy indicator.</summary>
+        public event EventHandler CompactionFinished;
+
         /// <summary>Raised for every recovery retry (overflow compact or max-tokens nudge).</summary>
         public event EventHandler<AgentRetryArgs> RetryOccurred;
 
@@ -134,6 +140,8 @@ namespace RPAWriter.Core.AgentTools
                 "agent-compact.txt",
                 PromptDefaults.AgentCompactSystemPrompt);
             _condenser = new ContextCondenser(_ai, _estimator, prompt);
+            _condenser.CompactionStarted += (s, e) => CompactionStarted?.Invoke(s, e);
+            _condenser.CompactionFinished += (s, e) => CompactionFinished?.Invoke(s, e);
             _assembler = new ContextAssembler(_estimator, _condenser);
         }
 
