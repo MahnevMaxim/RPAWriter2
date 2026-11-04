@@ -44,6 +44,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, position);";
 
+        /// <summary>
+        /// Rolling archive of rows removed from <c>messages</c> by a shrink. Because a save replaces
+        /// the stored message list, any rows past the new list length are copied here before being
+        /// trimmed, so a truncation can always be recovered. Keyed per (conversation, position,
+        /// timestamp) so multiple generations survive.
+        /// </summary>
+        private const string CreateMessagesBackupSql = @"
+CREATE TABLE IF NOT EXISTS messages_backup (
+    conversation_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    reasoning TEXT NULL,
+    mode TEXT NULL,
+    kind TEXT NULL,
+    tool_name TEXT NULL,
+    options TEXT NULL,
+    checkpoint_hash TEXT NULL,
+    backed_up_at_utc TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, position, backed_up_at_utc)
+);";
+
         /// <summary>Creates the database and schema if needed.</summary>
         public static void Initialize()
         {
@@ -60,7 +81,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at_utc TEXT NOT NULL,
     workspace_id TEXT NOT NULL DEFAULT ''
 );
-" + CreateMessagesSql;
+" + CreateMessagesSql + CreateMessagesBackupSql;
                 command.ExecuteNonQuery();
             }
 
@@ -193,19 +214,20 @@ VALUES (@id, @title, @created, @updated, @workspace);";
                     upsert.ExecuteNonQuery();
                 }
 
-                using (var delete = connection.CreateCommand())
-                {
-                    delete.Transaction = transaction;
-                    delete.CommandText = "DELETE FROM messages WHERE conversation_id = @id;";
-                    delete.Parameters.AddWithValue("@id", conversation.Id);
-                    delete.ExecuteNonQuery();
-                }
+                var newCount = conversation.Messages.Count;
 
+                // Archive rows past the new list before trimming them, so a shorter save is always
+                // recoverable instead of silently losing the tail.
+                ArchiveMessagesTail(connection, transaction, conversation.Id, newCount);
+
+                // Upsert each message by position and trim only positions beyond the new list. This
+                // reconciles the stored rows to the snapshot without a full delete-and-reinsert pass,
+                // so a re-save of the same conversation can never drop a message that is still there.
                 using (var insert = connection.CreateCommand())
                 {
                     insert.Transaction = transaction;
                     insert.CommandText = @"
-INSERT INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash)
+INSERT OR REPLACE INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash)
 VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @checkpoint_hash);";
                     var idParam = insert.Parameters.Add("@id", System.Data.DbType.String);
                     var positionParam = insert.Parameters.Add("@position", System.Data.DbType.Int64);
@@ -218,7 +240,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
                     var checkpointHashParam = insert.Parameters.Add("@checkpoint_hash", System.Data.DbType.String);
 
                     idParam.Value = conversation.Id;
-                    for (var i = 0; i < conversation.Messages.Count; i++)
+                    for (var i = 0; i < newCount; i++)
                     {
                         var message = conversation.Messages[i];
                         positionParam.Value = i;
@@ -233,9 +255,37 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
                     }
                 }
 
+                using (var trim = connection.CreateCommand())
+                {
+                    trim.Transaction = transaction;
+                    trim.CommandText = "DELETE FROM messages WHERE conversation_id = @id AND position >= @count;";
+                    trim.Parameters.AddWithValue("@id", conversation.Id);
+                    trim.Parameters.AddWithValue("@count", newCount);
+                    trim.ExecuteNonQuery();
+                }
+
                 transaction.Commit();
             }
         }
+
+        /// <summary>Copies rows at or past <paramref name="newCount"/> into the backup table before they are trimmed.</summary>
+        private static void ArchiveMessagesTail(SQLiteConnection connection, SQLiteTransaction transaction, string id, int newCount)
+        {
+            using (var backup = connection.CreateCommand())
+            {
+                backup.Transaction = transaction;
+                backup.CommandText = @"
+INSERT OR REPLACE INTO messages_backup (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, backed_up_at_utc)
+SELECT conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, @now
+FROM messages
+WHERE conversation_id = @id AND position >= @count;";
+                backup.Parameters.AddWithValue("@id", id);
+                backup.Parameters.AddWithValue("@count", newCount);
+                backup.Parameters.AddWithValue("@now", ToTimestamp(DateTime.UtcNow));
+                backup.ExecuteNonQuery();
+            }
+        }
+
         /// <summary>Deletes a conversation (messages are removed via ON DELETE CASCADE).</summary>
         public static void DeleteConversation(string id)
         {

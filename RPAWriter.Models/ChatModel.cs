@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
@@ -49,6 +50,18 @@ namespace RPAWriter.Models
         private bool _initialized;
         private LogAnalyzer _logAnalyzer;
         private string _lastError = "";
+
+        /// <summary>
+        /// Append-only transcript used as the persistence source. Unlike <see cref="Messages"/>
+        /// (the visible/working transcript, which compaction and scope switches may shrink), this
+        /// buffer is only ever added to within an active conversation and is reset when the
+        /// conversation is detached, so <see cref="SaveHistoryNow"/> can never overwrite a stored
+        /// conversation with a truncated snapshot.
+        /// </summary>
+        private readonly List<ChatMessage> _fullHistory = new List<ChatMessage>();
+
+        /// <summary>Suppresses <see cref="_fullHistory"/> tracking while the visible transcript is replaced by compaction.</summary>
+        private bool _suppressFullHistory;
 
         private readonly Func<DateTime> _utcNow;
         private readonly object _statusTimerGate = new object();
@@ -431,20 +444,25 @@ namespace RPAWriter.Models
 
         /// <summary>
         /// Quick command behind the "Do it!!!" footer button: switches the agent to Act mode and sends
-        /// the "Do it!!!" text through the injected <see cref="IChatPromptSink"/>. A missing sink makes
-        /// the command a pure mode switch (headless tests); send failures are reported through
-        /// <see cref="NotifyMessage"/>.
+        /// the user's input text followed by "Do it!!!" through the injected
+        /// <see cref="IChatPromptSink"/>. An empty/whitespace input sends a bare "Do it!!!". A missing
+        /// sink makes the command a pure mode switch (headless tests); send failures are reported
+        /// through <see cref="NotifyMessage"/>.
         /// </summary>
-        public async void DoItCommand()
+        public async Task DoItCommand(string inputText)
         {
             SwitchMode(AgentMode.Act);
 
             if (_chatSink == null)
                 return;
 
+            var prompt = string.IsNullOrWhiteSpace(inputText)
+                ? "Do it!!!"
+                : inputText + Environment.NewLine + "Do it!!!";
+
             try
             {
-                await _chatSink.SendPromptAsync("Do it!!!");
+                await _chatSink.SendPromptAsync(prompt);
             }
             catch (Exception ex)
             {
@@ -549,6 +567,35 @@ namespace RPAWriter.Models
                          ?? Messages.FirstOrDefault();
         }
 
+        /// <summary>
+        /// Replaces the visible transcript with a compacted one without shrinking the persisted
+        /// history. The host computes the condensed transcript and calls this so compaction frees
+        /// the context window (the next turn is built from <see cref="Messages"/>) while the
+        /// append-only buffer that <see cref="SaveHistoryNow"/> writes stays intact.
+        /// </summary>
+        public void ApplyCompactedTranscript(IEnumerable<ChatMessage> compacted)
+        {
+            if (compacted == null)
+                return;
+
+            _suppressDirty = true;
+            _suppressFullHistory = true;
+            try
+            {
+                Messages.Clear();
+                foreach (var message in compacted)
+                    Messages.Add(message);
+            }
+            finally
+            {
+                _suppressFullHistory = false;
+                _suppressDirty = false;
+            }
+
+            RefreshPinnedMessage();
+            IsDirty = true;
+        }
+
         private void OnMessagesChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
@@ -557,11 +604,28 @@ namespace RPAWriter.Models
                 {
                     if (message?.Kind == ChatMessageKind.User && _pinnedMessage == null)
                         RefreshPinnedMessage();
+
+                    // Keep the append-only persistence buffer in sync with real additions. The
+                    // compaction path suppresses this (ApplyCompactedTranscript) so a compacted
+                    // visible transcript never pollutes the persisted history with duplicates.
+                    if (message != null && !_suppressFullHistory)
+                        _fullHistory.Add(message);
+                }
+            }
+            else if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
+            {
+                foreach (ChatMessage message in e.OldItems)
+                {
+                    if (message != null)
+                        _fullHistory.Remove(message);
                 }
             }
             else if (e.Action == NotifyCollectionChangedAction.Reset)
             {
                 RefreshPinnedMessage();
+                // _fullHistory is deliberately left intact here: Clear() is used both to detach a
+                // conversation (callers reset the buffer explicitly) and to replace the visible
+                // transcript during compaction (the buffer must survive).
             }
 
             if (!_suppressDirty && e.Action != NotifyCollectionChangedAction.Reset)
@@ -634,9 +698,17 @@ namespace RPAWriter.Models
         /// </summary>
         public void SetWorkspaceScope(string workspaceId)
         {
+            var normalized = workspaceId ?? "";
+
+            // A solution event that reports the same scope (e.g. a spurious Opened/AfterClosing)
+            // must not flush, close the active chat or reload history: doing so on every solution
+            // event is what tore an in-progress conversation apart. Only a real scope change acts.
+            if (string.Equals(_historyStore.WorkspaceId ?? "", normalized, StringComparison.Ordinal))
+                return;
+
             // Flush while still scoped to the previous workspace, then switch and reload.
             SaveHistoryNow();
-            _historyStore.WorkspaceId = workspaceId ?? "";
+            _historyStore.WorkspaceId = normalized;
             ClearConversationState(markDirty: false);
             ActiveChatConversation = null;
             ViewMode = ChatViewMode.History;
@@ -723,6 +795,7 @@ namespace RPAWriter.Models
             try
             {
                 Messages.Clear();
+                _fullHistory.Clear();
                 ActiveChatConversation = null;
             }
             finally
@@ -745,10 +818,10 @@ namespace RPAWriter.Models
             if (string.Equals(id, ActiveConversationId, StringComparison.Ordinal))
                 return false;
 
-            SaveHistoryNow();
-            Pending.Clear();
             LastError = "";
 
+            // Load the target first: a missing conversation fails fast without flushing the active
+            // one, and the active chat is only saved once the open is known to succeed.
             ChatConversation stored;
             try
             {
@@ -763,10 +836,14 @@ namespace RPAWriter.Models
             if (stored == null)
                 return false;
 
+            SaveHistoryNow();
+            Pending.Clear();
+
             _suppressDirty = true;
             try
             {
                 Messages.Clear();
+                _fullHistory.Clear();
                 foreach (var storedMessage in stored.Messages ?? new List<ChatHistoryMessage>())
                     Messages.Add(ChatMessageMapper.FromHistoryMessage(storedMessage));
 
@@ -841,7 +918,9 @@ namespace RPAWriter.Models
             if (conversation == null || string.IsNullOrWhiteSpace(conversation.Id))
                 return;
 
-            conversation.Messages = ChatMessageMapper.ToHistoryMessages(Messages);
+            // Persist from the append-only full history, not from the visible transcript: compaction
+            // and scope switches may shrink Messages without the stored conversation losing its tail.
+            conversation.Messages = ChatMessageMapper.ToHistoryMessages(_fullHistory);
 
             if (string.IsNullOrEmpty(conversation.Title))
             {

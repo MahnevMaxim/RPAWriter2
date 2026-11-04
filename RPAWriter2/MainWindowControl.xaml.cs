@@ -65,6 +65,13 @@ namespace RPAWriter2
         private readonly KnowledgeBaseViewModel _knowledgeBaseViewModel = new KnowledgeBaseViewModel();
         private readonly VsWorkspaceProvider _workspaceProvider = new VsWorkspaceProvider();
 
+        /// <summary>
+        /// Last non-empty workspace id the provider reported. Kept so a transient <c>null</c> while a
+        /// solution is reloading does not switch the storages to the global scope and tear the active
+        /// conversation apart.
+        /// </summary>
+        private string _lastWorkspaceId = "";
+
         // Mode and phase are read from _chatModel directly: the footer controls bind to them, so
         // there is nothing left for the host to mirror (documentation/13-model-layer.md, phase E).
         private AgentToolRegistry? _toolRegistry;
@@ -98,6 +105,7 @@ namespace RPAWriter2
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        private readonly DispatcherTimer _workspacePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         private const string CommitBranchName = "dev";
 
         private static string CommitMessageSystemPrompt =>
@@ -242,6 +250,8 @@ namespace RPAWriter2
             HookSolutionEvents();
             _workspaceProvider.WorkspaceChanged += OnWorkspaceChanged;
             _workspaceProvider.Initialize();
+            _workspacePollTimer.Tick += OnWorkspacePollTick;
+            _workspacePollTimer.Start();
             UpdateCreateRobotVisibility();
             UpdateWorkspaceIndicator();
             _chatModel.LogAnalyzer = CreateLogAnalyzer();
@@ -971,19 +981,18 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(UpdateCreateRobotVisibility));
                 return;
             }
-            bool noSolution;
+            bool noWorkspace;
             try
             {
-                var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
-                noSolution = dte?.Solution == null || !dte.Solution.IsOpen;
+                noWorkspace = string.IsNullOrWhiteSpace(GetOpenSolutionDirectory());
             }
             catch
             {
-                noSolution = true;
+                noWorkspace = true;
             }
-            var showRobotCreator = noSolution && (_settings?.ShowRobotCreator ?? true);
+            var showRobotCreator = noWorkspace && (_settings?.ShowRobotCreator ?? true);
             CreateRobotPanel.Visibility = showRobotCreator ? Visibility.Visible : Visibility.Collapsed;
-            RestorePackagesPanel.Visibility = noSolution ? Visibility.Collapsed : Visibility.Visible;
+            RestorePackagesPanel.Visibility = noWorkspace ? Visibility.Collapsed : Visibility.Visible;
         }
 
         /// <summary>Returns the open solution's directory, or null when no solution is open.</summary>
@@ -992,10 +1001,15 @@ namespace RPAWriter2
             try
             {
                 var dte = _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2);
-                if (dte?.Solution == null || !dte.Solution.IsOpen)
-                    return null;
-                var slnPath = dte.Solution.FullName;
-                return string.IsNullOrWhiteSpace(slnPath) ? null : Path.GetDirectoryName(slnPath);
+                if (dte?.Solution != null && dte.Solution.IsOpen)
+                {
+                    var slnPath = dte.Solution.FullName;
+                    if (!string.IsNullOrWhiteSpace(slnPath))
+                        return Path.GetDirectoryName(slnPath);
+                }
+
+                // "Open Folder" mode has no solution: fall back to the opened folder path.
+                return VsOpenFolderProbe.GetOpenFolderPath();
             }
             catch
             {
@@ -1008,6 +1022,15 @@ namespace RPAWriter2
         {
             var workspace = _workspaceProvider.GetCurrentWorkspace();
             var workspaceId = workspace?.Id ?? "";
+
+            // A transient null (e.g. while the solution is reloading) must not drop the storages to
+            // the global scope: keep the last known workspace so an in-progress conversation is not
+            // flushed to the wrong scope and closed.
+            if (string.IsNullOrEmpty(workspaceId) && !string.IsNullOrEmpty(_lastWorkspaceId))
+                workspaceId = _lastWorkspaceId;
+            else if (!string.IsNullOrEmpty(workspaceId))
+                _lastWorkspaceId = workspaceId;
+
             AppDataPaths.SetWorkspaceScope(workspaceId);
             if (workspace == null)
                 return;
@@ -1044,6 +1067,25 @@ namespace RPAWriter2
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             UpdateWorkspaceIndicator();
             UpdateCreateRobotVisibility();
+        }
+
+        /// <summary>
+        /// Solution events do not fire for "Open Folder" mode, so poll the provider and re-scope
+        /// only when the workspace actually changed. Mirrors ApplyWorkspaceScope's transient-null
+        /// guard so a solution reload does not thrash the scopes.
+        /// </summary>
+        private void OnWorkspacePollTick(object? sender, EventArgs e)
+        {
+            var currentId = _workspaceProvider.GetCurrentWorkspace()?.Id ?? "";
+
+            var effectiveId = string.IsNullOrEmpty(currentId) && !string.IsNullOrEmpty(_lastWorkspaceId)
+                ? _lastWorkspaceId
+                : currentId;
+
+            if (string.Equals(effectiveId, AppDataPaths.WorkspaceId, StringComparison.Ordinal))
+                return;
+
+            OnWorkspaceChanged(this, EventArgs.Empty);
         }
 
         private void UpdateWorkspaceIndicator()
@@ -1117,6 +1159,13 @@ namespace RPAWriter2
         {
             InputBox.Clear();
             InputBox.Focus();
+        }
+
+        private async void OnDoItClick(object sender, RoutedEventArgs e)
+        {
+            var text = InputBox.Text.Trim();
+            InputBox.Clear();
+            await _chatModel.DoItCommand(text);
         }
 
         private async void OnMicClick(object sender, RoutedEventArgs e)
@@ -1414,7 +1463,11 @@ namespace RPAWriter2
             return new LogAnalyzer(
                 new LogProviderSourceAdapter(() => _settings?.LogProvidersPath ?? ""),
                 new OutputWindowTextSourceAdapter(_ => _buildFeedback.GetOutputWindowTextAsync()),
-                new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
+                new ChatPromptSinkAdapter((prompt, _) =>
+                {
+                    SendChatPromptDetached(prompt);
+                    return Task.CompletedTask;
+                }),
                 new UserMessageSinkAdapter(AppendChat, AppendExtensionError),
                 new SettingsLogAnalysisAdapter(() => _settings));
         }
@@ -1438,6 +1491,28 @@ namespace RPAWriter2
             analyzer.SelectedTask = TasksGrid?.SelectedItem as ProdTask;
         }
 
+        /// <summary>
+        /// Delivers a log-analysis prompt into the chat without waiting for the agent to finish
+        /// answering. The panel must close as soon as the prompt is committed to the chat, not after
+        /// the (potentially long) agent turn completes — that is what <see cref="SendChatTextAsync"/>
+        /// would wait for. The user message is appended synchronously inside
+        /// <see cref="RunSingleTurnAsync"/> before its first await, so it is visible immediately.
+        /// </summary>
+        private void SendChatPromptDetached(string prompt)
+            => _ = SendChatPromptDetachedAsync(prompt);
+
+        private async Task SendChatPromptDetachedAsync(string prompt)
+        {
+            try
+            {
+                await SendChatTextAsync(prompt);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
         private async void OnAnalyzeLogsFromOutputWindow(object sender, RoutedEventArgs e)
         {
             try
@@ -1447,7 +1522,10 @@ namespace RPAWriter2
                     return;
 
                 if (await analyzer.AnalyzeFromOutputWindowAsync())
+                {
                     AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                    ProdLogsPanel.Visibility = Visibility.Collapsed;
+                }
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -1548,7 +1626,10 @@ namespace RPAWriter2
                     return;
 
                 if (await analyzer.AnalyzeFromProdLogsAsync())
+                {
                     AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                    ProdLogsPanel.Visibility = Visibility.Collapsed;
+                }
             }
             catch (Exception ex) { ShowError(ex); }
         }
@@ -2928,16 +3009,17 @@ namespace RPAWriter2
             {
                 var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
 
-                _messages.Clear();
-                foreach (var m in condensed)
+                // Replace only the visible/working transcript (which is what the next turn is built
+                // from); the model keeps the append-only persisted history intact.
+                var compactedMessages = condensed.Select(m => new ChatMessage
                 {
-                    var kind = m.Role == "assistant" ? ChatMessageKind.AgentText
-                             : m.Role == "user" ? ChatMessageKind.User
-                             : ChatMessageKind.SystemNotice;
-                    _messages.Add(new ChatMessage { Kind = kind, Text = m.Content });
-                }
+                    Kind = m.Role == "assistant" ? ChatMessageKind.AgentText
+                         : m.Role == "user" ? ChatMessageKind.User
+                         : ChatMessageKind.SystemNotice,
+                    Text = m.Content
+                }).ToList();
+                _chatModel.ApplyCompactedTranscript(compactedMessages);
                 AppendCompaction("Context compacted (summarized).");
-                RefreshPinnedMessage();
                 ScheduleHistorySave();
             }
             catch (Exception ex)
@@ -3122,6 +3204,7 @@ namespace RPAWriter2
                 _robotTemplate,
                 AskQuestionAsync,
                 () => (_settings?.SkillsPath ?? "").Trim(),
+                () => (IReadOnlyList<string>)(_settings?.AdditionalReadPaths ?? new List<string>()),
                 memoryBankMode,
                 RunSubAgentAsync,
                 _settings.AllowSubagents,

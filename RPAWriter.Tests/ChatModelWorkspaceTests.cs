@@ -104,5 +104,26 @@ namespace RPAWriter.Tests
             model.SetWorkspaceScope("ws2");
             Assert.That(model.History.Select(c => c.Id), Does.Not.Contain(id));
         }
+
+        [Test]
+        public void SetWorkspaceScope_SameIdIsANoOp_KeepsActiveChatAndView()
+        {
+            var store = new InMemoryChatHistoryStore();
+            var provider = new FakeWorkspaceProvider { Current = new WorkspaceInfo { Id = "ws1" } };
+            var model = new ChatModel(store, null, workspaceProvider: provider);
+            model.Run();
+            model.StartNewChat();
+            model.AppendMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = "in progress" });
+            var id = model.ActiveConversationId;
+
+            // A spurious solution event that reports the same scope must not close the chat or
+            // flip it back to the history view.
+            model.SetWorkspaceScope("ws1");
+
+            Assert.That(model.HasActiveConversation, Is.True);
+            Assert.That(model.ActiveConversationId, Is.EqualTo(id));
+            Assert.That(model.Messages.Select(m => m.Text), Is.EqualTo(new[] { "in progress" }));
+            Assert.That(model.ViewMode, Is.EqualTo(ChatViewMode.Conversation));
+        }
     }
 }

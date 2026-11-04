@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
@@ -85,6 +86,9 @@ namespace RPAWriter.Models
         private readonly IFileOpener _fileOpener;
         private readonly Func<string> _logFilePathResolver;
         private readonly Func<string> _chatLogFilePathResolver;
+
+        private readonly ObservableCollection<string> _additionalReadPaths = new ObservableCollection<string>();
+        private string _selectedReadPath;
 
         // Global fallback values of the log paths, kept so Save can write them back unchanged when
         // the effective (UI) values are workspace-scoped instead.
@@ -198,7 +202,8 @@ namespace RPAWriter.Models
                 SpeechAutoSend = _speechAutoSend,
                 AutoCaptureRuntimeExceptions = _autoCaptureRuntimeExceptions,
                 CheckpointsEnabled = _checkpointsEnabled,
-                RobotNameHistory = new List<string>(_robotNameHistory)
+                RobotNameHistory = new List<string>(_robotNameHistory),
+                AdditionalReadPaths = new List<string>(_additionalReadPaths)
             };
         }
 
@@ -340,7 +345,50 @@ namespace RPAWriter.Models
             _robotNameHistory = data.RobotNameHistory == null
                 ? new List<string>()
                 : new List<string>(data.RobotNameHistory);
+
+            _additionalReadPaths.Clear();
+            if (data.AdditionalReadPaths != null)
+            {
+                foreach (var path in data.AdditionalReadPaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(path))
+                        _additionalReadPaths.Add(path.Trim());
+                }
+            }
         }
+
+        #region Read scope commands
+
+        /// <summary>Command target: pick a folder and add it to the Plan-mode read scope.</summary>
+        public void AddReadPathCommand()
+        {
+            var initial = _solutionPathProvider?.GetSolutionDirectory() ?? "";
+            var folder = _folderPicker?.PickFolder("Select a folder the agent may read in Plan mode", initial);
+            if (string.IsNullOrWhiteSpace(folder))
+                return;
+
+            var trimmed = folder.Trim();
+            foreach (var existing in _additionalReadPaths)
+            {
+                if (string.Equals(existing, trimmed, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            _additionalReadPaths.Add(trimmed);
+            SelectedReadPath = trimmed;
+        }
+
+        /// <summary>Command target: remove the selected folder from the Plan-mode read scope.</summary>
+        public void RemoveReadPathCommand()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedReadPath))
+                return;
+
+            _additionalReadPaths.Remove(SelectedReadPath);
+            SelectedReadPath = null;
+        }
+
+        #endregion Read scope commands
 
         /// <summary>Formatted temperature for the slider caption (single decimal).</summary>
         public string TemperatureText => _temperature.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
@@ -516,6 +564,12 @@ namespace RPAWriter.Models
         public string RulesPath { get => _rulesPath; set => SetProperty(ref _rulesPath, value); }
 
         public string SkillsPath { get => _skillsPath; set => SetProperty(ref _skillsPath, value); }
+
+        /// <summary>Additional directories the agent may read in Plan mode.</summary>
+        public ObservableCollection<string> AdditionalReadPaths => _additionalReadPaths;
+
+        /// <summary>Currently selected additional read directory (for the Remove command).</summary>
+        public string SelectedReadPath { get => _selectedReadPath; set => SetProperty(ref _selectedReadPath, value); }
 
         public int ContextWindowSize { get => _contextWindowSize; set => SetProperty(ref _contextWindowSize, value); }
 

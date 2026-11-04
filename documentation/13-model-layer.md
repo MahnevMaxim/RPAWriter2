@@ -286,7 +286,7 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
   модели работают через `IChatHistoryStore`/`IUiStateStore`, которые адаптируют
   `SqliteChatHistoryStore` и `JsonUiStateStore`.
 - Рабочие пространства (фаза B, см. `14-workspaces-and-mvvm-plan.md`): `IChatHistoryStore` получил
-  `WorkspaceId` (история фильтруется по открытому решению), `ui_state.json` пишется per-workspace,
+  `WorkspaceId` (история фильтруется по открытому решению или открытой папке), `ui_state.json` пишется per-workspace,
   лог-пути настроек скоупятся через `WorkspaceLogSettings`/`IWorkspaceLogSettingsStore`, а API-ключ
   вынесен в `ISecretsStore` (`DpapiSecretsStore` в VSIX).
 - `ModelArchitectureTests.ChatDomainTypes_LiveInCore` и `PendingMessage_ExposesNoIconProperty`
@@ -324,9 +324,9 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 `RestoreMode(mode)`, `LoadUiState()`, `PersistUiState(activeTab)`, `ResolveConversationToOpen(id)`,
 `CloseActiveChat()`, `EnsureActiveConversation()`.
 Команды для `Cmd`: `NewChatCommand`, `OpenConversationCommand(object)`, `DeleteConversationCommand(object)`,
-`ClearHistoryCommand`, `RefreshHistoryCommand`, `DoItCommand` — все `public`, без перегрузок
-(требование `BaseModel.SendCommand`). `DoItCommand` переключает агента в Act и отправляет «Do it!!!»
-через внедряемый `IChatPromptSink`.
+`ClearHistoryCommand`, `RefreshHistoryCommand`, `DoItCommand(string)` — все `public`, без перегрузок
+(требование `BaseModel.SendCommand`). `DoItCommand` переключает агента в Act и отправляет текст из поля
+ввода, за которым следует «Do it!!!», через внедряемый `IChatPromptSink` (пустой ввод → просто «Do it!!!»).
 
 ### 17.2. Как модель реагирует на изменения коллекции
 
@@ -351,10 +351,12 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 | `MessageDialog.Show(...)` при удалении/очистке | модальный диалог — View; модель лишь сообщает результат и `LastError` |
 | Публикация `PersistUiState` по событиям вкладок | активная вкладка — состояние View, передаётся в модель параметром |
 
-Футер (`Cancel`, `Do it!!!`, `Resume task`, цвет рамки ввода) в этот список больше не входит: он
-целиком на биндингах (§20), хост лишь присваивает `Phase` и `HasResumableRun`. Снимок возобновления
-(`AgentResumeSnapshot`, `_resumableMode`, `_resumableBudget`) остаётся здесь — это инфраструктура
-раннера, а не данные беседы.
+Футер (`Cancel`, `Resume task`, цвет рамки ввода) в этот список больше не входит: он целиком на
+биндингах (§20), хост лишь присваивает `Phase` и `HasResumableRun`. Кнопка `Do it!!!` — исключение:
+ей нужно прочитать текст поля ввода и очистить его, поэтому она висит на `Click`-обработчике
+(`OnDoItClick`), а сборку промта и переключение режима делает модель (`DoItCommand(string)`).
+Снимок возобновления (`AgentResumeSnapshot`, `_resumableMode`, `_resumableBudget`) остаётся здесь —
+это инфраструктура раннера, а не данные беседы.
 
 ### 17.4. Приём «алиасы» при инкрементальном переносе
 
@@ -616,13 +618,16 @@ if (string.IsNullOrWhiteSpace(_robotName))
 | `ModeToggle` (`SegmentedToggle`) | `SelectedValue={Binding Chat.Mode, Converter={StaticResource ModeToToggle}, Mode=TwoWay}` |
 | `InputBox` (рамка) | `Style` c `DataTrigger` по `{Binding Chat.Mode}`: Plan → `Mode.PlanBrush`, Act → `Mode.ActBrush`, Help → `Mode.HelpBrush` |
 | `CancelButton` | `Visibility={Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}` |
-| `DoItButton` | `Command={Binding Cmd}` + `CommandParameter="DoItCommand"`, `IsEnabled={Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}` |
+| `DoItButton` | `Click="OnDoItClick"`, `IsEnabled={Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}` |
 | `ResumeButton` | `Visibility={Binding Chat.CanResume, Converter={StaticResource BoolToVis}}` |
+| `CompactNowButton` | `IsEnabled` — `MultiBinding` по `Chat.HasActiveConversation` и `Chat.Phase` (через `PhaseNotStreaming`), объединённые логическим И конвертером `AllTrueMultiConverter` |
 
 В биндингах нет ни одного сравнения enum: два экземпляра `EnumMatchConverter` с параметрами
 `Match="Streaming"`, `WhenMatch`/`WhenDifferent` дают и `Visibility`, и `bool`. Значения
 `WhenMatch="Visible"` / `"False"` конвертер приводит к типу цели (`Visibility`, `bool`), поэтому
-отдельные конвертеры «под фазу» не нужны и коллекция `Converters` не растёт.
+отдельные конвертеры «под фазу» не нужны и коллекция `Converters` не растёт. Единственное
+комбинированное условие («Compact now» активен при открытой беседе и свободном агенте) собирает
+`AllTrueMultiConverter` из двух готовых флагов — сравнение enum по-прежнему делает `EnumMatchConverter`.
 
 Имена режима («Plan»/«Act»/«Help») живут в Core — `AgentModeNames.ToValue`/`Parse`. Один маппинг
 нужен трём местам: конвертеру `AgentModeToToggleValueConverter` (в обе стороны), записи в

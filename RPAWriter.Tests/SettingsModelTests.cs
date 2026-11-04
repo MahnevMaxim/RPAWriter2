@@ -71,6 +71,20 @@ namespace RPAWriter.Tests
             public void Open(string path) => OpenedPath = path;
         }
 
+        private sealed class FakeFolderPicker : IFolderPicker
+        {
+            public string Result;
+            public string Title;
+            public string InitialDirectory;
+
+            public string PickFolder(string title, string initialDirectory)
+            {
+                Title = title;
+                InitialDirectory = initialDirectory;
+                return Result;
+            }
+        }
+
         [Test]
         public void Model_CanBeConstructedWithoutViewModelAndView()
         {
@@ -249,6 +263,71 @@ namespace RPAWriter.Tests
             Assert.That(notify, Is.Not.Null);
             Assert.That(notify.NotifyLevel, Is.EqualTo(NotifyLevel.Warning));
             Assert.That(notify.Message, Does.Contain("directory not found"));
+        }
+
+        [Test]
+        public void AddReadPathCommand_AddsPickedFolder()
+        {
+            var picker = new FakeFolderPicker { Result = @"C:\Extra" };
+            var model = new SettingsModel(new InMemorySettingsStore(), folderPicker: picker);
+
+            model.AddReadPathCommand();
+
+            Assert.That(model.AdditionalReadPaths, Is.EquivalentTo(new[] { @"C:\Extra" }));
+            Assert.That(model.SelectedReadPath, Is.EqualTo(@"C:\Extra"));
+        }
+
+        [Test]
+        public void AddReadPathCommand_IgnoresEmptyAndDuplicates()
+        {
+            var picker = new FakeFolderPicker { Result = @"C:\Extra" };
+            var model = new SettingsModel(new InMemorySettingsStore(), folderPicker: picker);
+
+            model.AddReadPathCommand();
+            picker.Result = "   ";
+            model.AddReadPathCommand();
+            picker.Result = @"c:\extra";
+            model.AddReadPathCommand();
+
+            Assert.That(model.AdditionalReadPaths.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void AddReadPathCommand_NoPicker_DoesNothing()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+
+            Assert.DoesNotThrow(() => model.AddReadPathCommand());
+            Assert.That(model.AdditionalReadPaths, Is.Empty);
+        }
+
+        [Test]
+        public void RemoveReadPathCommand_RemovesSelected()
+        {
+            var picker = new FakeFolderPicker { Result = @"C:\Extra" };
+            var model = new SettingsModel(new InMemorySettingsStore(), folderPicker: picker);
+            model.AddReadPathCommand();
+
+            model.RemoveReadPathCommand();
+
+            Assert.That(model.AdditionalReadPaths, Is.Empty);
+            Assert.That(model.SelectedReadPath, Is.Null);
+        }
+
+        [Test]
+        public void Save_RoundTripsAdditionalReadPaths()
+        {
+            var store = new InMemorySettingsStore();
+            var picker = new FakeFolderPicker { Result = @"C:\Extra" };
+            var model = new SettingsModel(store, folderPicker: picker);
+            model.AddReadPathCommand();
+
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.AdditionalReadPaths, Is.EquivalentTo(new[] { @"C:\Extra" }));
         }
     }
 }

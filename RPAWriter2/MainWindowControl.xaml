@@ -34,9 +34,9 @@
         <SolidColorBrush x:Key="Chat.UserBackground" Color="#3364B5F6"/>
         <SolidColorBrush x:Key="Commit.SuccessBackground" Color="#2E7D32"/>
         <SolidColorBrush x:Key="Commit.ErrorBackground" Color="#E65100"/>
-        <SolidColorBrush x:Key="Chat.LastActBackground" Color="#334CAF50"/>
+        <SolidColorBrush x:Key="Chat.LastActBackground" Color="#0D4CAF50"/>
         <SolidColorBrush x:Key="Chat.LastActBorder" Color="#4CAF50"/>
-        <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#4DFF8C00"/>
+        <SolidColorBrush x:Key="Chat.LastPlanBackground" Color="#0DFF8C00"/>
         <SolidColorBrush x:Key="Chat.LastPlanBorder" Color="#FF8C00"/>
         <SolidColorBrush x:Key="Mode.PlanBrush" Color="#64B5F6"/>
         <SolidColorBrush x:Key="Mode.ActBrush" Color="#4CAF50"/>
@@ -62,6 +62,7 @@
                                  WhenMatch="Visible" WhenDifferent="Collapsed"/>
         <conv:EnumMatchConverter x:Key="PhaseNotStreaming" Match="Streaming"
                                  WhenMatch="False" WhenDifferent="True"/>
+        <conv:AllTrueMultiConverter x:Key="AllTrue"/>
         <chat:ChatMessageTemplateSelector x:Key="ChatMessageTemplateSelector"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
@@ -932,6 +933,12 @@
                         <Button x:Name="CompactNowButton" Click="OnCompactNow"
                                 Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Summarize the conversation to free context space">
+                            <Button.IsEnabled>
+                                <MultiBinding Converter="{StaticResource AllTrue}">
+                                    <Binding Path="Chat.HasActiveConversation"/>
+                                    <Binding Path="Chat.Phase" Converter="{StaticResource PhaseNotStreaming}"/>
+                                </MultiBinding>
+                            </Button.IsEnabled>
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse x:Name="CompactIndicator" Width="7" Height="7"
                                           Fill="Red" VerticalAlignment="Center" Margin="0,0,5,0"
@@ -949,10 +956,10 @@
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="Open the documentation"/>
                         <Button x:Name="DoItButton" Content="Do it!!!"
-                                Command="{Binding Cmd}" CommandParameter="DoItCommand"
+                                Click="OnDoItClick"
                                 Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 IsEnabled="{Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}"
-                                ToolTip="Send 'Do it!!!' to the agent and switch it to Act mode"/>
+                                ToolTip="Send the input text plus 'Do it!!!' to the agent and switch it to Act mode"/>
                     </StackPanel>
 
                     <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="4"
@@ -1517,6 +1524,8 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1540,14 +1549,26 @@
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <TextBox Grid.Row="6" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4" Text="{Binding Settings.SkillsPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <TextBlock Grid.Row="7" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="7" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="{Binding Settings.SecurityAuditModeIndex, Mode=TwoWay}"
+                                <TextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Text="Agent read scope (Plan mode)" VerticalAlignment="Center" Margin="0,8,0,2" Foreground="{StaticResource Dark.Text}"/>
+                                <DockPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="8,0,0,0">
+                                        <Button Content="Add folder…" Command="{Binding Cmd}" CommandParameter="AddReadPathCommand" Margin="0,0,0,4"/>
+                                        <Button Content="Remove selected" Command="{Binding Cmd}" CommandParameter="RemoveReadPathCommand"/>
+                                    </StackPanel>
+                                    <ListBox x:Name="AdditionalReadPathsList"
+                                             ItemsSource="{Binding Settings.AdditionalReadPaths}"
+                                             SelectedItem="{Binding Settings.SelectedReadPath, Mode=TwoWay}"
+                                             Height="80"/>
+                                </DockPanel>
+
+                                <TextBlock Grid.Row="9" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                                <ComboBox Grid.Row="9" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="{Binding Settings.SecurityAuditModeIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Full (all areas)"/>
                                     <ComboBoxItem Content="Passwords &amp; logins only"/>
                                 </ComboBox>
 
-                                <CheckBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox" IsChecked="{Binding Settings.ShowRobotCreator, Mode=TwoWay}"
+                                <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox" IsChecked="{Binding Settings.ShowRobotCreator, Mode=TwoWay}"
                                           Content="Show robot creation control in chat" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>

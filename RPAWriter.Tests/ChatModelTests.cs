@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using RPAWriter.Core.Models;
 using RPAWriter.Models;
@@ -1146,13 +1147,13 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void DoItCommand_SwitchesToActAndSendsTheCommand()
+        public async Task DoItCommand_SwitchesToActAndSendsTheCommand()
         {
             var sink = new RecordingChatSink();
             var model = new ChatModel(_store, _uiState, null, sink);
             model.Run();
 
-            model.DoItCommand();
+            await model.DoItCommand("");
 
             Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
             Assert.That(sink.Prompts, Does.Contain("Do it!!!"));
@@ -1161,14 +1162,39 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void DoItCommand_DoesNotRecordADuplicateWhenAlreadyAct()
+        public async Task DoItCommand_PrependsInputTextToTheCommand()
+        {
+            var sink = new RecordingChatSink();
+            var model = new ChatModel(_store, _uiState, null, sink);
+            model.Run();
+
+            await model.DoItCommand("fix the bug");
+
+            Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
+            Assert.That(sink.Prompts, Does.Contain("fix the bug" + Environment.NewLine + "Do it!!!"));
+        }
+
+        [Test]
+        public async Task DoItCommand_SendsBareCommandOnWhitespaceOnlyInput()
+        {
+            var sink = new RecordingChatSink();
+            var model = new ChatModel(_store, _uiState, null, sink);
+            model.Run();
+
+            await model.DoItCommand("   ");
+
+            Assert.That(sink.Prompts, Does.Contain("Do it!!!"));
+        }
+
+        [Test]
+        public async Task DoItCommand_DoesNotRecordADuplicateWhenAlreadyAct()
         {
             var sink = new RecordingChatSink();
             var model = new ChatModel(_store, _uiState, null, sink);
             model.Run();
 
             model.SwitchMode(AgentMode.Act); // the user already switched to Act once
-            model.DoItCommand();
+            await model.DoItCommand("");
 
             Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
             Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
@@ -1176,18 +1202,18 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void DoItCommand_SendsNothingWithoutASink()
+        public async Task DoItCommand_SendsNothingWithoutASink()
         {
             var model = CreateModel();
 
-            Assert.DoesNotThrow(() => model.DoItCommand());
+            Assert.DoesNotThrowAsync(async () => await model.DoItCommand(""));
 
             Assert.That(model.Mode, Is.EqualTo(AgentMode.Act));
             Assert.That(model.Messages.Count(m => m.Kind == ChatMessageKind.ModeSwitch), Is.EqualTo(1));
         }
 
         [Test]
-        public void DoItCommand_ReportsSendingFailuresThroughNotify()
+        public async Task DoItCommand_ReportsSendingFailuresThroughNotify()
         {
             var sink = new RecordingChatSink { SendError = new Exception("boom") };
             var model = new ChatModel(_store, _uiState, null, sink);
@@ -1195,7 +1221,7 @@ namespace RPAWriter.Tests
             var notifications = new List<Notify>();
             model.Notify += (sender, notify) => notifications.Add(notify);
 
-            model.DoItCommand();
+            await model.DoItCommand("");
 
             Assert.That(notifications, Has.Count.EqualTo(1));
             Assert.That(notifications[0].Message, Does.Contain("boom"));

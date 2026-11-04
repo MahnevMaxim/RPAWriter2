@@ -149,6 +149,28 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Normalize_InitializesAndCleansAdditionalReadPaths()
+        {
+            var settings = new SettingsData { AdditionalReadPaths = null };
+            SettingsData.Normalize(settings);
+            Assert.That(settings.AdditionalReadPaths, Is.Not.Null);
+            Assert.That(settings.AdditionalReadPaths, Is.Empty);
+
+            var withNoise = new SettingsData
+            {
+                AdditionalReadPaths = new System.Collections.Generic.List<string>
+                {
+                    @"  C:\One  ",
+                    "   ",
+                    null,
+                    @"C:\Two"
+                }
+            };
+            SettingsData.Normalize(withNoise);
+            Assert.That(withNoise.AdditionalReadPaths, Is.EquivalentTo(new[] { @"C:\One", @"C:\Two" }));
+        }
+
+        [Test]
         public void Normalize_PreservesValidValues()
         {
             var settings = new SettingsData

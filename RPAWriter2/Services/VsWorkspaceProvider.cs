@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -9,10 +8,9 @@ using RPAWriter.Core.Services;
 namespace RPAWriter2.Services
 {
     /// <summary>
-    /// DTE-backed workspace provider: reports the open solution as a <see cref="WorkspaceInfo"/>
-    /// and raises <see cref="WorkspaceChanged"/> when it opens, closes or switches, so the host can
-    /// re-scope the storages on the fly. Reuses the same DTE solution probe as the host's
-    /// <c>GetOpenSolutionDirectory()</c>.
+    /// DTE-backed workspace provider: reports the open solution (or the open folder in "Open Folder"
+    /// mode) as a <see cref="WorkspaceInfo"/> and raises <see cref="WorkspaceChanged"/> when it opens,
+    /// closes or switches, so the host can re-scope the storages on the fly.
     /// </summary>
     public sealed class VsWorkspaceProvider : IWorkspaceProvider
     {
@@ -21,30 +19,20 @@ namespace RPAWriter2.Services
 
         public event EventHandler WorkspaceChanged;
 
-        /// <summary>The current workspace, or null when no solution is open.</summary>
+        /// <summary>The current workspace, or null when neither a solution nor a folder is open.</summary>
         public WorkspaceInfo GetCurrentWorkspace()
         {
             try
             {
                 var dte = GetDte();
-                if (dte?.Solution == null || !dte.Solution.IsOpen)
-                    return null;
+                var isSolutionOpen = dte?.Solution != null && dte.Solution.IsOpen;
+                var solutionPath = isSolutionOpen ? dte.Solution.FullName : null;
 
-                var slnPath = dte.Solution.FullName;
-                if (string.IsNullOrWhiteSpace(slnPath))
-                    return null;
+                // "Open Folder" mode reports Solution.IsOpen == false and an empty
+                // Solution.FullName, so ask IVsSolution for the folder path instead.
+                var folderPath = isSolutionOpen ? null : VsOpenFolderProbe.GetOpenFolderPath();
 
-                var directory = Path.GetDirectoryName(slnPath);
-                if (string.IsNullOrWhiteSpace(directory))
-                    return null;
-
-                return new WorkspaceInfo
-                {
-                    Id = WorkspaceIdentity.ComputeId(directory),
-                    Path = directory,
-                    Name = Path.GetFileNameWithoutExtension(slnPath),
-                    LastOpenedUtc = DateTime.UtcNow
-                };
+                return WorkspaceResolver.Resolve(isSolutionOpen, solutionPath, folderPath);
             }
             catch
             {

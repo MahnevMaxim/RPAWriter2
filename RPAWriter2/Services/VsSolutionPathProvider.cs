@@ -18,11 +18,15 @@ namespace RPAWriter2.Services
             try
             {
                 var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
-                if (dte?.Solution == null || !dte.Solution.IsOpen)
-                    return null;
+                if (dte?.Solution != null && dte.Solution.IsOpen)
+                {
+                    var slnPath = dte.Solution.FullName;
+                    if (!string.IsNullOrWhiteSpace(slnPath))
+                        return Path.GetDirectoryName(slnPath);
+                }
 
-                var slnPath = dte.Solution.FullName;
-                return string.IsNullOrWhiteSpace(slnPath) ? null : Path.GetDirectoryName(slnPath);
+                // "Open Folder" mode has no solution: return the opened folder path.
+                return VsOpenFolderProbe.GetOpenFolderPath();
             }
             catch
             {

@@ -308,3 +308,4 @@ Workspace-скоупленные настройки (только лог-фай�
 | 1 | Какие настройки per-workspace? | Только логи (`LogFilePath`, `ChatLogFilePath`); остальное — global. |
 | 2 | Хранилище истории | Одна база `chat_history.db` с колонкой `workspace_id`. |
 | 3 | API key | Выносить в DPAPI/secret-store сейчас (`ISecretsStore` + `DpapiSecretsStore`). |
+| 4 | Воркспейс = только `.sln`? | Нет: поддерживается и «Открыть папку» (Open Folder). Путь папки берётся через `IVsSolution` (`VSPROPID_IsInOpenFolderMode` + `GetSolutionInfo`); выбор решения/папки — в Core `WorkspaceResolver.Resolve`. |

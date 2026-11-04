@@ -5,7 +5,7 @@
 Настройки разделены на два уровня (см. [14. Рабочие пространства](14-workspaces-and-mvvm-plan.md)):
 
 - **Global** — почти все настройки (`%AppData%\RPAWriter2\<17|18>\settings.json`);
-- **Per-workspace** — только **Log file path** и **Chat log file path** (хранятся в `%AppData%\RPAWriter2\<17|18>\workspaces\<id>\settings.json`, где `<id>` — хэш пути открытого решения). Если решение не открыто, пути логов берутся из global-настроек;
+- **Per-workspace** — только **Log file path** и **Chat log file path** (хранятся в `%AppData%\RPAWriter2\<17|18>\workspaces\<id>\settings.json`, где `<id>` — хэш каталога открытого решения или открытой папки). Если не открыто ни решение, ни папка, пути логов берутся из global-настроек;
 - **API key** — хранится отдельно, зашифрованным через Windows DPAPI (текущий пользователь), и не попадает ни в JSON, ни в workspace-копии.
 
 Настройки сгруппированы по четырём подвкладкам: **API**, **RPA**, **General** и **Sound**.

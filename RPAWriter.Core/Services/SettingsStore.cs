@@ -162,6 +162,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Recently used production robot names (most recent first).</summary>
         public List<string> RobotNameHistory { get; set; } = new List<string>();
 
+        /// <summary>Additional directories the agent may read in Plan mode (beyond solution/KB/robots/skills).</summary>
+        public List<string> AdditionalReadPaths { get; set; } = new List<string>();
+
         /// <summary>
         /// Normalizes the settings in place: clamps out-of-range numbers and resets invalid enum
         /// strings to their defaults. Pure and independent of any store.
@@ -232,6 +235,22 @@ namespace RPAWriter.Core.Services
                 settings.SpeechToTextLanguage = "ru";
             if (settings.RobotNameHistory == null)
                 settings.RobotNameHistory = new List<string>();
+
+            if (settings.AdditionalReadPaths == null)
+            {
+                settings.AdditionalReadPaths = new List<string>();
+            }
+            else
+            {
+                var cleaned = new List<string>();
+                foreach (var path in settings.AdditionalReadPaths)
+                {
+                    var trimmed = path?.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                        cleaned.Add(trimmed);
+                }
+                settings.AdditionalReadPaths = cleaned;
+            }
         }
     }
 

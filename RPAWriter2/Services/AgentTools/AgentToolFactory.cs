@@ -36,6 +36,7 @@ namespace RPAWriter2.Services.AgentTools
         private readonly RobotTemplateService _robotTemplate;
         private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> _askQuestionAsync;
         private readonly Func<string?> _getSkillsPath;
+        private readonly Func<IReadOnlyList<string>> _getAdditionalReadRoots;
         private readonly ShellCommandService _shell = new ShellCommandService();
         private readonly MemoryBankMode _memoryBankMode;
         private readonly Func<string, string, CancellationToken, Task<string>> _spawnSubAgentAsync;
@@ -56,6 +57,7 @@ namespace RPAWriter2.Services.AgentTools
             RobotTemplateService robotTemplate,
             Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> askQuestionAsync,
             Func<string?> getSkillsPath,
+            Func<IReadOnlyList<string>> getAdditionalReadRoots,
             MemoryBankMode memoryBankMode,
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
@@ -73,6 +75,7 @@ namespace RPAWriter2.Services.AgentTools
             _robotTemplate = robotTemplate ?? throw new ArgumentNullException(nameof(robotTemplate));
             _askQuestionAsync = askQuestionAsync ?? throw new ArgumentNullException(nameof(askQuestionAsync));
             _getSkillsPath = getSkillsPath ?? throw new ArgumentNullException(nameof(getSkillsPath));
+            _getAdditionalReadRoots = getAdditionalReadRoots ?? (() => Array.Empty<string>());
             _memoryBankMode = memoryBankMode;
             _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
             _enableSubagents = enableSubagents;
@@ -405,7 +408,7 @@ namespace RPAWriter2.Services.AgentTools
 
                 if (!IsReadAllowed(p))
                 {
-                    sb.AppendLine("Error reading " + p + ": access denied — path is outside the allowed directories (solution / knowledge base / robots / skills) or matches a protected file name.");
+                    sb.AppendLine("Error reading " + p + ": access denied — path is outside the allowed directories (solution / knowledge base / robots / skills / additional read folders) or matches a protected file name.");
                     continue;
                 }
 
@@ -1373,6 +1376,7 @@ namespace RPAWriter2.Services.AgentTools
             AddRoot(roots, _getKbPath());
             AddRoot(roots, _getRobotsRootPath());
             AddRoot(roots, _getSkillsPath());
+            AddRoots(roots, _getAdditionalReadRoots());
             return roots;
         }
 
@@ -1381,6 +1385,14 @@ namespace RPAWriter2.Services.AgentTools
             if (string.IsNullOrWhiteSpace(path))
                 return;
             roots.Add(path);
+        }
+
+        private static void AddRoots(List<string> roots, IReadOnlyList<string>? paths)
+        {
+            if (paths == null)
+                return;
+            foreach (var path in paths)
+                AddRoot(roots, path);
         }
 
         /// <summary>
