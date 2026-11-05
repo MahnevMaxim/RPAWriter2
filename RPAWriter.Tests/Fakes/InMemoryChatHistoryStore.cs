@@ -156,7 +156,8 @@ namespace RPAWriter.Tests.Fakes
                         Mode = m.Mode,
                         ToolName = m.ToolName,
                         Options = (m.Options ?? new List<string>()).ToList(),
-                        CheckpointHash = m.CheckpointHash
+                        CheckpointHash = m.CheckpointHash,
+                        TimestampUtc = m.TimestampUtc
                     })
                     .ToList()
             };

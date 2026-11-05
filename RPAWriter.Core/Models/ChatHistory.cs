@@ -20,6 +20,9 @@ namespace RPAWriter.Core.Models
         public string ToolName { get; set; } = "";
         public List<string> Options { get; set; } = new List<string>();
         public string CheckpointHash { get; set; } = "";
+
+        /// <summary>When the message was created (UTC); persisted so a reopened chat keeps its original timestamps.</summary>
+        public DateTime TimestampUtc { get; set; }
     }
 
     /// <summary>

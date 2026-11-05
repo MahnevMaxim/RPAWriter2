@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_name TEXT NULL,
     options TEXT NULL,
     checkpoint_hash TEXT NULL,
+    timestamp_utc TEXT NULL,
     PRIMARY KEY (conversation_id, position),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS messages_backup (
     tool_name TEXT NULL,
     options TEXT NULL,
     checkpoint_hash TEXT NULL,
+    timestamp_utc TEXT NULL,
     backed_up_at_utc TEXT NOT NULL,
     PRIMARY KEY (conversation_id, position, backed_up_at_utc)
 );";
@@ -94,6 +96,8 @@ CREATE TABLE IF NOT EXISTS conversations (
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
                 EnsureColumn(connection, "messages", "checkpoint_hash", "TEXT NULL");
+                EnsureColumn(connection, "messages", "timestamp_utc", "TEXT NULL");
+                EnsureColumn(connection, "messages_backup", "timestamp_utc", "TEXT NULL");
 
                 using (var index = connection.CreateCommand())
                 {
@@ -155,7 +159,7 @@ LIMIT @limit;";
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-SELECT text, reasoning, mode, kind, tool_name, options, checkpoint_hash
+SELECT text, reasoning, mode, kind, tool_name, options, checkpoint_hash, timestamp_utc
 FROM messages
 WHERE conversation_id = @id
 ORDER BY position;";
@@ -172,7 +176,8 @@ ORDER BY position;";
                                 Mode = reader["mode"] as string ?? "",
                                 ToolName = reader["tool_name"] as string ?? "",
                                 Options = DeserializeOptions(reader["options"] as string),
-                                CheckpointHash = reader["checkpoint_hash"] as string ?? ""
+                                CheckpointHash = reader["checkpoint_hash"] as string ?? "",
+                                TimestampUtc = ParseTimestamp(reader["timestamp_utc"] as string)
                             });
                         }
                     }
@@ -227,8 +232,8 @@ VALUES (@id, @title, @created, @updated, @workspace);";
                 {
                     insert.Transaction = transaction;
                     insert.CommandText = @"
-INSERT OR REPLACE INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash)
-VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @checkpoint_hash);";
+INSERT OR REPLACE INTO messages (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, timestamp_utc)
+VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @checkpoint_hash, @timestamp_utc);";
                     var idParam = insert.Parameters.Add("@id", System.Data.DbType.String);
                     var positionParam = insert.Parameters.Add("@position", System.Data.DbType.Int64);
                     var textParam = insert.Parameters.Add("@text", System.Data.DbType.String);
@@ -238,6 +243,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
                     var toolNameParam = insert.Parameters.Add("@tool_name", System.Data.DbType.String);
                     var optionsParam = insert.Parameters.Add("@options", System.Data.DbType.String);
                     var checkpointHashParam = insert.Parameters.Add("@checkpoint_hash", System.Data.DbType.String);
+                    var timestampUtcParam = insert.Parameters.Add("@timestamp_utc", System.Data.DbType.String);
 
                     idParam.Value = conversation.Id;
                     for (var i = 0; i < newCount; i++)
@@ -251,6 +257,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
                         toolNameParam.Value = message.ToolName ?? "";
                         optionsParam.Value = SerializeOptions(message.Options);
                         checkpointHashParam.Value = message.CheckpointHash ?? "";
+                        timestampUtcParam.Value = ToTimestamp(message.TimestampUtc);
                         insert.ExecuteNonQuery();
                     }
                 }
@@ -275,8 +282,8 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options, @
             {
                 backup.Transaction = transaction;
                 backup.CommandText = @"
-INSERT OR REPLACE INTO messages_backup (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, backed_up_at_utc)
-SELECT conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, @now
+INSERT OR REPLACE INTO messages_backup (conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, timestamp_utc, backed_up_at_utc)
+SELECT conversation_id, position, text, reasoning, mode, kind, tool_name, options, checkpoint_hash, timestamp_utc, @now
 FROM messages
 WHERE conversation_id = @id AND position >= @count;";
                 backup.Parameters.AddWithValue("@id", id);

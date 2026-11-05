@@ -186,6 +186,31 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Message_RoundTripsTimestampUtc()
+        {
+            var original = new ChatMessage
+            {
+                Kind = ChatMessageKind.User,
+                Text = "hello",
+                TimestampUtc = new System.DateTime(2024, 5, 6, 10, 0, 0, System.DateTimeKind.Utc)
+            };
+
+            var restored = ChatMessageMapper.FromHistoryMessage(ChatMessageMapper.ToHistoryMessage(original));
+
+            Assert.That(restored.TimestampUtc, Is.EqualTo(original.TimestampUtc));
+        }
+
+        [Test]
+        public void Message_WithoutStoredTimestamp_FallsBackToUtcNow()
+        {
+            var history = new ChatHistoryMessage { Kind = ChatMessageKind.User, Text = "legacy" };
+
+            var restored = ChatMessageMapper.FromHistoryMessage(history);
+
+            Assert.That(restored.TimestampUtc, Is.GreaterThan(System.DateTime.UtcNow.AddSeconds(-1)));
+        }
+
+        [Test]
         public void BuildTitle_UsesFallbackForEmptyText()
         {
             Assert.That(ChatMessageMapper.BuildTitle(null), Is.EqualTo("New chat"));

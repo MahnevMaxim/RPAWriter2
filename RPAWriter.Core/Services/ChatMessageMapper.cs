@@ -43,7 +43,8 @@ namespace RPAWriter.Core.Services
                     Text = "",
                     CheckpointHash = checkpoint.CommitHash ?? "",
                     Reasoning = message.Reasoning,
-                    Mode = message.Mode
+                    Mode = message.Mode,
+                    TimestampUtc = message.TimestampUtc
                 };
             }
 
@@ -56,7 +57,8 @@ namespace RPAWriter.Core.Services
                     ToolName = question.Answer ?? "",
                     Options = question.Options?.ToList() ?? new List<string>(),
                     Reasoning = message.Reasoning,
-                    Mode = message.Mode
+                    Mode = message.Mode,
+                    TimestampUtc = message.TimestampUtc
                 };
             }
 
@@ -67,7 +69,8 @@ namespace RPAWriter.Core.Services
                 Text = tool != null ? tool.Result : message.Text,
                 ToolName = tool?.ToolName ?? "",
                 Reasoning = message.Reasoning,
-                Mode = message.Mode
+                Mode = message.Mode,
+                TimestampUtc = message.TimestampUtc
             };
         }
 
@@ -93,7 +96,8 @@ namespace RPAWriter.Core.Services
                     Kind = message.Kind,
                     Reasoning = message.Reasoning,
                     Mode = message.Mode,
-                    Payload = new CheckpointPayload { CommitHash = message.CheckpointHash ?? "" }
+                    Payload = new CheckpointPayload { CommitHash = message.CheckpointHash ?? "" },
+                    TimestampUtc = RestoreTimestamp(message.TimestampUtc)
                 };
             }
 
@@ -108,7 +112,8 @@ namespace RPAWriter.Core.Services
                         Answer = message.ToolName ?? "",
                         IsSkipped = string.Equals(message.ToolName, SkipAnswerText, StringComparison.Ordinal),
                         Options = message.Options ?? new List<string>()
-                    }
+                    },
+                    TimestampUtc = RestoreTimestamp(message.TimestampUtc)
                 };
             }
 
@@ -122,11 +127,12 @@ namespace RPAWriter.Core.Services
                         ToolName = message.ToolName ?? "",
                         Result = message.Text ?? "",
                         Blocked = message.Kind == ChatMessageKind.ToolBlocked
-                    }
+                    },
+                    TimestampUtc = RestoreTimestamp(message.TimestampUtc)
                 };
             }
 
-            return new ChatMessage { Kind = message.Kind, Text = message.Text, Reasoning = message.Reasoning, Mode = message.Mode };
+            return new ChatMessage { Kind = message.Kind, Text = message.Text, Reasoning = message.Reasoning, Mode = message.Mode, TimestampUtc = RestoreTimestamp(message.TimestampUtc) };
         }
 
         /// <summary>
@@ -143,5 +149,12 @@ namespace RPAWriter.Core.Services
                 ? singleLine
                 : singleLine.Substring(0, TitleMaxLength) + "…";
         }
+
+        /// <summary>
+        /// Restores a persisted timestamp, falling back to "now" for legacy rows that were saved
+        /// before per-message timestamps existed (their stored value is <see cref="DateTime.MinValue"/>).
+        /// </summary>
+        private static DateTime RestoreTimestamp(DateTime stored) =>
+            stored == default(DateTime) ? DateTime.UtcNow : stored;
     }
 }
