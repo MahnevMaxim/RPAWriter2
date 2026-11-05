@@ -224,6 +224,22 @@
                                                 <DataTrigger Binding="{Binding KindName}" Value="AgentText">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
+                                                <!-- The header title duplicates the body's first line for User/SystemNotice;
+                                                     hide it while the card is expanded so the text is not shown twice. -->
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding KindName}" Value="User"/>
+                                                        <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </MultiDataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding KindName}" Value="SystemNotice"/>
+                                                        <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </MultiDataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>

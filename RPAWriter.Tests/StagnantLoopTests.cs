@@ -108,7 +108,7 @@ namespace RPAWriter.Tests
                 Assert.That(e.Threshold, Is.EqualTo(3));
             };
 
-            var budget = new ContextBudget { MaxIterations = 10, MaxStagnantRepeats = 3 };
+            var budget = new ContextBudget { MaxIterations = 10, MaxStagnantRepeats = 3, StagnantLoopNudge = false };
             var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), "go", AgentMode.Act, budget, CancellationToken.None);
 
             Assert.That(executed, Is.EqualTo(3));

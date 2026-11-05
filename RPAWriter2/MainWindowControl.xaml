@@ -1525,7 +1525,6 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1549,27 +1548,27 @@
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Skills directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
                                 <TextBox Grid.Row="6" Grid.Column="1" x:Name="SkillsPathBox" Margin="0,0,0,4" Text="{Binding Settings.SkillsPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <TextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Text="Agent read scope (Plan mode)" VerticalAlignment="Center" Margin="0,8,0,2" Foreground="{StaticResource Dark.Text}"/>
-                                <DockPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="8,0,0,0">
-                                        <Button Content="Add folder…" Command="{Binding Cmd}" CommandParameter="AddReadPathCommand" Margin="0,0,0,4"/>
-                                        <Button Content="Remove selected" Command="{Binding Cmd}" CommandParameter="RemoveReadPathCommand"/>
-                                    </StackPanel>
-                                    <ListBox x:Name="AdditionalReadPathsList"
-                                             ItemsSource="{Binding Settings.AdditionalReadPaths}"
-                                             SelectedItem="{Binding Settings.SelectedReadPath, Mode=TwoWay}"
-                                             Height="80"/>
-                                </DockPanel>
-
-                                <TextBlock Grid.Row="9" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                                <ComboBox Grid.Row="9" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="{Binding Settings.SecurityAuditModeIndex, Mode=TwoWay}"
+                                <TextBlock Grid.Row="7" Grid.Column="0" Text="Security audit mode" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                                <ComboBox Grid.Row="7" Grid.Column="1" x:Name="SecurityAuditModeCombo" SelectedIndex="{Binding Settings.SecurityAuditModeIndex, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,0,4">
                                     <ComboBoxItem Content="Full (all areas)"/>
                                     <ComboBoxItem Content="Passwords &amp; logins only"/>
                                 </ComboBox>
 
-                                <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox" IsChecked="{Binding Settings.ShowRobotCreator, Mode=TwoWay}"
+                                <CheckBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowRobotCreatorCheckBox" IsChecked="{Binding Settings.ShowRobotCreator, Mode=TwoWay}"
                                           Content="Show robot creation control in chat" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                                <Button Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" Content="Open RPA Writer Converter →"
+                                        HorizontalAlignment="Left" Margin="0,12,0,0"
+                                        Background="Transparent" BorderThickness="0" Foreground="#64B5F6" Cursor="Hand"
+                                        Click="OnOpenConverterToolWindow">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <TextBlock Text="{TemplateBinding Content}" TextDecorations="Underline"
+                                                       Foreground="{TemplateBinding Foreground}" Cursor="Hand"/>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>
@@ -1582,6 +1581,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
@@ -1615,28 +1615,65 @@
                                 <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox" IsChecked="{Binding Settings.ShowControls, Mode=TwoWay}"
                                           Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                                <Button Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Open RPA Writer Converter →"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0"
-                                        Background="Transparent" BorderThickness="0" Foreground="#64B5F6" Cursor="Hand"
-                                        Click="OnOpenConverterToolWindow">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <TextBlock Text="{TemplateBinding Content}" TextDecorations="Underline"
-                                                       Foreground="{TemplateBinding Foreground}" Cursor="Hand"/>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                </Button>
+                                <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Text="Agent read scope (Plan mode)" VerticalAlignment="Center" Margin="0,8,0,2" Foreground="{StaticResource Dark.Text}"/>
+                                <DockPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="8,0,0,0">
+                                        <Button Content="Add folder…" Command="{Binding Cmd}" CommandParameter="AddReadPathCommand" Margin="0,0,0,4"/>
+                                        <Button Content="Remove selected" Command="{Binding Cmd}" CommandParameter="RemoveReadPathCommand"/>
+                                    </StackPanel>
+                                    <ListBox x:Name="AdditionalReadPathsList"
+                                             ItemsSource="{Binding Settings.AdditionalReadPaths}"
+                                             SelectedItem="{Binding Settings.SelectedReadPath, Mode=TwoWay}"
+                                             Height="80"
+                                             Background="{StaticResource Dark.Panel}"
+                                             Foreground="{StaticResource Dark.Text}"
+                                             BorderBrush="{StaticResource Dark.Border}"
+                                             BorderThickness="1"
+                                             Padding="2"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="Padding" Value="4,3"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border x:Name="Bd"
+                                                                    Background="{TemplateBinding Background}"
+                                                                    Padding="{TemplateBinding Padding}"
+                                                                    SnapsToDevicePixels="True">
+                                                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.Accent}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+                                </DockPanel>
 
-                                <Button Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Content="Refresh prompts from disk"
+                                <Button Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Content="Refresh prompts from disk"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="RefreshPromptsFromDiskCommand"/>
 
-                                <Button Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Content="Export documentation"
+                                <Button Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Content="Export documentation"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportDocumentationCommand"/>
 
-                                <Button Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
+                                <Button Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportPromptsCommand"/>
 
-                                <CheckBox Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox" IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
+                                <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox" IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
                                           Content="Auto-capture runtime exceptions" Margin="0,12,0,0" Foreground="{StaticResource Dark.Text}"/>
                             </Grid>
                         </ScrollViewer>

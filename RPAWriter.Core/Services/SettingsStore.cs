@@ -96,7 +96,7 @@ namespace RPAWriter.Core.Services
         /// When true, the first time the stagnant-loop threshold is hit the model gets a one-time
         /// nudge to change its approach instead of being stopped immediately.
         /// </summary>
-        public bool StagnantLoopNudge { get; set; } = false;
+        public bool StagnantLoopNudge { get; set; } = true;
 
         // ---- Agent permissions: category-level gates for the agent tools. ----
         /// <summary>Allow tools that read files/specs/KB/logs.</summary>

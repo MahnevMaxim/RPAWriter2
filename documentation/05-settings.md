@@ -43,7 +43,7 @@
 |---|---|---|
 | **Max agent iterations** | Максимум итераций агентного цикла за один запуск | `8` |
 | **Max stagnant repeats** | Максимум одинаковых подряд вызовов инструмента (имя + аргументы), после которого запуск останавливается как зациклившийся (`0` — отключить) | `3` |
-| **Nudge the model once before stopping a stagnant loop** | При достижении порога зацикливания сначала один раз подсказать модели сменить подход, и только при повторном зацикливании остановить | выкл. |
+| **Nudge the model once before stopping a stagnant loop** | При достижении порога зацикливания сначала один раз подсказать модели сменить подход, и только при повторном зацикливании остановить | вкл. |
 | **Tool calling** | Протокол вызова инструментов: **JSON over chat** или **Native function calling** | JsonChat |
 | **Memory bank** | Режим банка памяти: **Disabled** / **Tool** / **Convention** | Disabled |
 | **Use 'tool' role for tool results** | Использовать роль `tool` для результатов инструментов (иначе `user`) | вкл. |
@@ -86,6 +86,7 @@
 | **Skills directory** | Каталог навыков (каждый навык — подпапка с `SKILL.md`) | пусто |
 | **Security audit mode** | Режим аудита робота: **Full (all areas)** или **Passwords & logins only** | Full |
 | **Show robot creation control in chat** | Показывать контрол создания робота (номер робота + кнопка **Create robot**) в верхней части чата, когда решение не открыто | вкл. |
+| **Open RPA Writer Converter →** | Открыть отдельное окно конвертера UiPath → XAML/C# | — |
 
 ## General
 
@@ -98,8 +99,8 @@
 | **User name** | Имя пользователя (для обращения по имени) | пусто |
 | **Address me by name** | Агент обращается к вам по имени | выкл. |
 | **Show controls** | Показывать скрытую вкладку **Controls** | выкл. |
+| **Agent read scope (Plan mode)** | Дополнительные каталоги, доступные агенту для чтения в режиме Plan (список путей с добавлением/удалением) | пусто |
 | **Auto-capture runtime exceptions** | Автоматически отправлять в чат исключения, на которых остановился отладчик (break mode по исключению) | вкл. |
-| **Open RPA Writer Converter →** | Открыть отдельное окно конвертера UiPath → XAML/C# | — |
 
 ## Sound
 

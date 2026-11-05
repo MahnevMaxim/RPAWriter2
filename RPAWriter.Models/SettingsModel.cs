@@ -53,7 +53,7 @@ namespace RPAWriter.Models
         private string _securityAuditMode = "Full";
         private int _maxIterations = 8;
         private int _maxStagnantRepeats = 3;
-        private bool _stagnantLoopNudge = false;
+        private bool _stagnantLoopNudge = true;
         private bool _allowReadFiles = true;
         private bool _allowEditFiles = true;
         private bool _allowExecuteCommand = false;

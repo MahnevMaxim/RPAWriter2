@@ -39,7 +39,7 @@ namespace RPAWriter.Core.Context
         /// When true, the first time the stagnant-loop threshold is hit the model gets a one-time
         /// nudge to change its approach instead of being stopped immediately.
         /// </summary>
-        public bool StagnantLoopNudge { get; set; } = false;
+        public bool StagnantLoopNudge { get; set; } = true;
 
         /// <summary>When false, automatic compaction before a request is disabled (manual compaction still works).</summary>
         public bool AutoCompact { get; set; } = true;
