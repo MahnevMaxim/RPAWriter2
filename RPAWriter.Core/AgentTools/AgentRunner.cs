@@ -28,6 +28,9 @@ namespace RPAWriter.Core.AgentTools
         public string Reasoning { get; set; } = "";
         public bool ToolBlocked { get; set; }
         public string BlockedTool { get; set; } = "";
+
+        /// <summary>Full provider transcript after the run (user + assistant + tool results + final answer).</summary>
+        public IReadOnlyList<ChatMessageData> Transcript { get; set; } = new List<ChatMessageData>();
     }
 
     /// <summary>
@@ -261,7 +264,10 @@ namespace RPAWriter.Core.AgentTools
                 {
                     var nativeCalls = response.ToolCalls;
                     if (nativeCalls == null || nativeCalls.Count == 0)
-                        return new AgentRunResult { FinalText = response.Answer ?? "", Reasoning = response.Reasoning };
+                    {
+                        messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer ?? "" });
+                        return Result(response.Answer ?? "", response.Reasoning, messages);
+                    }
 
                     // Record the assistant message that requested the tool calls.
                     messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer ?? "", ToolCalls = nativeCalls });
@@ -271,12 +277,12 @@ namespace RPAWriter.Core.AgentTools
                         cancellationToken.ThrowIfCancellationRequested();
                         var repetition = EvaluateRepetition(detector, call.Name, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, call.Id);
                         if (repetition == RepetitionAction.Stop)
-                            return new AgentRunResult { FinalText = StagnantLoopFinalText(call.Name, effectiveBudget.MaxStagnantRepeats), Reasoning = response.Reasoning };
+                            return Result(StagnantLoopFinalText(call.Name, effectiveBudget.MaxStagnantRepeats), response.Reasoning, messages);
                         if (repetition == RepetitionAction.Nudge)
                             break; // skip the rest of this turn and re-prompt the model
                         var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                         if (finalText != null)
-                            return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
+                            return Result(finalText, response.Reasoning, messages);
                     }
                     continue;
                 }
@@ -293,7 +299,8 @@ namespace RPAWriter.Core.AgentTools
                         continue;
                     }
 
-                    return new AgentRunResult { FinalText = action.Text, Reasoning = response.Reasoning };
+                    messages.Add(new ChatMessageData { Role = "assistant", Content = action.Text });
+                    return Result(action.Text, response.Reasoning, messages);
                 }
 
                 messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer });
@@ -303,20 +310,16 @@ namespace RPAWriter.Core.AgentTools
                     cancellationToken.ThrowIfCancellationRequested();
                     var repetition = EvaluateRepetition(detector, call.ToolName, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, null);
                     if (repetition == RepetitionAction.Stop)
-                        return new AgentRunResult { FinalText = StagnantLoopFinalText(call.ToolName, effectiveBudget.MaxStagnantRepeats), Reasoning = response.Reasoning };
+                        return Result(StagnantLoopFinalText(call.ToolName, effectiveBudget.MaxStagnantRepeats), response.Reasoning, messages);
                     if (repetition == RepetitionAction.Nudge)
                         break; // skip the rest of this turn and re-prompt the model
                     var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                     if (finalText != null)
-                        return new AgentRunResult { FinalText = finalText, Reasoning = response.Reasoning };
+                        return Result(finalText, response.Reasoning, messages);
                 }
             }
 
-            return new AgentRunResult
-            {
-                FinalText = "Достигнут лимит шагов агента (" + maxIterations + "). Уточните запрос или разбейте задачу.",
-                Reasoning = ""
-            };
+            return Result("Достигнут лимит шагов агента (" + maxIterations + "). Уточните запрос или разбейте задачу.", "", messages);
         }
 
         private enum RepetitionAction
@@ -371,6 +374,9 @@ namespace RPAWriter.Core.AgentTools
                 (toolName ?? "") + "» с теми же аргументами (порог " + threshold + "). " +
                 "Остановлено, чтобы не сжигать бюджет. Уточните запрос или попросите агента сменить подход.";
         }
+
+        private static AgentRunResult Result(string finalText, string reasoning, IReadOnlyList<ChatMessageData> messages)
+            => new AgentRunResult { FinalText = finalText ?? "", Reasoning = reasoning ?? "", Transcript = messages };
 
         private async Task<PreparedContext> PrepareContextAsync(
             IReadOnlyList<ChatMessageData> messages,

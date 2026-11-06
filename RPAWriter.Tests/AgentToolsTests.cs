@@ -486,6 +486,36 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task RunAsync_ToolCallThenFinal_PopulatesFullTranscript()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) => Task.FromResult("tool-result")));
+
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"tool_call\",\"tool\":\"my_tool\",\"arguments\":{}}", FinishReason = "stop" },
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(result.Transcript, Is.Not.Null);
+            Assert.That(result.Transcript.Count, Is.EqualTo(4));
+
+            Assert.That(result.Transcript[0].Role, Is.EqualTo("user"));
+            Assert.That(result.Transcript[0].Content, Is.EqualTo("go"));
+
+            Assert.That(result.Transcript[1].Role, Is.EqualTo("assistant"));
+            Assert.That(result.Transcript[1].Content, Does.Contain("\"action\":\"tool_call\""));
+
+            Assert.That(result.Transcript[2].Role, Is.EqualTo("tool"));
+            Assert.That(result.Transcript[2].Content, Is.EqualTo("Tool \"my_tool\" returned:\ntool-result"));
+
+            Assert.That(result.Transcript[3].Role, Is.EqualTo("assistant"));
+            Assert.That(result.Transcript[3].Content, Is.EqualTo("done"));
+        }
+
+        [Test]
         public async Task RunAsync_MultipleToolCallsInOneTurn_ExecutesAll()
         {
             var calls = new List<string>();

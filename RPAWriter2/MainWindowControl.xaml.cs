@@ -77,6 +77,9 @@ namespace RPAWriter2
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
         private AgentResumeSnapshot? _resumableSnapshot;
+        // Canonical provider transcript of the last completed turn (Cline "apiConversationHistory"
+        // equivalent). It is the source for the next RunAsync, not the visible Messages collection.
+        private List<ChatMessageData> _providerTranscript = new List<ChatMessageData>();
         private AgentMode _resumableMode;
         private ContextBudget? _resumableBudget;
         private ITokenUsageProvider? _tokenUsage;
@@ -892,7 +895,10 @@ namespace RPAWriter2
             var provider = _tokenUsage;
             var budget = BuildContextBudget();
 
-            ChatContextIndicator.UsedTokens = _lastEstimatedInputTokens;
+            var usedTokens = _chatCts == null
+                ? new TokenEstimator().Estimate("", _providerTranscript)
+                : _lastEstimatedInputTokens;
+            ChatContextIndicator.UsedTokens = usedTokens;
             ChatContextIndicator.ContextWindowSize = provider?.ContextWindowSize ?? 0;
             ChatContextIndicator.CompactThresholdTokens = provider != null ? budget.CompactThresholdTokens : 0;
             ChatContextIndicator.MaxInputTokens = provider != null ? budget.MaxInputTokens : 0;
@@ -1062,6 +1068,7 @@ namespace RPAWriter2
 
             ApplyWorkspaceScope();
             _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            ResetProviderTranscript();
             _settingsModel.ReloadWorkspaceScope();
             _settings = _settingsModel.ToSettingsData();
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
@@ -1132,6 +1139,7 @@ namespace RPAWriter2
             // Re-scope: recreates a fresh workspace directory and reloads empty history/settings.
             ApplyWorkspaceScope();
             _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            ResetProviderTranscript();
             _settingsModel.ReloadWorkspaceScope();
             _settings = _settingsModel.ToSettingsData();
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
@@ -1924,6 +1932,12 @@ namespace RPAWriter2
             _resumableBudget = null;
         }
 
+        /// <summary>Drops the canonical provider transcript (new chat, close, clear, workspace switch).</summary>
+        private void ResetProviderTranscript()
+        {
+            _providerTranscript = new List<ChatMessageData>();
+        }
+
         private void ShowChatStatusError(string message)
         {
             if (!Dispatcher.CheckAccess())
@@ -2543,7 +2557,7 @@ namespace RPAWriter2
             ResetResume();
 
             var modeName = AgentModeNames.ToValue(_chatModel.Mode);
-            var history = BuildTranscript();
+            var history = _providerTranscript;
             // The turn runs inside an active conversation: activate it before the message is appended
             // (EnsureActiveConversation drops what was left of a closed chat) and set the title on it.
             var conversation = _chatModel.EnsureActiveConversation();
@@ -2606,6 +2620,7 @@ namespace RPAWriter2
                 await EnsureBaselineCheckpointAsync();
 
                 var result = await run(cts.Token, progress, resumeProgress);
+                _providerTranscript = (result.Transcript ?? new List<ChatMessageData>()).ToList();
 
                 reasoningTimer.Stop();
 
@@ -2684,9 +2699,12 @@ namespace RPAWriter2
             {
                 reasoningTimer.Stop();
                 if (!Dispatcher.CheckAccess())
-                    Dispatcher.Invoke(() => _chatCts = null);
+                    Dispatcher.Invoke(new Action(() => { _chatCts = null; UpdateTokenUsageDisplay(); }));
                 else
+                {
                     _chatCts = null;
+                    UpdateTokenUsageDisplay();
+                }
                 cts.Dispose();
             }
         }
@@ -2787,20 +2805,43 @@ namespace RPAWriter2
             var transcript = new List<ChatMessageData>();
             foreach (var message in _messages)
             {
-                if (string.IsNullOrWhiteSpace(message.Text))
-                    continue;
-
                 switch (message.Kind)
                 {
                     case ChatMessageKind.User:
-                        transcript.Add(new ChatMessageData { Role = "user", Content = message.Text });
+                        if (!string.IsNullOrWhiteSpace(message.Text))
+                            transcript.Add(new ChatMessageData { Role = "user", Content = message.Text });
                         break;
+
                     case ChatMessageKind.AgentText:
                     case ChatMessageKind.ResultAnswerPlan:
                     case ChatMessageKind.ResultAnswerAct:
-                        transcript.Add(new ChatMessageData { Role = "assistant", Content = message.Text });
+                        if (!string.IsNullOrWhiteSpace(message.Text))
+                            transcript.Add(new ChatMessageData { Role = "assistant", Content = message.Text });
                         break;
-                    // Other kinds (tool calls, notices, errors) are UI-only and not part of the model conversation.
+
+                    case ChatMessageKind.ToolCall:
+                    case ChatMessageKind.ToolBlocked:
+                    {
+                        // Fallback reconstruction from persisted history: the exact tool-call
+                        // arguments are not stored, so both the request and the result are emitted
+                        // in a flat form the provider can still consume.
+                        var payload = message.Payload as ToolCallPayload;
+                        var toolName = payload?.ToolName ?? "";
+                        transcript.Add(new ChatMessageData { Role = "assistant", Content = "Tool call: " + toolName });
+                        if (message.Kind == ChatMessageKind.ToolBlocked)
+                        {
+                            var blockReason = string.IsNullOrWhiteSpace(payload?.Result) ? "blocked in Plan mode." : payload.Result;
+                            transcript.Add(new ChatMessageData { Role = "user", Content = blockReason });
+                        }
+                        else
+                        {
+                            transcript.Add(new ChatMessageData { Role = "tool", Content = "Tool \"" + toolName + "\" returned:\n" + (payload?.Result ?? "") });
+                        }
+                        break;
+                    }
+
+                    // Other kinds (notices, errors, questions, sub-agents, checkpoints) are UI-only
+                    // and not part of the model conversation.
                 }
             }
             return transcript;
@@ -2998,7 +3039,7 @@ namespace RPAWriter2
             if (_agentRunner == null || _chatCts != null)
                 return;
 
-            var transcript = BuildTranscript();
+            var transcript = _providerTranscript.Count > 0 ? _providerTranscript : BuildTranscript();
             if (transcript.Count == 0)
             {
                 AppendChat("Nothing to compact yet.");
@@ -3019,6 +3060,7 @@ namespace RPAWriter2
                     Text = m.Content
                 }).ToList();
                 _chatModel.ApplyCompactedTranscript(compactedMessages);
+                _providerTranscript = (condensed ?? transcript).ToList();
                 AppendCompaction("Context compacted (summarized).");
                 ScheduleHistorySave();
             }
@@ -3381,6 +3423,7 @@ namespace RPAWriter2
         {
             _chatCts?.Cancel();
             ResetResume();
+            ResetProviderTranscript();
 
             // Saving the previous conversation, clearing the transcript and the queue is the
             // model scenario; the host only resets its own agent and checkpoint state.
@@ -3412,6 +3455,10 @@ namespace RPAWriter2
             // Checkpoint indicators and scrolling are view/agent concerns, not model state.
             RehydrateCheckpoints();
             ChatMessages.ScrollToEnd();
+
+            // Rebuild the canonical provider transcript from the loaded messages (fallback path:
+            // tool arguments are not persisted, so this is a flat approximation).
+            _providerTranscript = BuildTranscript();
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = GetLastCheckpointHash();
@@ -3549,6 +3596,7 @@ namespace RPAWriter2
         {
             _historySaveTimer.Stop();
             ResetResume();
+            ResetProviderTranscript();
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = null;
