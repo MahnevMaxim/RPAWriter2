@@ -132,6 +132,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Whether the agent should address the user by <see cref="UserName"/> in its replies.</summary>
         public bool AddressByName { get; set; } = false;
 
+        /// <summary>Project name to deploy (build) in the Publish configuration. Empty falls back to auto-detecting an RPA- robot project.</summary>
+        public string DeployProjectName { get; set; } = "";
+
         /// <summary>Full path to the log file; empty uses the default location next to the extension.</summary>
         public string LogFilePath { get; set; } = "";
 

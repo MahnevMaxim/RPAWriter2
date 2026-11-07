@@ -207,6 +207,7 @@ namespace RPAWriter.Core.Contracts
     public interface IBuildFeedbackService
     {
         Task BuildAsync(string configuration, CancellationToken cancellationToken = default);
+        Task BuildProjectAsync(string configuration, string projectName, CancellationToken cancellationToken = default);
         Task<bool> HasSolutionConfigurationAsync(string configuration, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<BuildError>> GetCompilationErrorsAsync(CancellationToken cancellationToken = default);
         Task<string> GetOutputWindowTextAsync(CancellationToken cancellationToken = default);

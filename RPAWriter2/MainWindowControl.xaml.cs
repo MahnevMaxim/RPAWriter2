@@ -1427,12 +1427,17 @@ namespace RPAWriter2
                     return;
                 }
 
-                var robotProjects = _packageCatalog.GetRobotProjectState(dte).Names;
-                if (robotProjects.Count == 0)
+                var deployProjectName = (_settings?.DeployProjectName ?? "").Trim();
+
+                if (string.IsNullOrEmpty(deployProjectName))
                 {
-                    LogService.Warn("Deploy blocked: no RPA- robot project found in the open solution.");
-                    ShowDeployToast("No RPA- robot project found in the open solution.", success: false);
-                    return;
+                    var robotProjects = _packageCatalog.GetRobotProjectState(dte).Names;
+                    if (robotProjects.Count == 0)
+                    {
+                        LogService.Warn("Deploy blocked: no RPA- robot project found in the open solution.");
+                        ShowDeployToast("No RPA- robot project found in the open solution.", success: false);
+                        return;
+                    }
                 }
 
                 if (!await _buildFeedback.HasSolutionConfigurationAsync("Publish"))
@@ -1442,9 +1447,26 @@ namespace RPAWriter2
                     return;
                 }
 
-                await _buildFeedback.BuildAsync("Publish");
-                LogService.Info("Publish build started.");
-                ShowDeployToast("Publish build started.", success: true);
+                if (string.IsNullOrEmpty(deployProjectName))
+                {
+                    await _buildFeedback.BuildAsync("Publish");
+                    LogService.Info("Publish build started.");
+                    ShowDeployToast("Publish build started.", success: true);
+                }
+                else
+                {
+                    try
+                    {
+                        await _buildFeedback.BuildProjectAsync("Publish", deployProjectName);
+                        LogService.Info($"Publish build started for project '{deployProjectName}'.");
+                        ShowDeployToast($"Publish build started for project '{deployProjectName}'.", success: true);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        LogService.Warn(ex.Message);
+                        ShowDeployToast(ex.Message, success: false);
+                    }
+                }
             }
             catch (Exception ex) { ShowError(ex); }
         }

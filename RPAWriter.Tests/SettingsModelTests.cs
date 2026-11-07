@@ -119,6 +119,22 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void DeployProjectName_RoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            model.DeployProjectName = "RPA-12345";
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.DeployProjectName, Is.EqualTo("RPA-12345"));
+        }
+
+        [Test]
         public void SaveSettingsCommand_PersistsAndRaisesEvent()
         {
             var store = new InMemorySettingsStore();

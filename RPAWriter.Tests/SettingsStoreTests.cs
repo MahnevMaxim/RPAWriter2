@@ -198,6 +198,14 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Normalize_PreservesDeployProjectName()
+        {
+            var settings = new SettingsData { DeployProjectName = "RPA-12345" };
+            SettingsData.Normalize(settings);
+            Assert.That(settings.DeployProjectName, Is.EqualTo("RPA-12345"));
+        }
+
+        [Test]
         public void Normalize_ResetsInvalidReasoningEffort()
         {
             var settings = new SettingsData { ReasoningEffort = "Bogus" };

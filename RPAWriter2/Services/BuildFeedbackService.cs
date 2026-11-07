@@ -63,6 +63,64 @@ namespace RPAWriter2.Services
             }
         }
 
+        public async Task BuildProjectAsync(string configuration, string projectName, CancellationToken cancellationToken = default)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            if (dte?.Solution == null || !dte.Solution.IsOpen)
+                throw new InvalidOperationException("No open solution.");
+
+            var project = FindProjectByName(dte.Solution, projectName);
+            if (project == null)
+                throw new InvalidOperationException($"Project '{projectName}' not found in the open solution.");
+
+            dte.Solution.SolutionBuild?.BuildProject(configuration, project.UniqueName, true);
+        }
+
+        private static Project FindProjectByName(Solution solution, string projectName)
+        {
+            if (solution == null || string.IsNullOrWhiteSpace(projectName))
+                return null;
+
+            foreach (Project project in solution.Projects)
+            {
+                var found = FindProjectByName(project, projectName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
+        }
+
+        private static Project FindProjectByName(Project project, string projectName)
+        {
+            if (project == null)
+                return null;
+
+            if (!string.IsNullOrEmpty(project.Name) &&
+                string.Equals(project.Name, projectName, StringComparison.OrdinalIgnoreCase))
+                return project;
+
+            if (project.ProjectItems == null)
+                return null;
+
+            foreach (ProjectItem item in project.ProjectItems)
+            {
+                Project sub = null;
+                try { sub = item.SubProject; }
+                catch { sub = null; }
+
+                if (sub != null)
+                {
+                    var found = FindProjectByName(sub, projectName);
+                    if (found != null)
+                        return found;
+                }
+            }
+
+            return null;
+        }
+
         public async Task<IReadOnlyList<BuildError>> GetCompilationErrorsAsync(CancellationToken cancellationToken = default)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);

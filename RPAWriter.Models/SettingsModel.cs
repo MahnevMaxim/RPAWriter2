@@ -65,6 +65,7 @@ namespace RPAWriter.Models
         private int _subagentMaxDepth = 2;
         private string _userName = "";
         private bool _addressByName = false;
+        private string _deployProjectName = "";
         private string _logFilePath = "";
         private string _chatLogFilePath = "";
         private string _logProvidersPath = "";
@@ -194,6 +195,7 @@ namespace RPAWriter.Models
                 SubagentMaxDepth = _subagentMaxDepth,
                 UserName = _userName,
                 AddressByName = _addressByName,
+                DeployProjectName = _deployProjectName,
                 LogFilePath = _logFilePath,
                 ChatLogFilePath = _chatLogFilePath,
                 LogProvidersPath = _logProvidersPath,
@@ -335,6 +337,7 @@ namespace RPAWriter.Models
             SubagentMaxDepth = data.SubagentMaxDepth;
             UserName = data.UserName;
             AddressByName = data.AddressByName;
+            DeployProjectName = data.DeployProjectName;
             LogFilePath = data.LogFilePath;
             ChatLogFilePath = data.ChatLogFilePath;
             LogProvidersPath = data.LogProvidersPath;
@@ -661,6 +664,9 @@ namespace RPAWriter.Models
         public string UserName { get => _userName; set => SetProperty(ref _userName, value); }
 
         public bool AddressByName { get => _addressByName; set => SetProperty(ref _addressByName, value); }
+
+        /// <summary>Project name to deploy (build) in the Publish configuration. Empty falls back to auto-detecting an RPA- robot project.</summary>
+        public string DeployProjectName { get => _deployProjectName; set => SetProperty(ref _deployProjectName, value); }
 
         public string LogFilePath { get => _logFilePath; set => SetProperty(ref _logFilePath, value); }
 
