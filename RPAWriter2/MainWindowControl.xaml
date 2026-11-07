@@ -1390,6 +1390,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
 
                                 </Grid.RowDefinitions>
 
@@ -1502,6 +1503,18 @@
 
                                 <CheckBox Grid.Row="27" Grid.Column="0" Grid.ColumnSpan="2" x:Name="StagnantLoopNudgeCheckBox" IsChecked="{Binding Settings.StagnantLoopNudge, Mode=TwoWay}"
                                           Content="Nudge the model once before stopping a stagnant loop" Margin="0,2,0,4" Foreground="{StaticResource Dark.Text}"/>
+
+                                <TextBlock Grid.Row="28" Grid.Column="0" Text="MCP servers (JSON)" VerticalAlignment="Top" Margin="0,4,8,4"/>
+                                <StackPanel Grid.Row="28" Grid.Column="1" Margin="0,4,0,4">
+                                    <TextBox x:Name="McpServersBox" MinHeight="96"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             ToolTip="Paste an mcpServers JSON block, e.g. { &quot;mcpServers&quot;: { &quot;playwright&quot;: { &quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: [&quot;@playwright/mcp@latest&quot;] } } }. Requires the MCP permission in Permissions."
+                                             Text="{Binding Settings.McpServersJson, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                    <Button x:Name="BrowseMcpRegistryButton" Content="Browse MCP Registry" HorizontalAlignment="Left" Margin="0,6,0,0"
+                                            Click="OnBrowseMcpRegistry"
+                                            ToolTip="Open the official MCP server registry in your browser."/>
+                                </StackPanel>
 
                             </Grid>
                         </ScrollViewer>

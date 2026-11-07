@@ -26,7 +26,10 @@ namespace RPAWriter.Tests
         public Task<ChatResponse> ChatAsync(IReadOnlyList<ChatMessageData> messages, string systemPrompt, CancellationToken cancellationToken = default)
         {
             CallCount++;
-            Calls.Add(messages);
+            // Snapshot the transcript: the agent mutates the same list after the call
+            // (appends the final assistant message), so a live reference would report a
+            // post-mutation count to assertions that inspect the call payload.
+            Calls.Add(new List<ChatMessageData>(messages));
             var next = _responses.Count > 0
                 ? _responses.Dequeue()
                 : (object)new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" };

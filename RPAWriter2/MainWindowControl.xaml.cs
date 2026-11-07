@@ -12,6 +12,7 @@ using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Context;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
+using RPAWriter.Core.Mcp;
 using RPAWriter.Core.Checkpoints;
 using RPAWriter2.Services;
 using RPAWriter.Models;
@@ -76,6 +77,8 @@ namespace RPAWriter2
         // there is nothing left for the host to mirror (documentation/13-model-layer.md, phase E).
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
+        private readonly List<McpClient> _mcpClients = new List<McpClient>();
+        private IReadOnlyList<IAgentTool> _mcpAdapters = new List<IAgentTool>();
         private AgentResumeSnapshot? _resumableSnapshot;
         // Canonical provider transcript of the last completed turn (Cline "apiConversationHistory"
         // equivalent). It is the source for the next RunAsync, not the visible Messages collection.
@@ -250,6 +253,7 @@ namespace RPAWriter2
             _robotTemplate = new RobotTemplateService();
             _outputWindow = new OutputWindowService();
             RebuildAgentTools();
+            RefreshMcpToolsAsync();
             HookSolutionEvents();
             _workspaceProvider.WorkspaceChanged += OnWorkspaceChanged;
             _workspaceProvider.Initialize();
@@ -2966,6 +2970,52 @@ namespace RPAWriter2
             UpdateMemoryBankUi();
         }
 
+        /// <summary>
+        /// Connects to the configured MCP servers in the background and registers their tools
+        /// once ready. Fire-and-forget: a broken server is logged and skipped, never thrown.
+        /// </summary>
+        private async void RefreshMcpToolsAsync()
+        {
+            try
+            {
+                var json = (_settings?.McpServersJson ?? "").Trim();
+                McpConnectResult? result = null;
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    result = await Task.Run(() => McpServerManager.ConnectAsync(json, CancellationToken.None));
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ApplyMcpResult(result);
+            }
+            catch (Exception ex)
+            {
+                LogService.Error("MCP refresh failed: " + ex.Message);
+            }
+        }
+
+        private void ApplyMcpResult(McpConnectResult? result)
+        {
+            DisposeMcpClients();
+            _mcpAdapters = result?.Tools ?? new List<IAgentTool>();
+            if (result != null)
+            {
+                _mcpClients.AddRange(result.Clients);
+                foreach (var error in result.Errors)
+                    LogService.Warn("MCP: " + error);
+            }
+            RebuildAgentTools();
+        }
+
+        private void DisposeMcpClients()
+        {
+            foreach (var client in _mcpClients)
+            {
+                try { client.Dispose(); } catch { /* best effort */ }
+            }
+            _mcpClients.Clear();
+        }
+
         private void OnAgentRetryOccurred(object? sender, AgentRetryArgs e)
         {
             LogService.ChatWarn("Agent retry: " + (e.Kind ?? "") + " attempt " + e.Attempt + "/" + e.AttemptLimit + " - " + (e.Detail ?? ""));
@@ -3253,7 +3303,10 @@ namespace RPAWriter2
                 _settings.SubagentMaxDepth,
                 () => _chatModel.Mode);
             factory.PixMwfStore = PixMwfMappingStore.Shared;
-            return factory.CreateRegistry();
+            var registry = factory.CreateRegistry();
+            foreach (var adapter in _mcpAdapters)
+                registry.Register(adapter);
+            return registry;
         }
 
         private void OnAgentToolExecuted(object? sender, AgentToolCall e)
@@ -3896,6 +3949,7 @@ namespace RPAWriter2
             RecreateAiProvider();
             _stt = SpeechToTextFactory.Create(_settings);
             RebuildAgentTools();
+            RefreshMcpToolsAsync();
             ApplyControlsVisibility();
             UpdateCreateRobotVisibility();
             ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
@@ -3909,6 +3963,18 @@ namespace RPAWriter2
                 return;
             }
             ShowSettingsToast(notify.Message, (NotificationKind)notify.NotifyLevel);
+        }
+
+        private void OnBrowseMcpRegistry(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start("https://registry.modelcontextprotocol.io");
+            }
+            catch (Exception ex)
+            {
+                LogService.Error("Failed to open MCP registry: " + ex.Message);
+            }
         }
 
         private void OnApiKeyChanged(object sender, RoutedEventArgs e)

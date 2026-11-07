@@ -59,6 +59,7 @@ namespace RPAWriter.Models
         private bool _allowExecuteCommand = false;
         private bool _allowWebFetch = false;
         private bool _allowMcp = false;
+        private string _mcpServersJson = "";
         private bool _allowSubagents = false;
         private int _subagentMaxIterations = 4;
         private int _subagentMaxDepth = 2;
@@ -187,6 +188,7 @@ namespace RPAWriter.Models
                 AllowExecuteCommand = _allowExecuteCommand,
                 AllowWebFetch = _allowWebFetch,
                 AllowMcp = _allowMcp,
+                McpServersJson = _mcpServersJson,
                 AllowSubagents = _allowSubagents,
                 SubagentMaxIterations = _subagentMaxIterations,
                 SubagentMaxDepth = _subagentMaxDepth,
@@ -327,6 +329,7 @@ namespace RPAWriter.Models
             AllowExecuteCommand = data.AllowExecuteCommand;
             AllowWebFetch = data.AllowWebFetch;
             AllowMcp = data.AllowMcp;
+            McpServersJson = data.McpServersJson ?? "";
             AllowSubagents = data.AllowSubagents;
             SubagentMaxIterations = data.SubagentMaxIterations;
             SubagentMaxDepth = data.SubagentMaxDepth;
@@ -646,6 +649,8 @@ namespace RPAWriter.Models
         public bool AllowWebFetch { get => _allowWebFetch; set => SetProperty(ref _allowWebFetch, value); }
 
         public bool AllowMcp { get => _allowMcp; set => SetProperty(ref _allowMcp, value); }
+
+        public string McpServersJson { get => _mcpServersJson; set => SetProperty(ref _mcpServersJson, value); }
 
         public bool AllowSubagents { get => _allowSubagents; set => SetProperty(ref _allowSubagents, value); }
 
