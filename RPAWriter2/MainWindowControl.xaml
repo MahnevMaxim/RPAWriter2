@@ -668,9 +668,8 @@
                 </Border>
 
                 <Border x:Name="PinnedHeaderPanel" Grid.Row="2" Margin="0,0,0,4"
-                        Background="{StaticResource Chat.UserBackground}"
-                        BorderBrush="{StaticResource Chat.UserBorder}"
-                        BorderThickness="1" CornerRadius="2" Padding="8,6"
+                        Background="#1A64B5F6"
+                        BorderThickness="0" CornerRadius="2" Padding="8,6"
                         Visibility="Collapsed">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -727,11 +726,11 @@
                             </Button>
                         </Grid>
                         <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"
-                                                   UsedTokens="{Binding Chat.ActiveChatConversation.UsedTokens}"
-                                                   SessionUsage="{Binding Chat.ActiveChatConversation.Usage}"
-                                                   ContextWindowSize="{Binding Chat.ContextWindowSize}"
-                                                   CompactThresholdTokens="{Binding Chat.CompactThresholdTokens}"
-                                                   MaxInputTokens="{Binding Chat.MaxInputTokens}"/>
+                                                   UsedTokens="{Binding DataContext.Chat.ActiveChatConversation.UsedTokens, ElementName=MyToolWindow}"
+                                                   SessionUsage="{Binding DataContext.Chat.ActiveChatConversation.Usage, ElementName=MyToolWindow}"
+                                                   ContextWindowSize="{Binding DataContext.Chat.ContextWindowSize, ElementName=MyToolWindow}"
+                                                   CompactThresholdTokens="{Binding DataContext.Chat.CompactThresholdTokens, ElementName=MyToolWindow}"
+                                                   MaxInputTokens="{Binding DataContext.Chat.MaxInputTokens, ElementName=MyToolWindow}"/>
                     </Grid>
                 </Border>
 
@@ -839,6 +838,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBox Grid.Column="0" x:Name="InputBox"
                                  AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
+                                 Margin="0,3,0,0"
                                  VerticalScrollBarVisibility="Auto"
                                  PreviewKeyDown="OnInputKeyDown">
                             <TextBox.Style>
