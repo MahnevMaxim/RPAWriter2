@@ -871,6 +871,16 @@ namespace RPAWriter.Core.Services
             ReadCacheTokens(usage, prompt, out var cacheHit, out var cacheMiss);
             var cost = CalculateCost(cacheHit, cacheMiss, completion);
 
+            var requestUsage = new TokenUsage
+            {
+                PromptTokens = prompt,
+                CompletionTokens = completion,
+                TotalTokens = total,
+                CacheHitTokens = cacheHit,
+                CacheMissTokens = cacheMiss,
+                EstimatedCostUsd = cost
+            };
+
             lock (_usageLock)
             {
                 _totalUsage.PromptTokens += prompt;
@@ -881,7 +891,9 @@ namespace RPAWriter.Core.Services
                 _totalUsage.EstimatedCostUsd += cost;
             }
 
-            TokenUsageUpdated?.Invoke(this, TotalTokenUsage);
+            // Listeners (the chat model) accumulate per-conversation, so the event carries the
+            // per-request usage, not the provider-lifetime cumulative snapshot.
+            TokenUsageUpdated?.Invoke(this, requestUsage);
         }
 
         /// <summary>

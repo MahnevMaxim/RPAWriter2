@@ -81,8 +81,10 @@ namespace RPAWriter.Core.Contracts
     /// </summary>
     public interface ITokenUsageProvider
     {
+        /// <summary>Cumulative usage across every request handled by this provider instance.</summary>
         TokenUsage TotalTokenUsage { get; }
         int ContextWindowSize { get; }
+        /// <summary>Raised after each request with the usage of that single request (not cumulative).</summary>
         event EventHandler<TokenUsage> TokenUsageUpdated;
     }
 

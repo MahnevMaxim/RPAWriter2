@@ -50,6 +50,9 @@ namespace RPAWriter.Models
         private bool _initialized;
         private LogAnalyzer _logAnalyzer;
         private string _lastError = "";
+        private int _contextWindowSize;
+        private int _compactThresholdTokens;
+        private int _maxInputTokens;
 
         /// <summary>
         /// Append-only transcript used as the persistence source. Unlike <see cref="Messages"/>
@@ -993,6 +996,70 @@ namespace RPAWriter.Models
         }
 
         #endregion History scenarios
+
+        #region Context counters
+
+        /// <summary>
+        /// Model context window size (tokens) the host mirrors from the provider/settings so the
+        /// XAML can bind the context indicator. 0 means "unknown" and hides the fill.
+        /// </summary>
+        public int ContextWindowSize
+        {
+            get => _contextWindowSize;
+            private set => SetProperty(ref _contextWindowSize, value);
+        }
+
+        /// <summary>Token count at which the indicator turns into the warning state.</summary>
+        public int CompactThresholdTokens
+        {
+            get => _compactThresholdTokens;
+            private set => SetProperty(ref _compactThresholdTokens, value);
+        }
+
+        /// <summary>Maximum input tokens that still leave room for the reserved reply.</summary>
+        public int MaxInputTokens
+        {
+            get => _maxInputTokens;
+            private set => SetProperty(ref _maxInputTokens, value);
+        }
+
+        /// <summary>
+        /// Mirrors the provider/settings-derived context-window numbers into the model so bindings
+        /// can read them (the host is the only writer; the model stays UI-free).
+        /// </summary>
+        public void SetContextWindow(int contextWindowSize, int compactThresholdTokens, int maxInputTokens)
+        {
+            ContextWindowSize = Math.Max(0, contextWindowSize);
+            CompactThresholdTokens = Math.Max(0, compactThresholdTokens);
+            MaxInputTokens = Math.Max(0, maxInputTokens);
+        }
+
+        /// <summary>
+        /// Adds a single request's token usage to the active conversation. No-op while the chat is
+        /// closed. This is the single accumulation point, so a future persistence step only has to
+        /// mark the conversation dirty here.
+        /// </summary>
+        public void RecordTokenUsage(TokenUsage usage)
+        {
+            if (usage == null)
+                return;
+
+            var conversation = ActiveChatConversation;
+            if (conversation == null)
+                return;
+
+            conversation.AccumulateUsage(usage);
+        }
+
+        /// <summary>Stores the estimated input tokens occupying the window for the active conversation.</summary>
+        public void SetEstimatedInputTokens(int tokens)
+        {
+            var conversation = ActiveChatConversation;
+            if (conversation != null)
+                conversation.UsedTokens = Math.Max(0, tokens);
+        }
+
+        #endregion Context counters
 
         #region UI state
 

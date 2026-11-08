@@ -1392,6 +1392,118 @@ namespace RPAWriter.Tests
 
         #endregion View mode and UI state
 
+        #region Context counters
+
+        [Test]
+        public void RecordTokenUsage_AccumulatesIntoActiveConversation()
+        {
+            var model = CreateModel();
+
+            model.RecordTokenUsage(new TokenUsage
+            {
+                PromptTokens = 10,
+                CompletionTokens = 5,
+                TotalTokens = 15,
+                CacheHitTokens = 4,
+                CacheMissTokens = 6,
+                EstimatedCostUsd = 0.001
+            });
+
+            Assert.That(model.ActiveChatConversation.Usage.TotalTokens, Is.EqualTo(15));
+            Assert.That(model.ActiveChatConversation.Usage.CacheHitTokens, Is.EqualTo(4));
+            Assert.That(model.ActiveChatConversation.Usage.EstimatedCostUsd, Is.EqualTo(0.001));
+        }
+
+        [Test]
+        public void RecordTokenUsage_IsNoOpWhenChatIsClosed()
+        {
+            var model = CreateModel(withActiveChat: false);
+
+            model.RecordTokenUsage(new TokenUsage { TotalTokens = 15 });
+
+            Assert.That(model.ActiveChatConversation, Is.Null);
+        }
+
+        [Test]
+        public void RecordTokenUsage_AccumulatesAcrossRequests()
+        {
+            var model = CreateModel();
+
+            model.RecordTokenUsage(new TokenUsage { TotalTokens = 15 });
+            model.RecordTokenUsage(new TokenUsage { TotalTokens = 7 });
+
+            Assert.That(model.ActiveChatConversation.Usage.TotalTokens, Is.EqualTo(22));
+        }
+
+        [Test]
+        public void SetEstimatedInputTokens_UpdatesActiveConversation()
+        {
+            var model = CreateModel();
+
+            model.SetEstimatedInputTokens(1234);
+
+            Assert.That(model.ActiveChatConversation.UsedTokens, Is.EqualTo(1234));
+        }
+
+        [Test]
+        public void SetEstimatedInputTokens_IsNoOpWhenChatIsClosed()
+        {
+            var model = CreateModel(withActiveChat: false);
+
+            model.SetEstimatedInputTokens(1234);
+
+            Assert.That(model.ActiveChatConversation, Is.Null);
+        }
+
+        [Test]
+        public void SetEstimatedInputTokens_ClampsNegativeToZero()
+        {
+            var model = CreateModel();
+
+            model.SetEstimatedInputTokens(-5);
+
+            Assert.That(model.ActiveChatConversation.UsedTokens, Is.Zero);
+        }
+
+        [Test]
+        public void NewChat_StartsWithZeroCounters()
+        {
+            var model = CreateModel();
+
+            model.RecordTokenUsage(new TokenUsage { TotalTokens = 42 });
+            model.SetEstimatedInputTokens(999);
+            model.StartNewChat();
+
+            Assert.That(model.ActiveChatConversation.Usage.TotalTokens, Is.Zero);
+            Assert.That(model.ActiveChatConversation.UsedTokens, Is.Zero);
+        }
+
+        [Test]
+        public void SetContextWindow_MirrorsValuesIntoModel()
+        {
+            var model = CreateModel();
+
+            model.SetContextWindow(409600, 348160, 360448);
+
+            Assert.That(model.ContextWindowSize, Is.EqualTo(409600));
+            Assert.That(model.CompactThresholdTokens, Is.EqualTo(348160));
+            Assert.That(model.MaxInputTokens, Is.EqualTo(360448));
+        }
+
+        [Test]
+        public void SetContextWindow_ClampsNegativeToZero()
+        {
+            var model = CreateModel();
+
+            model.SetContextWindow(-1, -2, -3);
+
+            Assert.That(model.ContextWindowSize, Is.Zero);
+            Assert.That(model.CompactThresholdTokens, Is.Zero);
+            Assert.That(model.MaxInputTokens, Is.Zero);
+        }
+
+        #endregion Context counters
+
         #region Commands
 
         [Test]

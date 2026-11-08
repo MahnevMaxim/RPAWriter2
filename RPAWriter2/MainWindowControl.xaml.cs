@@ -86,7 +86,6 @@ namespace RPAWriter2
         private AgentMode _resumableMode;
         private ContextBudget? _resumableBudget;
         private ITokenUsageProvider? _tokenUsage;
-        private int _lastEstimatedInputTokens;
         private int _compactionDepth;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
@@ -286,7 +285,8 @@ namespace RPAWriter2
             HookMessageNotifier();
             HookRetryNotifier();
             HookPromptNotifier();
-            UpdateTokenUsageDisplay();
+            PushContextWindow();
+            PushEstimatedInputTokens();
         }
 
         private string KbPath()
@@ -824,11 +824,10 @@ namespace RPAWriter2
 
         private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
         {
-            _lastEstimatedInputTokens = e.EstimatedInputTokens;
             if (!Dispatcher.CheckAccess())
-                Dispatcher.BeginInvoke(new Action(UpdateTokenUsageDisplay));
+                Dispatcher.BeginInvoke(new Action(() => _chatModel.SetEstimatedInputTokens(e.EstimatedInputTokens)));
             else
-                UpdateTokenUsageDisplay();
+                _chatModel.SetEstimatedInputTokens(e.EstimatedInputTokens);
 
             var dump = FormatPromptDump(e);
             LogService.ChatInfo(dump);
@@ -900,22 +899,25 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => OnTokenUsageUpdated(sender, usage)));
                 return;
             }
-            UpdateTokenUsageDisplay();
+            _chatModel.RecordTokenUsage(usage);
         }
 
-        private void UpdateTokenUsageDisplay()
+        private void PushContextWindow()
         {
             var provider = _tokenUsage;
             var budget = BuildContextBudget();
+            _chatModel.SetContextWindow(
+                provider?.ContextWindowSize ?? 0,
+                provider != null ? budget.CompactThresholdTokens : 0,
+                provider != null ? budget.MaxInputTokens : 0);
+        }
 
+        private void PushEstimatedInputTokens()
+        {
             var usedTokens = _chatCts == null
                 ? new TokenEstimator().Estimate("", _providerTranscript)
-                : _lastEstimatedInputTokens;
-            ChatContextIndicator.UsedTokens = usedTokens;
-            ChatContextIndicator.ContextWindowSize = provider?.ContextWindowSize ?? 0;
-            ChatContextIndicator.CompactThresholdTokens = provider != null ? budget.CompactThresholdTokens : 0;
-            ChatContextIndicator.MaxInputTokens = provider != null ? budget.MaxInputTokens : 0;
-            ChatContextIndicator.SessionUsage = provider?.TotalTokenUsage;
+                : _chatModel.ActiveChatConversation?.UsedTokens ?? 0;
+            _chatModel.SetEstimatedInputTokens(usedTokens);
         }
 
         private void ShowError(Exception ex)
@@ -2742,11 +2744,11 @@ namespace RPAWriter2
             {
                 reasoningTimer.Stop();
                 if (!Dispatcher.CheckAccess())
-                    Dispatcher.Invoke(new Action(() => { _chatCts = null; UpdateTokenUsageDisplay(); }));
+                    Dispatcher.Invoke(new Action(() => { _chatCts = null; PushEstimatedInputTokens(); }));
                 else
                 {
                     _chatCts = null;
-                    UpdateTokenUsageDisplay();
+                    PushEstimatedInputTokens();
                 }
                 cts.Dispose();
             }
@@ -3712,6 +3714,7 @@ namespace RPAWriter2
             PinnedTextScroll.MaxHeight = PinnedExpandedHeight;
             PinnedTextScroll.VerticalScrollBarVisibility = _pinnedExpanded ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
             PinnedExpandGlyph.Points = PointCollection.Parse(_pinnedExpanded ? "6,9 12,15 18,9" : "9,18 15,12 9,6");
+            ChatContextIndicator.ShowDetails = _pinnedExpanded;
         }
 
         private void RefreshPinnedMessage()

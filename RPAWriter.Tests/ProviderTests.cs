@@ -673,6 +673,29 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task ChatAsync_RaisesTokenUsageUpdatedWithPerRequestUsage()
+        {
+            var handler = new FakeHttpHandler
+            {
+                Responder = req => "{\"choices\":[{\"message\":{\"content\":\"hello\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+
+            TokenUsage reported = null;
+            provider.TokenUsageUpdated += (_, usage) => reported = usage;
+
+            await provider.ChatAsync(
+                new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
+                "system");
+
+            Assert.That(reported, Is.Not.Null);
+            Assert.That(reported.TotalTokens, Is.EqualTo(15));
+            Assert.That(reported.PromptTokens, Is.EqualTo(10));
+            Assert.That(reported.CompletionTokens, Is.EqualTo(5));
+            Assert.That(provider.TotalTokenUsage.TotalTokens, Is.EqualTo(15));
+        }
+
+        [Test]
         public async Task ChatStreamingAsync_EmptyChoicesChunk_DoesNotThrow()
         {
             var sse =

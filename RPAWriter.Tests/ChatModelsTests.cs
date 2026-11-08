@@ -384,6 +384,57 @@ namespace RPAWriter.Tests
             Assert.That(new ChatConversation().Messages, Is.Not.Null);
             Assert.That(new ChatConversation().Messages, Is.Empty);
         }
+
+        [Test]
+        public void UsageStartsEmpty()
+        {
+            var conversation = new ChatConversation();
+
+            Assert.That(conversation.Usage, Is.Not.Null);
+            Assert.That(conversation.Usage.TotalTokens, Is.Zero);
+            Assert.That(conversation.Usage.CacheHitTokens, Is.Zero);
+            Assert.That(conversation.Usage.EstimatedCostUsd, Is.Zero);
+            Assert.That(conversation.UsedTokens, Is.Zero);
+        }
+
+        [Test]
+        public void AccumulateUsageSumsDeltasAndRaisesPropertyChanged()
+        {
+            var conversation = new ChatConversation();
+            var raised = new List<string>();
+            conversation.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+            conversation.AccumulateUsage(new TokenUsage
+            {
+                PromptTokens = 10,
+                CompletionTokens = 5,
+                TotalTokens = 15,
+                CacheHitTokens = 4,
+                CacheMissTokens = 6,
+                EstimatedCostUsd = 0.001
+            });
+
+            Assert.That(conversation.Usage.PromptTokens, Is.EqualTo(10));
+            Assert.That(conversation.Usage.CompletionTokens, Is.EqualTo(5));
+            Assert.That(conversation.Usage.TotalTokens, Is.EqualTo(15));
+            Assert.That(conversation.Usage.CacheHitTokens, Is.EqualTo(4));
+            Assert.That(conversation.Usage.CacheMissTokens, Is.EqualTo(6));
+            Assert.That(conversation.Usage.EstimatedCostUsd, Is.EqualTo(0.001));
+            Assert.That(raised, Contains.Item(nameof(ChatConversation.Usage)));
+        }
+
+        [Test]
+        public void UsedTokensRaisesPropertyChanged()
+        {
+            var conversation = new ChatConversation();
+            var raised = new List<string>();
+            conversation.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+            conversation.UsedTokens = 123;
+
+            Assert.That(conversation.UsedTokens, Is.EqualTo(123));
+            Assert.That(raised, Contains.Item(nameof(ChatConversation.UsedTokens)));
+        }
     }
 
     [TestFixture]

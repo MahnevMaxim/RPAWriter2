@@ -41,6 +41,7 @@ namespace RPAWriter.Core.Models
         private DateTime _createdAtUtc;
         private DateTime _updatedAtUtc;
         private bool _isActive;
+        private int _usedTokens;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -100,6 +101,46 @@ namespace RPAWriter.Core.Models
         {
             get => _isActive;
             set { if (_isActive != value) { _isActive = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>
+        /// Cumulative token usage of this conversation (prompt/completion/total, cache split, cost).
+        /// Runtime-only for now: kept here as plain data so it can be persisted later without a
+        /// domain change. Accumulate through <see cref="AccumulateUsage"/> so bindings get notified.
+        /// </summary>
+        public TokenUsage Usage { get; } = new TokenUsage();
+
+        /// <summary>
+        /// Estimated input tokens currently occupying the model's context window for this
+        /// conversation. Runtime-only; updated by the model from the provider's prompt assembly
+        /// and token reports.
+        /// </summary>
+        public int UsedTokens
+        {
+            get => _usedTokens;
+            set
+            {
+                if (_usedTokens != value)
+                {
+                    _usedTokens = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>Adds a single request's usage to <see cref="Usage"/> and notifies bindings.</summary>
+        public void AccumulateUsage(TokenUsage delta)
+        {
+            if (delta == null)
+                return;
+
+            Usage.PromptTokens += delta.PromptTokens;
+            Usage.CompletionTokens += delta.CompletionTokens;
+            Usage.TotalTokens += delta.TotalTokens;
+            Usage.CacheHitTokens += delta.CacheHitTokens;
+            Usage.CacheMissTokens += delta.CacheMissTokens;
+            Usage.EstimatedCostUsd += delta.EstimatedCostUsd;
+            OnPropertyChanged(nameof(Usage));
         }
 
         /// <summary>Text shown in the history dropdown.</summary>

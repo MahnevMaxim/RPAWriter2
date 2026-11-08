@@ -8,7 +8,7 @@ namespace RPAWriter2.Controls
 {
     /// <summary>
     /// Reusable context-window indicator: a fill bar plus two text lines — the window fill
-    /// ("Context window: N / M tokens (P%)") and, separately, the session-wide statistics
+    /// ("Context window: N / M tokens (P%)") and, separately, the active conversation's statistics
     /// (total tokens, cache hits, estimated cost). All formatting/severity logic lives in
     /// <see cref="ContextUsageCalculator"/>, so this control stays pure presentation.
     /// </summary>
@@ -38,6 +38,10 @@ namespace RPAWriter2.Controls
         public static readonly DependencyProperty SessionUsageProperty = DependencyProperty.Register(
             nameof(SessionUsage), typeof(TokenUsage), typeof(ContextIndicator),
             new PropertyMetadata(null, OnStateChanged));
+
+        public static readonly DependencyProperty ShowDetailsProperty = DependencyProperty.Register(
+            nameof(ShowDetails), typeof(bool), typeof(ContextIndicator),
+            new PropertyMetadata(true, OnStateChanged));
 
         public ContextIndicator()
         {
@@ -73,11 +77,18 @@ namespace RPAWriter2.Controls
             set => SetValue(MaxInputTokensProperty, value);
         }
 
-        /// <summary>Optional cumulative usage reported by the provider (total/cache/cost).</summary>
+        /// <summary>Usage of the active conversation (total/cache/cost).</summary>
         public TokenUsage SessionUsage
         {
             get => (TokenUsage)GetValue(SessionUsageProperty);
             set => SetValue(SessionUsageProperty, value);
+        }
+
+        /// <summary>Whether the text lines below the fill bar are visible (the first message's chevron is expanded).</summary>
+        public bool ShowDetails
+        {
+            get => (bool)GetValue(ShowDetailsProperty);
+            set => SetValue(ShowDetailsProperty, value);
         }
 
         private static void OnStateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -96,10 +107,13 @@ namespace RPAWriter2.Controls
             FillBar.Foreground = BrushFor(info.Status);
 
             FillText.Text = info.FillText;
+            FillText.Visibility = ShowDetails ? Visibility.Visible : Visibility.Collapsed;
 
             var stats = info.StatsText;
             StatsText.Text = stats;
-            StatsText.Visibility = string.IsNullOrEmpty(stats) ? Visibility.Collapsed : Visibility.Visible;
+            StatsText.Visibility = ShowDetails && !string.IsNullOrEmpty(stats)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private static Brush BrushFor(ContextUsageStatus status)

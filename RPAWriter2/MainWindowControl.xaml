@@ -726,7 +726,12 @@
                                 <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
                             </Button>
                         </Grid>
-                        <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"/>
+                        <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"
+                                                   UsedTokens="{Binding Chat.ActiveChatConversation.UsedTokens}"
+                                                   SessionUsage="{Binding Chat.ActiveChatConversation.Usage}"
+                                                   ContextWindowSize="{Binding Chat.ContextWindowSize}"
+                                                   CompactThresholdTokens="{Binding Chat.CompactThresholdTokens}"
+                                                   MaxInputTokens="{Binding Chat.MaxInputTokens}"/>
                     </Grid>
                 </Border>
 
