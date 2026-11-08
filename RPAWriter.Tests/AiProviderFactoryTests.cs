@@ -43,6 +43,7 @@ namespace RPAWriter.Tests
                 RetryTimeoutMinutes = 10,
                 RetryBaseDelaySeconds = 2,
                 RetryMaxDelaySeconds = 15,
+                NoRetryOn4xx = true,
                 InputPricePerMillion = 0.5,
                 CacheHitPricePerMillion = 0.1,
                 OutputPricePerMillion = 2.0,
@@ -61,6 +62,7 @@ namespace RPAWriter.Tests
             Assert.That(options.RetryTimeout, Is.EqualTo(TimeSpan.FromMinutes(10)));
             Assert.That(options.RetryBaseDelay, Is.EqualTo(TimeSpan.FromSeconds(2)));
             Assert.That(options.RetryMaxDelay, Is.EqualTo(TimeSpan.FromSeconds(15)));
+            Assert.That(options.NoRetryOn4xx, Is.True);
             Assert.That(options.InputPricePerMillion, Is.EqualTo(0.5));
             Assert.That(options.CacheHitPricePerMillion, Is.EqualTo(0.1));
             Assert.That(options.OutputPricePerMillion, Is.EqualTo(2.0));
@@ -77,6 +79,14 @@ namespace RPAWriter.Tests
 
             Assert.That(options.BaseUrl, Is.EqualTo("https://api.openai.com/v1"));
             Assert.That(options.Model, Is.EqualTo("gpt-4o-mini"));
+        }
+
+        [Test]
+        public void Create_NoRetryOn4xxDefaultsToTrue()
+        {
+            var options = GetOptions(AiProviderFactory.Create(new SettingsData { ApiKey = "sk-test" }));
+
+            Assert.That(options.NoRetryOn4xx, Is.True);
         }
 
         [Test]

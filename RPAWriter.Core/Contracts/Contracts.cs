@@ -262,6 +262,40 @@ namespace RPAWriter.Core.Contracts
 
         /// <summary>Response body returned by the provider (may be truncated), or null.</summary>
         public string Body { get; }
+
+        /// <summary>
+        /// Short, user-facing description of the failure, derived from <see cref="Kind"/> and
+        /// <see cref="StatusCode"/>. Used by the host for the status line instead of the raw
+        /// transport message; full detail stays in the exception <see cref="Exception.Message"/>.
+        /// </summary>
+        public string FriendlyMessage
+        {
+            get
+            {
+                switch (Kind)
+                {
+                    case ProviderErrorKind.Auth:
+                        return StatusCode == 403
+                            ? "The AI provider denied access (403). Check the API key and account permissions in Settings → API."
+                            : "The AI provider rejected the API key (401). Check the API key in Settings → API.";
+                    case ProviderErrorKind.RateLimit:
+                        return "The AI provider rate-limited the request (429). Wait a moment and try again.";
+                    case ProviderErrorKind.ContextWindowExceeded:
+                        return "The request is too large for the model's context window. Enable Auto-compact or start a new chat.";
+                    case ProviderErrorKind.ContentFilter:
+                        return "The AI provider blocked the request (content filter). Rephrase the message and try again.";
+                    case ProviderErrorKind.Transient:
+                        return "The AI provider is temporarily unavailable. Try again in a moment.";
+                    case ProviderErrorKind.Other:
+                        if (StatusCode == 400 && !string.IsNullOrEmpty(Body) &&
+                            Body.IndexOf("tool", StringComparison.OrdinalIgnoreCase) >= 0)
+                            return "The AI provider rejected the request (400): a tool result is out of sync with its tool call. Press Cancel, then Resume task, or reduce Max iterations.";
+                        return "The AI provider rejected the request" + (StatusCode.HasValue ? " (" + StatusCode.Value + ")" : string.Empty) + ".";
+                    default:
+                        return "The AI provider request failed. Check Base URL, API key and Model in Settings → API.";
+                }
+            }
+        }
     }
 
     /// <summary>Estimates the number of tokens an outgoing request will consume.</summary>

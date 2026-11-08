@@ -44,6 +44,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Maximum delay between retries, in seconds.</summary>
         public int RetryMaxDelaySeconds { get; set; } = 30;
 
+        /// <summary>Do not retry 4xx client errors (400/401/403/404/422); fail fast and surface a readable error.</summary>
+        public bool NoRetryOn4xx { get; set; } = true;
+
         /// <summary>Price per 1M uncached input (cache-miss) tokens, in USD.</summary>
         public double InputPricePerMillion { get; set; } = 0.27;
 

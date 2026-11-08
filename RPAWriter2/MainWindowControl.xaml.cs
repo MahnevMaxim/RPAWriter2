@@ -843,6 +843,15 @@ namespace RPAWriter2
             }
         }
 
+        private const int PromptDumpContentMaxChars = 2000;
+
+        private static string TruncatePromptDump(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= PromptDumpContentMaxChars)
+                return text ?? string.Empty;
+            return text.Substring(0, PromptDumpContentMaxChars) + "\n…(truncated)";
+        }
+
         private static string FormatPromptDump(PromptAssembledEventArgs e)
         {
             var sb = new StringBuilder();
@@ -850,7 +859,7 @@ namespace RPAWriter2
             sb.AppendLine("Estimated input tokens: " + e.EstimatedInputTokens);
             sb.AppendLine("System prompt (" + (e.SystemPrompt == null ? 0 : e.SystemPrompt.Length) + " chars):");
             sb.AppendLine("-----");
-            sb.AppendLine(e.SystemPrompt ?? "");
+            sb.AppendLine(TruncatePromptDump(e.SystemPrompt));
             sb.AppendLine("-----");
 
             var messages = e.Messages ?? new List<ChatMessageData>();
@@ -862,7 +871,7 @@ namespace RPAWriter2
                     continue;
                 var role = string.IsNullOrWhiteSpace(m.Role) ? "user" : m.Role;
                 sb.AppendLine("[" + i + "] role=" + role + " (" + (m.Content == null ? 0 : m.Content.Length) + " chars):");
-                sb.AppendLine(m.Content ?? "");
+                sb.AppendLine(TruncatePromptDump(m.Content));
                 sb.AppendLine("-----");
             }
 
@@ -2711,6 +2720,14 @@ namespace RPAWriter2
                 // visible through ChatModel.CanResume - the host touches no control here.
                 StopChatStatus();
                 LogService.ChatInfo("Agent chat request cancelled.");
+            }
+            catch (ProviderErrorException pex)
+            {
+                reasoningTimer.Stop();
+                thinking.Reasoning = reasoningBuffer.ToString();
+                thinking.IsThinking = false;
+                ShowChatStatusError(pex.FriendlyMessage);
+                LogService.ChatError(pex, "Agent chat request failed (provider).");
             }
             catch (Exception ex)
             {

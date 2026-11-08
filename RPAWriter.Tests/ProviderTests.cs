@@ -410,6 +410,7 @@ namespace RPAWriter.Tests
             var provider = new OpenAiCompatibleProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
+                NoRetryOn4xx = false,
                 RetryTimeout = TimeSpan.FromMilliseconds(150),
                 RetryBaseDelay = TimeSpan.FromMilliseconds(10),
                 RetryMaxDelay = TimeSpan.FromMilliseconds(10)
@@ -421,6 +422,81 @@ namespace RPAWriter.Tests
             Assert.That(ex.Message, Does.Contain("bad key"));
             Assert.That(ex.Message, Does.Contain("attempt(s)"));
             Assert.That(handler.CallCount, Is.GreaterThanOrEqualTo(2));
+        }
+
+        [Test]
+        public void ChatAsync_NoRetryOn4xx_FailsFastOn400()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"bad request\"}}", Encoding.UTF8, "application/json")
+                }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                NoRetryOn4xx = true
+            }, new HttpClient(handler));
+
+            var ex = Assert.ThrowsAsync<ProviderErrorException>(async () =>
+                await provider.ChatAsync(new[] { new ChatMessageData { Role = "user", Content = "hi" } }, "sys"));
+
+            Assert.That(ex.Kind, Is.EqualTo(ProviderErrorKind.Other));
+            Assert.That(ex.StatusCode, Is.EqualTo(400));
+            Assert.That(handler.CallCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ChatAsync_NoRetryOn4xx_FailsFastOnEachNonRetryableStatus()
+        {
+            foreach (var status in new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.NotFound, (HttpStatusCode)422 })
+            {
+                var handler = new RetryingHttpHandler
+                {
+                    Responder = n => new HttpResponseMessage(status)
+                    {
+                        Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                    }
+                };
+                var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+                {
+                    ApiKey = "sk-test",
+                    NoRetryOn4xx = true
+                }, new HttpClient(handler));
+
+                Assert.ThrowsAsync<ProviderErrorException>(async () =>
+                    await provider.ChatAsync(new[] { new ChatMessageData { Role = "user", Content = "hi" } }, "sys"));
+
+                Assert.That(handler.CallCount, Is.EqualTo(1), "status " + status + " must not be retried");
+            }
+        }
+
+        [Test]
+        public void ChatAsync_NoRetryOn4xx_StillRetries429()
+        {
+            var handler = new RetryingHttpHandler
+            {
+                Responder = n => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"slow down\"}}", Encoding.UTF8, "application/json")
+                }
+            };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                NoRetryOn4xx = true,
+                RetryTimeout = TimeSpan.FromMilliseconds(300),
+                RetryBaseDelay = TimeSpan.Zero,
+                RetryMaxDelay = TimeSpan.Zero
+            }, new HttpClient(handler));
+
+            var ex = Assert.ThrowsAsync<ProviderErrorException>(async () =>
+                await provider.ChatAsync(new[] { new ChatMessageData { Role = "user", Content = "hi" } }, "sys"));
+
+            Assert.That(ex.Kind, Is.EqualTo(ProviderErrorKind.RateLimit));
+            Assert.That(handler.CallCount, Is.GreaterThan(1));
         }
 
         [Test]

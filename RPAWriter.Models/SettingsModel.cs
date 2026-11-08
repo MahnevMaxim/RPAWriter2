@@ -38,6 +38,7 @@ namespace RPAWriter.Models
         private int _retryTimeoutMinutes = 30;
         private int _retryBaseDelaySeconds = 1;
         private int _retryMaxDelaySeconds = 30;
+        private bool _noRetryOn4xx = true;
         private double _inputPricePerMillion = 0.27;
         private double _cacheHitPricePerMillion = 0.07;
         private double _outputPricePerMillion = 1.10;
@@ -168,6 +169,7 @@ namespace RPAWriter.Models
                 RetryTimeoutMinutes = _retryTimeoutMinutes,
                 RetryBaseDelaySeconds = _retryBaseDelaySeconds,
                 RetryMaxDelaySeconds = _retryMaxDelaySeconds,
+                NoRetryOn4xx = _noRetryOn4xx,
                 InputPricePerMillion = _inputPricePerMillion,
                 CacheHitPricePerMillion = _cacheHitPricePerMillion,
                 OutputPricePerMillion = _outputPricePerMillion,
@@ -310,6 +312,7 @@ namespace RPAWriter.Models
             RetryTimeoutMinutes = data.RetryTimeoutMinutes;
             RetryBaseDelaySeconds = data.RetryBaseDelaySeconds;
             RetryMaxDelaySeconds = data.RetryMaxDelaySeconds;
+            NoRetryOn4xx = data.NoRetryOn4xx;
             InputPricePerMillion = data.InputPricePerMillion;
             CacheHitPricePerMillion = data.CacheHitPricePerMillion;
             OutputPricePerMillion = data.OutputPricePerMillion;
@@ -586,6 +589,8 @@ namespace RPAWriter.Models
         public int RetryBaseDelaySeconds { get => _retryBaseDelaySeconds; set => SetProperty(ref _retryBaseDelaySeconds, value); }
 
         public int RetryMaxDelaySeconds { get => _retryMaxDelaySeconds; set => SetProperty(ref _retryMaxDelaySeconds, value); }
+
+        public bool NoRetryOn4xx { get => _noRetryOn4xx; set => SetProperty(ref _noRetryOn4xx, value); }
 
         public double InputPricePerMillion { get => _inputPricePerMillion; set => SetProperty(ref _inputPricePerMillion, value); }
 

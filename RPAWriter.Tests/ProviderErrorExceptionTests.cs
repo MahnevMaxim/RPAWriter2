@@ -45,5 +45,40 @@ namespace RPAWriter.Tests
                     "ContentFilter", "Transient", "Other"
                 }));
         }
+
+        [Test]
+        public void FriendlyMessage_Auth_DescribesApiKeyOrAccess()
+        {
+            Assert.That(new ProviderErrorException(ProviderErrorKind.Auth, "x", 401).FriendlyMessage, Does.Contain("API key"));
+            Assert.That(new ProviderErrorException(ProviderErrorKind.Auth, "x", 403).FriendlyMessage, Does.Contain("403"));
+        }
+
+        [Test]
+        public void FriendlyMessage_Other400WithToolBody_HintsAtToolSync()
+        {
+            var ex = new ProviderErrorException(
+                ProviderErrorKind.Other,
+                "x",
+                400,
+                "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'");
+
+            Assert.That(ex.FriendlyMessage, Does.Contain("tool result is out of sync"));
+        }
+
+        [Test]
+        public void FriendlyMessage_ContextWindowExceeded_HintsAtCompaction()
+        {
+            var ex = new ProviderErrorException(ProviderErrorKind.ContextWindowExceeded, "x");
+
+            Assert.That(ex.FriendlyMessage, Does.Contain("Auto-compact"));
+        }
+
+        [Test]
+        public void FriendlyMessage_RateLimit_Includes429()
+        {
+            var ex = new ProviderErrorException(ProviderErrorKind.RateLimit, "x", 429);
+
+            Assert.That(ex.FriendlyMessage, Does.Contain("429"));
+        }
     }
 }

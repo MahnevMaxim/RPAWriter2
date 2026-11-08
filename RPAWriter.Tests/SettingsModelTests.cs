@@ -135,6 +135,31 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void NoRetryOn4xx_DefaultsToTrue()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+            model.Run();
+
+            Assert.That(model.NoRetryOn4xx, Is.True);
+        }
+
+        [Test]
+        public void NoRetryOn4xx_RoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            model.NoRetryOn4xx = false;
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.NoRetryOn4xx, Is.False);
+        }
+
+        [Test]
         public void SaveSettingsCommand_PersistsAndRaisesEvent()
         {
             var store = new InMemorySettingsStore();

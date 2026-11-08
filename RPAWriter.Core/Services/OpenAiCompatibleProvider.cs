@@ -48,6 +48,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Maximum delay between retries.</summary>
         public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
 
+        /// <summary>Do not retry 4xx client errors (400/401/403/404/422); fail fast and surface a readable error.</summary>
+        public bool NoRetryOn4xx { get; set; } = true;
+
         /// <summary>Price per 1M uncached input (cache-miss) tokens, in USD.</summary>
         public double InputPricePerMillion { get; set; } = 0.27;
 
@@ -482,6 +485,9 @@ namespace RPAWriter.Core.Services
                     response.Dispose();
 
                     attempt++;
+                    if (_options.NoRetryOn4xx && IsNonRetryable4xx(lastStatus.Value))
+                        break;
+
                     var wait = retryAfter ?? ComputeBackoff(attempt);
                     var elapsed = DateTime.UtcNow - startedAt;
                     var remaining = deadline - DateTime.UtcNow;
@@ -698,6 +704,9 @@ namespace RPAWriter.Core.Services
                     response.Dispose();
 
                     attempt++;
+                    if (_options.NoRetryOn4xx && IsNonRetryable4xx(lastStatus.Value))
+                        break;
+
                     var wait = retryAfter ?? ComputeBackoff(attempt);
                     var elapsed = DateTime.UtcNow - startedAt;
                     var remaining = deadline - DateTime.UtcNow;
@@ -737,6 +746,10 @@ namespace RPAWriter.Core.Services
 
             throw BuildProviderErrorException(attempt, DateTime.UtcNow - startedAt, lastStatus, lastReason, lastBody);
         }
+
+        private static bool IsNonRetryable4xx(int statusCode) =>
+            statusCode == 400 || statusCode == 401 || statusCode == 403 ||
+            statusCode == 404 || statusCode == 422;
 
         private TimeSpan ComputeBackoff(int attempt)
         {

@@ -734,23 +734,13 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="0"/>
                     <controls:MessageQueueControl x:Name="MessageQueue" Grid.Row="1" Margin="0,4,0,0"/>
-                </Grid>
-
-                <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
-                              VerticalAlignment="Center" ResizeDirection="Rows"
-                              ResizeBehavior="PreviousAndNext"/>
-
-                <Grid x:Name="ChatInputPanel" Grid.Row="5">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,4">
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
                                    Margin="0,3,8,0" TextWrapping="Wrap"
                                    Text="{Binding Chat.StatusText}"
@@ -791,133 +781,138 @@
                                    Text="{Binding Chat.StatusErrorText}"
                                    Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseErrorVisibility}}"/>
                     </StackPanel>
-                    <Button x:Name="CancelButton" Grid.Row="1" Content="Cancel" FontSize="14"
+                    <Button x:Name="CancelButton" Grid.Row="3" Content="Cancel" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,8" Click="OnCancelSend"
                             Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}"/>
-                    <Button x:Name="ResumeButton" Grid.Row="1" Content="Resume task" FontSize="14"
+                    <Button x:Name="ResumeButton" Grid.Row="3" Content="Resume task" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,8" Click="OnResumeTask"
                             Visibility="{Binding Chat.CanResume, Converter={StaticResource BoolToVis}}"/>
-                    <Grid Grid.Row="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <ItemsControl Grid.Row="0" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource Dark.Control}" BorderBrush="{StaticResource Dark.Border}"
-                                            BorderThickness="1" CornerRadius="2" Padding="6,2" Margin="0,0,6,4">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center"
-                                                       Foreground="{StaticResource Dark.Text}" FontSize="13"/>
-                                            <Button Content="✕" Width="16" Height="16" Margin="6,0,0,0"
-                                                    Style="{StaticResource IconButtonStyle}" FontSize="10"
-                                                    Tag="{Binding}" Click="OnRemoveAttachment" ToolTip="Remove attachment"/>
-                                        </StackPanel>
+                    <ItemsControl Grid.Row="4" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource Dark.Control}" BorderBrush="{StaticResource Dark.Border}"
+                                        BorderThickness="1" CornerRadius="2" Padding="6,2" Margin="0,0,6,4">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource Dark.Text}" FontSize="13"/>
+                                        <Button Content="✕" Width="16" Height="16" Margin="6,0,0,0"
+                                                Style="{StaticResource IconButtonStyle}" FontSize="10"
+                                                Tag="{Binding}" Click="OnRemoveAttachment" ToolTip="Remove attachment"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+
+                <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center" ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"/>
+
+                <Grid x:Name="ChatInputPanel" Grid.Row="5">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="InputBox"
+                                 AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
+                                 VerticalScrollBarVisibility="Auto"
+                                 PreviewKeyDown="OnInputKeyDown">
+                            <TextBox.Style>
+                                <!-- The border shows the mode. It follows Chat.Mode directly: one
+                                     source of truth, no code-behind brush assignment. -->
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="BorderBrush" Value="{StaticResource Mode.PlanBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Act}">
+                                            <Setter Property="BorderBrush" Value="{StaticResource Mode.ActBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Help}">
+                                            <Setter Property="BorderBrush" Value="{StaticResource Mode.HelpBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                            <TextBox.Template>
+                                <ControlTemplate TargetType="TextBox">
+                                    <!-- Border always follows BorderBrush (the mode color) instead of
+                                         switching to the default blue accent on hover/focus. -->
+                                    <Border x:Name="Bd"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            SnapsToDevicePixels="True">
+                                        <ScrollViewer x:Name="PART_ContentHost"
+                                                      Focusable="False"
+                                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
                                     </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Grid Grid.Row="1">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0" x:Name="InputBox"
-                                     AcceptsReturn="True" TextWrapping="Wrap" FontSize="14"
-                                     VerticalScrollBarVisibility="Auto"
-                                     PreviewKeyDown="OnInputKeyDown">
-                                <TextBox.Style>
-                                    <!-- The border shows the mode. It follows Chat.Mode directly: one
-                                         source of truth, no code-behind brush assignment. -->
-                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                        <Setter Property="BorderBrush" Value="{StaticResource Mode.PlanBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Act}">
-                                                <Setter Property="BorderBrush" Value="{StaticResource Mode.ActBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Chat.Mode}" Value="{x:Static corem:AgentMode.Help}">
-                                                <Setter Property="BorderBrush" Value="{StaticResource Mode.HelpBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBox.Style>
-                                <TextBox.Template>
-                                    <ControlTemplate TargetType="TextBox">
-                                        <!-- Border always follows BorderBrush (the mode color) instead of
-                                             switching to the default blue accent on hover/focus. -->
-                                        <Border x:Name="Bd"
-                                                Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                SnapsToDevicePixels="True">
-                                            <ScrollViewer x:Name="PART_ContentHost"
-                                                          Focusable="False"
-                                                          HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
-                                                          VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </TextBox.Template>
-                            </TextBox>
-                            <controls:TopOverflowWrapPanel Grid.Column="1" VerticalAlignment="Bottom" VerticalSpacing="4" ColumnSpacing="8">
-                                <Button x:Name="ClearInputButton" Width="26" Height="26"
-                                        Click="OnClearInput"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        ToolTip="Clear message">
-                                    <Path Data="{Binding Source={x:Static mi:MaterialIconKind.Broom}, Converter={StaticResource MaterialIconToGeometry}}"
-                                          Fill="White" Stretch="Uniform" Width="14" Height="14"/>
-                                </Button>
-                                <Button x:Name="AttachButton" Width="26" Height="26"
-                                        Click="OnAttach"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        ToolTip="Attach image or file">
-                                    <Path Data="M16.5,6v11.5a4,4 0 0 1 -8,0V5a2.5,2.5 0 0 1 5,0v10.5a1,1 0 0 1 -2,0V6H10v9.5a2.5,2.5 0 0 0 5,0V5a4,4 0 0 0 -8,0v12.5a5.5,5.5 0 0 0 11,0V6h-1.5z"
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </TextBox.Template>
+                        </TextBox>
+                        <controls:TopOverflowWrapPanel Grid.Column="1" VerticalAlignment="Bottom" VerticalSpacing="4" ColumnSpacing="8">
+                            <Button x:Name="ClearInputButton" Width="26" Height="26"
+                                    Click="OnClearInput"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Clear message">
+                                <Path Data="{Binding Source={x:Static mi:MaterialIconKind.Broom}, Converter={StaticResource MaterialIconToGeometry}}"
+                                      Fill="White" Stretch="Uniform" Width="14" Height="14"/>
+                            </Button>
+                            <Button x:Name="AttachButton" Width="26" Height="26"
+                                    Click="OnAttach"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Attach image or file">
+                                <Path Data="M16.5,6v11.5a4,4 0 0 1 -8,0V5a2.5,2.5 0 0 1 5,0v10.5a1,1 0 0 1 -2,0V6H10v9.5a2.5,2.5 0 0 0 5,0V5a4,4 0 0 0 -8,0v12.5a5.5,5.5 0 0 0 11,0V6h-1.5z"
                                       Fill="{StaticResource Dark.Text}" Stretch="Uniform"
                                       Width="14" Height="14"/>
-                                </Button>
-                                <Button x:Name="MicButton" Width="26" Height="26"
-                                        Click="OnMicClick"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        ToolTip="Start voice input">
-                                    <Path x:Name="MicIcon" Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14">
-                                        <Path.Data>
-                                            <GeometryGroup FillRule="Nonzero">
-                                                <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
-                                                <PathGeometry Figures="M19,11 C19,14.53 16.39,17.44 13,17.93 L13,21 L11,21 L11,17.93 C7.61,17.44 5,14.53 5,11 L7,11 C7,13.76 9.24,16 12,16 C14.76,16 17,13.76 17,11 L19,11 Z"/>
-                                            </GeometryGroup>
-                                        </Path.Data>
-                                    </Path>
-                                </Button>
-                                <Button x:Name="SendButton" Width="26" Height="26"
-                                        Click="OnSend"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        ToolTip="Send (Enter)">
-                                    <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
-                                          Fill="{StaticResource Dark.Text}" Stretch="Uniform"
-                                          Width="14" Height="14"/>
-                                </Button>
-                            </controls:TopOverflowWrapPanel>
-                        </Grid>
+                            </Button>
+                            <Button x:Name="MicButton" Width="26" Height="26"
+                                    Click="OnMicClick"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Start voice input">
+                                <Path x:Name="MicIcon" Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14">
+                                    <Path.Data>
+                                        <GeometryGroup FillRule="Nonzero">
+                                            <RectangleGeometry Rect="9,2,6,12" RadiusX="3" RadiusY="3"/>
+                                            <PathGeometry Figures="M19,11 C19,14.53 16.39,17.44 13,17.93 L13,21 L11,21 L11,17.93 C7.61,17.44 5,14.53 5,11 L7,11 C7,13.76 9.24,16 12,16 C14.76,16 17,13.76 17,11 L19,11 Z"/>
+                                        </GeometryGroup>
+                                    </Path.Data>
+                                </Path>
+                            </Button>
+                            <Button x:Name="SendButton" Width="26" Height="26"
+                                    Click="OnSend"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    ToolTip="Send (Enter)">
+                                <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
+                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform"
+                                      Width="14" Height="14"/>
+                            </Button>
+                        </controls:TopOverflowWrapPanel>
                     </Grid>
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,5">
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,5">
                         <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#C8C8C8"/>
                         <!-- Two-way: the toggle shows Chat.Mode and writes it back; the handler only
                              records the switch and persists the session. -->
@@ -962,7 +957,7 @@
                                 ToolTip="Send the input text plus 'Do it!!!' to the agent and switch it to Act mode"/>
                     </StackPanel>
 
-                    <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="4"
+                    <Border x:Name="PermissionsOverlay" Grid.Row="0" Grid.RowSpan="2"
                             Background="{StaticResource Dark.Panel}"
                             BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
                             CornerRadius="2" Padding="12,10" Visibility="Collapsed">
@@ -1392,6 +1387,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
 
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Base URL" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1515,6 +1511,11 @@
                                             Click="OnBrowseMcpRegistry"
                                             ToolTip="Open the official MCP server registry in your browser."/>
                                 </StackPanel>
+
+                                <CheckBox Grid.Row="29" Grid.Column="0" Grid.ColumnSpan="2" x:Name="NoRetryOn4xxCheckBox"
+                                          IsChecked="{Binding Settings.NoRetryOn4xx, Mode=TwoWay}"
+                                          Content="Do not retry 4xx errors (400/401/403/404/422)"
+                                          Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
                             </Grid>
                         </ScrollViewer>

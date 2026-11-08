@@ -49,7 +49,7 @@ namespace RPAWriter.Core.Context
             try
             {
                 var older = transcript.Take(transcript.Count - keepRecent).ToList();
-                var keep = transcript.Skip(transcript.Count - keepRecent).ToList();
+                var keep = TrimLeadingOrphanToolMessages(transcript.Skip(transcript.Count - keepRecent).ToList());
 
                 var summary = await TrySummarizeAsync(older, cancellationToken).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(summary))
@@ -62,12 +62,26 @@ namespace RPAWriter.Core.Context
                     return result;
                 }
 
-                return TruncateToBudget(transcript, keepRecent, budget);
+                return TrimLeadingOrphanToolMessages(TruncateToBudget(transcript, keepRecent, budget));
             }
             finally
             {
                 CompactionFinished?.Invoke(this, EventArgs.Empty);
             }
+        }
+
+        /// <summary>
+        /// Drops leading role "tool" messages whose preceding assistant "tool_calls" message was
+        /// summarized/truncated away. Native tool calling requires every "tool" message to follow the
+        /// assistant message that requested it; a condensed transcript must not start (or, in the kept
+        /// tail, resume) with an orphaned tool result.
+        /// </summary>
+        private static List<ChatMessageData> TrimLeadingOrphanToolMessages(IReadOnlyList<ChatMessageData> messages)
+        {
+            var list = messages == null ? new List<ChatMessageData>() : messages.ToList();
+            while (list.Count > 0 && string.Equals(list[0]?.Role, "tool", StringComparison.OrdinalIgnoreCase))
+                list.RemoveAt(0);
+            return list;
         }
 
         private async Task<string> TrySummarizeAsync(List<ChatMessageData> older, CancellationToken cancellationToken)
