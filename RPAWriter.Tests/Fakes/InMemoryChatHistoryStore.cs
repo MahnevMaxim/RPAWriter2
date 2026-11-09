@@ -43,6 +43,8 @@ namespace RPAWriter.Tests.Fakes
 
         public bool ThrowOnSave { get; set; }
 
+        public bool ThrowOnSetImportant { get; set; }
+
         public bool ThrowOnDelete { get; set; }
 
         public bool ThrowOnDeleteAll { get; set; }
@@ -108,6 +110,15 @@ namespace RPAWriter.Tests.Fakes
             _workspaceById[conversation.Id] = WorkspaceId ?? "";
         }
 
+        public void SetConversationImportant(string id, bool isImportant)
+        {
+            if (ThrowOnSetImportant)
+                throw new InvalidOperationException("conversation importance could not be updated");
+
+            if (id != null && InScope(id) && _stored.TryGetValue(id, out var stored))
+                stored.IsImportant = isImportant;
+        }
+
         public void DeleteConversation(string id)
         {
             if (ThrowOnDelete)
@@ -146,6 +157,7 @@ namespace RPAWriter.Tests.Fakes
                 Title = source.Title,
                 CreatedAtUtc = source.CreatedAtUtc,
                 UpdatedAtUtc = source.UpdatedAtUtc,
+                IsImportant = source.IsImportant,
                 // IsActive is deliberately not copied: the green indicator is view state, not data.
                 Messages = (source.Messages ?? new List<ChatHistoryMessage>())
                     .Select(m => new ChatHistoryMessage

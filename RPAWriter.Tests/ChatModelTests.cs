@@ -635,6 +635,79 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void ToggleImportant_FlagsAndPersists()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+
+            Assert.That(model.ToggleImportant("a"), Is.True);
+
+            Assert.That(model.History.Single(c => c.Id == "a").IsImportant, Is.True);
+            Assert.That(_store.Peek("a").IsImportant, Is.True);
+        }
+
+        [Test]
+        public void ToggleImportant_TogglesBackOff()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+
+            model.ToggleImportant("a");
+            Assert.That(model.ToggleImportant("a"), Is.True);
+
+            Assert.That(model.History.Single(c => c.Id == "a").IsImportant, Is.False);
+            Assert.That(_store.Peek("a").IsImportant, Is.False);
+        }
+
+        [Test]
+        public void ToggleImportant_SurvivesHistoryReload()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+
+            model.ToggleImportant("a");
+            model.RefreshHistory();
+
+            Assert.That(model.History.Single(c => c.Id == "a").IsImportant, Is.True);
+        }
+
+        [Test]
+        public void ToggleImportant_ReturnsFalseForEmptyId()
+        {
+            var model = CreateModel();
+            model.Run();
+
+            Assert.That(model.ToggleImportant("  "), Is.False);
+        }
+
+        [Test]
+        public void ToggleImportant_ReturnsFalseForUnknownId()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+
+            Assert.That(model.ToggleImportant("missing"), Is.False);
+            Assert.That(model.History.Single(c => c.Id == "a").IsImportant, Is.False);
+        }
+
+        [Test]
+        public void ToggleImportant_RecordsLastErrorWhenStoreFails()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+            _store.ThrowOnSetImportant = true;
+
+            Assert.That(model.ToggleImportant("a"), Is.False);
+            Assert.That(model.LastError, Does.Contain("Failed to update chat"));
+            Assert.That(model.History.Single(c => c.Id == "a").IsImportant, Is.False);
+        }
+
+        [Test]
         public void ClearHistory_RemovesEveryConversation()
         {
             _store.Seed(StoredConversation("a", "First"));
@@ -1544,6 +1617,19 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void ToggleImportantCommand_AcceptsAConversationInstance()
+        {
+            _store.Seed(StoredConversation("a", "First"));
+            var model = CreateModel();
+            model.Run();
+            var conversation = model.History[0];
+
+            model.SendCommand(new List<object> { "ToggleImportantCommand", conversation });
+
+            Assert.That(_store.Peek("a").IsImportant, Is.True);
+        }
+
+        [Test]
         public void CommandTargets_ArePublicParameterlessOrSingleParameter()
         {
             // BaseModel.SendCommand resolves the target by reflection: a private or overloaded
@@ -1553,6 +1639,7 @@ namespace RPAWriter.Tests
                 "NewChatCommand",
                 "OpenConversationCommand",
                 "DeleteConversationCommand",
+                "ToggleImportantCommand",
                 "ClearHistoryCommand",
                 "RefreshHistoryCommand",
                 "DoItCommand"

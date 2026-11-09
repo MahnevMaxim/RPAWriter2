@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS conversations (
             using (var connection = Open())
             {
                 EnsureColumn(connection, "conversations", "workspace_id", "TEXT NOT NULL DEFAULT ''");
+                EnsureColumn(connection, "conversations", "is_important", "INTEGER NOT NULL DEFAULT 0");
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS conversations (
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
-SELECT id, title, created_at_utc, updated_at_utc
+SELECT id, title, created_at_utc, updated_at_utc, is_important
 FROM conversations
 WHERE workspace_id = @workspace OR workspace_id = ''
 ORDER BY updated_at_utc DESC
@@ -209,13 +210,14 @@ ORDER BY position;";
                 {
                     upsert.Transaction = transaction;
                     upsert.CommandText = @"
-INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, workspace_id)
-VALUES (@id, @title, @created, @updated, @workspace);";
+INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, workspace_id, is_important)
+VALUES (@id, @title, @created, @updated, @workspace, @important);";
                     upsert.Parameters.AddWithValue("@id", conversation.Id);
                     upsert.Parameters.AddWithValue("@title", string.IsNullOrWhiteSpace(conversation.Title) ? "New chat" : conversation.Title);
                     upsert.Parameters.AddWithValue("@created", ToTimestamp(conversation.CreatedAtUtc));
                     upsert.Parameters.AddWithValue("@updated", ToTimestamp(conversation.UpdatedAtUtc));
                     upsert.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
+                    upsert.Parameters.AddWithValue("@important", conversation.IsImportant ? 1 : 0);
                     upsert.ExecuteNonQuery();
                 }
 
@@ -323,6 +325,27 @@ DELETE FROM conversations WHERE workspace_id = @workspace OR workspace_id = '';"
             }
         }
 
+        /// <summary>
+        /// Sets the important flag on a stored conversation without rewriting its messages or
+        /// timestamps. The history list only holds metadata, so the toggle must be a targeted
+        /// update instead of a full save (which would drop the conversation for lack of a message).
+        /// </summary>
+        public static void SetConversationImportant(string id, bool isImportant)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return;
+
+            using (var connection = Open())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE conversations SET is_important = @important WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
+                command.Parameters.AddWithValue("@important", isImportant ? 1 : 0);
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
+                command.ExecuteNonQuery();
+            }
+        }
+
         private static string SerializeOptions(IReadOnlyList<string>? options)
         {
             if (options == null || options.Count == 0)
@@ -381,6 +404,8 @@ DELETE FROM conversations WHERE workspace_id = @workspace OR workspace_id = '';"
             return ChatMessageKind.SystemNotice;
         }
 
+        private static bool ReadBool(object value) => value is long number && number != 0;
+
         private static SQLiteConnection Open()
         {
             var connection = new SQLiteConnection(ConnectionString);
@@ -392,7 +417,7 @@ DELETE FROM conversations WHERE workspace_id = @workspace OR workspace_id = '';"
         {
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc FROM conversations WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
+                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc, is_important FROM conversations WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
                 command.Parameters.AddWithValue("@id", id);
                 command.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                 using (var reader = command.ExecuteReader())
@@ -409,7 +434,8 @@ DELETE FROM conversations WHERE workspace_id = @workspace OR workspace_id = '';"
                 Id = reader["id"] as string ?? "",
                 Title = reader["title"] as string ?? "",
                 CreatedAtUtc = ParseTimestamp(reader["created_at_utc"] as string),
-                UpdatedAtUtc = ParseTimestamp(reader["updated_at_utc"] as string)
+                UpdatedAtUtc = ParseTimestamp(reader["updated_at_utc"] as string),
+                IsImportant = ReadBool(reader["is_important"])
             };
         }
 

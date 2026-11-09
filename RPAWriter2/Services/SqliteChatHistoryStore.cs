@@ -27,6 +27,9 @@ namespace RPAWriter2.Services
         public void SaveConversation(ChatConversation conversation)
             => ChatHistoryStore.SaveConversation(conversation);
 
+        public void SetConversationImportant(string id, bool isImportant)
+            => ChatHistoryStore.SetConversationImportant(id, isImportant);
+
         public void DeleteConversation(string id) => ChatHistoryStore.DeleteConversation(id);
 
         public void DeleteAllConversations() => ChatHistoryStore.DeleteAllConversations();

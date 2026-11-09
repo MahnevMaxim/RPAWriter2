@@ -1083,6 +1083,9 @@ namespace RPAWriter2
 
             ApplyWorkspaceScope();
             _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            // SetWorkspaceScope switches the model to History; sync the panels (and persist the view)
+            // so the UI cannot stay in the conversation layout while the model is in History.
+            ShowHistoryView();
             ResetProviderTranscript();
             _settingsModel.ReloadWorkspaceScope();
             _settings = _settingsModel.ToSettingsData();
@@ -1154,6 +1157,9 @@ namespace RPAWriter2
             // Re-scope: recreates a fresh workspace directory and reloads empty history/settings.
             ApplyWorkspaceScope();
             _chatModel.SetWorkspaceScope(AppDataPaths.WorkspaceId);
+            // SetWorkspaceScope switches the model to History; sync the panels (and persist the view)
+            // so the UI cannot stay in the conversation layout while the model is in History.
+            ShowHistoryView();
             ResetProviderTranscript();
             _settingsModel.ReloadWorkspaceScope();
             _settings = _settingsModel.ToSettingsData();
@@ -2507,8 +2513,10 @@ namespace RPAWriter2
             if (_agentRunner == null) return;
 
             // A closed chat has no transcript to write into: activate a conversation before the message
-            // (or the queue entry) is created.
-            _chatModel.EnsureActiveConversation();
+            // (or the queue entry) is created. EnsureChatReadyToReceive also brings the conversation
+            // view back, so a typed message never lands while the history list is on screen (or while
+            // the panels are out of sync with the model's view mode).
+            EnsureChatReadyToReceive();
 
             // Agent busy — enqueue instead of dropping the message.
             if (_chatCts != null)
@@ -3662,6 +3670,15 @@ namespace RPAWriter2
 
             if (deletedActive)
                 ResetAgentStateAfterConversationRemoved();
+        }
+
+        private void OnToggleImportant(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { DataContext: ChatConversation conversation }
+                && !_chatModel.ToggleImportant(conversation.Id))
+            {
+                AppendExtensionError(_chatModel.LastError);
+            }
         }
 
         private void OnClearHistory(object sender, RoutedEventArgs e)

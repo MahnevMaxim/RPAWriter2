@@ -41,6 +41,7 @@ namespace RPAWriter.Core.Models
         private DateTime _createdAtUtc;
         private DateTime _updatedAtUtc;
         private bool _isActive;
+        private bool _isImportant;
         private int _usedTokens;
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -101,6 +102,17 @@ namespace RPAWriter.Core.Models
         {
             get => _isActive;
             set { if (_isActive != value) { _isActive = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>
+        /// Whether the user pinned this conversation as important in the history list. Unlike
+        /// <see cref="IsActive"/> this is persisted data (SQLite <c>is_important</c> column) and the
+        /// view only reads it; it is written by <c>ChatModel.ToggleImportant</c>.
+        /// </summary>
+        public bool IsImportant
+        {
+            get => _isImportant;
+            set { if (_isImportant != value) { _isImportant = value; OnPropertyChanged(); } }
         }
 
         /// <summary>

@@ -30,6 +30,13 @@ namespace RPAWriter.Core.Contracts
         /// <summary>Inserts or updates a conversation and its messages.</summary>
         void SaveConversation(ChatConversation conversation);
 
+        /// <summary>
+        /// Sets the important flag on a stored conversation without touching its messages or
+        /// timestamps. Used by the history card toggle; a full save is not an option because the
+        /// history list holds metadata without messages and saving would drop the conversation.
+        /// </summary>
+        void SetConversationImportant(string id, bool isImportant);
+
         /// <summary>Deletes a conversation and its messages.</summary>
         void DeleteConversation(string id);
 

@@ -889,6 +889,38 @@ namespace RPAWriter.Models
             return true;
         }
 
+        /// <summary>
+        /// Toggles the important flag of a saved conversation in the history list. The flag is
+        /// persisted through a targeted store update (<see cref="IChatHistoryStore.SetConversationImportant"/>),
+        /// never through a full save: the history list only holds metadata and a full save would drop
+        /// the conversation. Returns <c>false</c> when the id is empty/unknown or the store failed
+        /// (see <see cref="LastError"/>).
+        /// </summary>
+        public bool ToggleImportant(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return false;
+
+            var conversation = History.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
+            if (conversation == null)
+                return false;
+
+            var target = !conversation.IsImportant;
+            LastError = "";
+            try
+            {
+                _historyStore.SetConversationImportant(id, target);
+            }
+            catch (Exception ex)
+            {
+                LastError = "Failed to update chat: " + ex.Message;
+                return false;
+            }
+
+            conversation.IsImportant = target;
+            return true;
+        }
+
         /// <summary>Deletes every saved conversation and resets the tab.</summary>
         public bool ClearHistory()
         {
@@ -1132,6 +1164,13 @@ namespace RPAWriter.Models
         {
             var id = (target as ChatConversation)?.Id ?? target as string;
             DeleteConversation(id);
+        }
+
+        /// <summary>Command target: toggle the important flag (<c>CommandParameter</c> = id or conversation).</summary>
+        public void ToggleImportantCommand(object target)
+        {
+            var id = (target as ChatConversation)?.Id ?? target as string;
+            ToggleImportant(id);
         }
 
         /// <summary>Command target: delete every saved conversation.</summary>
