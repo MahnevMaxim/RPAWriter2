@@ -1208,7 +1208,9 @@ namespace RPAWriter2.Services.AgentTools
         {
             var dir = _getSolutionDir();
             if (string.IsNullOrWhiteSpace(dir)) return "No open solution directory.";
-            var result = await _shell.RunAsync("git status --porcelain --untracked-files=all", dir, ct).ConfigureAwait(false);
+            var root = await ResolveGitRootAsync(dir, ct).ConfigureAwait(false);
+            if (root == null) return "No git repository found for the open solution.";
+            var result = await _shell.RunAsync("git status --porcelain --untracked-files=all", root, ct).ConfigureAwait(false);
             if (!result.Success) return "git status failed: " + result.Output;
             return string.IsNullOrWhiteSpace(result.Output) || result.Output == "(no output)" ? "(clean)" : result.Output;
         }
@@ -1217,11 +1219,22 @@ namespace RPAWriter2.Services.AgentTools
         {
             var dir = _getSolutionDir();
             if (string.IsNullOrWhiteSpace(dir)) return "No open solution directory.";
+            var root = await ResolveGitRootAsync(dir, ct).ConfigureAwait(false);
+            if (root == null) return "No git repository found for the open solution.";
             var path = args["path"]?.Value<string>() ?? "";
             var command = string.IsNullOrWhiteSpace(path) ? "git diff" : "git diff -- " + path;
-            var result = await _shell.RunAsync(command, dir, ct).ConfigureAwait(false);
+            var result = await _shell.RunAsync(command, root, ct).ConfigureAwait(false);
             if (!result.Success) return "git diff failed: " + result.Output;
             return string.IsNullOrWhiteSpace(result.Output) || result.Output == "(no output)" ? "(no diff)" : result.Output;
+        }
+
+        private async Task<string?> ResolveGitRootAsync(string dir, CancellationToken ct)
+        {
+            var result = await _shell.RunAsync("git rev-parse --show-toplevel", dir, ct).ConfigureAwait(false);
+            if (!result.Success) return null;
+            var root = result.Output?.Trim();
+            if (string.IsNullOrWhiteSpace(root) || root == "(no output)") return null;
+            return root;
         }
 
         private async Task<string> FetchWebContentAsync(JObject args, CancellationToken ct)

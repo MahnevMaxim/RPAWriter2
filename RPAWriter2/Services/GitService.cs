@@ -125,6 +125,8 @@ namespace RPAWriter2.Services
                 StandardErrorEncoding = Encoding.UTF8
             };
 
+            GitEnvironmentSanitizer.Sanitize(psi);
+
             if (feedStandardInput != null)
                 psi.RedirectStandardInput = true;
 

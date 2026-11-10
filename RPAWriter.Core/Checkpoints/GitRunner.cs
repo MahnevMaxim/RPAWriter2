@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter.Core.Checkpoints
 {
@@ -30,17 +31,6 @@ namespace RPAWriter.Core.Checkpoints
     /// </summary>
     internal sealed class ProcessGitRunner : IGitRunner
     {
-        private static readonly string[] SanitizedEnvVars =
-        {
-            "GIT_DIR",
-            "GIT_WORK_TREE",
-            "GIT_INDEX_FILE",
-            "GIT_OBJECT_DIRECTORY",
-            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-            "GIT_CEILING_DIRECTORIES",
-            "GIT_TEMPLATE_DIR",
-        };
-
         public async Task<GitResult> RunAsync(string workingDir, IReadOnlyList<string> args, CancellationToken ct, int timeoutSeconds = 120)
         {
             var psi = new ProcessStartInfo
@@ -56,10 +46,7 @@ namespace RPAWriter.Core.Checkpoints
                 StandardErrorEncoding = Encoding.UTF8,
             };
 
-            foreach (var name in SanitizedEnvVars)
-            {
-                psi.Environment.Remove(name);
-            }
+            GitEnvironmentSanitizer.Sanitize(psi);
 
             try
             {

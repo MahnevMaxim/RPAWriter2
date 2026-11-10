@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using RPAWriter.Core.Services;
 
 namespace RPAWriter2.Services
 {
@@ -56,6 +57,8 @@ namespace RPAWriter2.Services
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
+
+            GitEnvironmentSanitizer.Sanitize(psi);
 
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
@@ -136,6 +139,9 @@ namespace RPAWriter2.Services
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
+
+            GitEnvironmentSanitizer.Sanitize(psi);
+
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
             try
