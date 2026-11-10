@@ -110,6 +110,8 @@ namespace RPAWriter2.Services
             CancellationToken cancellationToken,
             Action<StreamWriter>? feedStandardInput = null)
         {
+            arguments = GitEnvironmentSanitizer.WithForcedConfig(arguments);
+
             LogService.Info("git " + arguments + " [dir=" + workingDirectory + "]");
 
             var psi = new ProcessStartInfo
@@ -145,8 +147,15 @@ namespace RPAWriter2.Services
 
                 if (feedStandardInput != null)
                 {
-                    feedStandardInput(process.StandardInput);
-                    process.StandardInput.Close();
+                    // .NET Framework's ProcessStartInfo has no StandardInputEncoding, so write
+                    // the stdin payload through an explicitly UTF-8 (no BOM) StreamWriter. This
+                    // is what keeps commit messages fed via "commit -F -" from being encoded in
+                    // the system ANSI code page and corrupted by git.
+                    using (var stdin = new StreamWriter(process.StandardInput.BaseStream, new UTF8Encoding(false)))
+                    {
+                        feedStandardInput(stdin);
+                        stdin.Flush();
+                    }
                 }
 
                 var stdoutTask = process.StandardOutput.ReadToEndAsync();
