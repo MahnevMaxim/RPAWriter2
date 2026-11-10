@@ -111,7 +111,6 @@ namespace RPAWriter2
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _workspacePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        private const string CommitBranchName = "dev";
 
         private static string CommitMessageSystemPrompt =>
             PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", PromptDefaults.CommitMessageSystemPrompt);
@@ -2036,14 +2035,8 @@ namespace RPAWriter2
                 var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
                 var branch = await _git.GetCurrentBranchAsync(repoRoot);
                 LogService.Info("Commit control: repoRoot=" + repoRoot + ", branch=" + branch);
-                if (!string.Equals(branch, CommitBranchName, StringComparison.Ordinal))
-                {
-                    LogService.Warn("Commit control blocked: current branch is not '" + CommitBranchName + "'.");
-                    ShowCommitWarning("Commit is only available on the '" + CommitBranchName + "' branch. Current branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch));
-                    return;
-                }
 
-                ShowCommitEditor();
+                ShowCommitEditor(branch);
                 CommitMessageBox.Focus();
             }
             catch (Exception ex)
@@ -2085,19 +2078,14 @@ namespace RPAWriter2
                 var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
                 var branch = await _git.GetCurrentBranchAsync(repoRoot);
                 LogService.Info("Commit send: repoRoot=" + repoRoot + ", branch=" + branch);
-                if (!string.Equals(branch, CommitBranchName, StringComparison.Ordinal))
-                {
-                    ShowCommitWarning("Commit is only available on the '" + CommitBranchName + "' branch. Current branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch));
-                    return;
-                }
 
                 await _git.StageAllAsync(repoRoot);
                 await _git.CommitAsync(repoRoot, message);
 
                 CommitMessageBox.Clear();
                 CloseCommitControl();
-                LogService.Info("Commit send: success (" + CommitBranchName + ").");
-                ShowCommitResult("Committed to " + CommitBranchName + ": " + message, true);
+                LogService.Info("Commit send: success (" + branch + ").");
+                ShowCommitResult("Committed to " + branch + ": " + message, true);
             }
             catch (Exception ex)
             {
@@ -2329,16 +2317,17 @@ namespace RPAWriter2
             CommitWarningBar.Message = message;
         }
 
-        private void ShowCommitEditor()
+        private void ShowCommitEditor(string branch)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(ShowCommitEditor));
+                Dispatcher.BeginInvoke(new Action(() => ShowCommitEditor(branch)));
                 return;
             }
             CommitControlHost.Visibility = Visibility.Visible;
             CommitWarningBar.Visibility = Visibility.Collapsed;
             CommitEditorPanel.Visibility = Visibility.Visible;
+            CommitBranchLabel.Text = "branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch);
             CommitMessageBox.Clear();
             CommitStatusText.Text = "";
         }

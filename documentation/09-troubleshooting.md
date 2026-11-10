@@ -17,10 +17,6 @@
 
 Файл ТЗ открыт в Word/Excel. Закройте его там и повторите импорт.
 
-### «Commit is only available on the 'dev' branch»
-
-Коммит разрешён только на ветке `dev`. Переключитесь на ветку `dev`.
-
 ### «No RPA- robot project found» / «Publish configuration is not configured» (deploy)
 
 - Deploy требует наличия RPA-проекта в решении.

@@ -53,7 +53,7 @@ flowchart LR
     N --> N1[Долгая память<br/>read/update_memory]
     O --> O1[Native<br/>JSON over chat]
     P --> P1[Cache-hit/miss<br/>оценка $]
-    Q --> Q1[Коммит dev<br/>авто-сообщение]
+    Q --> Q1[Коммит в git<br/>авто-сообщение]
     R --> R1[spawn_agent]
     S --> S1[Диаграммы в ответах]
     T --> T1[Reload modified files<br/>line endings]
@@ -83,7 +83,7 @@ flowchart LR
 | 🪟 Управление контекстом | Автосжатие истории, кнопка «Compact now», индикатор заполнения окна, восстановление при переполнении |
 | 📚 Memory Bank | Долговременная память между сессиями (`memory-bank/*.md`, инструменты `read_memory`/`update_memory`) |
 | 💰 Токены и стоимость | Учёт cache-hit/miss токенов (DeepSeek/OpenAI) и оценка стоимости в $ по ценам за 1M токенов |
-| 🔀 Git | Коммит на ветке `dev`, авто-генерация сообщения, инструменты `git_status`/`git_diff` |
+| 🔀 Git | Коммит в текущей git-ветке (с отображением ветки), авто-генерация сообщения, инструменты `git_status`/`git_diff` |
 | 📜 Mermaid | Отрисовка Mermaid-диаграмм в ответах агента и сгенерированных алгоритмах |
 | ⚙️ Автонастройка VS | Автоматическое включение «Reload modified files» и нормализация переводов строк |
 | 🎙️ Голос | Голосовой ввод (OpenAI Whisper или офлайн Vosk) |

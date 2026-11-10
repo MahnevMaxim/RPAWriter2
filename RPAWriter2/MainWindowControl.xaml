@@ -642,8 +642,11 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
+                            <TextBlock x:Name="CommitBranchLabel" Grid.Row="0" Margin="0,0,0,4"
+                                       Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                            <Grid Grid.Row="1">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -655,9 +658,9 @@
                                     <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
                                 </Button>
                             </Grid>
-                            <TextBox Grid.Row="1" x:Name="CommitMessageBox" AcceptsReturn="True" TextWrapping="Wrap"
-                                     MinHeight="48" VerticalScrollBarVisibility="Auto" Margin="0,4,0,6"/>
-                            <StackPanel Grid.Row="2" Orientation="Horizontal">
+                            <TextBox Grid.Row="2" x:Name="CommitMessageBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                     MinHeight="96" VerticalScrollBarVisibility="Auto" Margin="0,4,0,6"/>
+                            <StackPanel Grid.Row="3" Orientation="Horizontal">
                                 <Button x:Name="CommitSendButton" Content="Commit" Click="OnCommitSend" Padding="10,2"/>
                                 <Button x:Name="CommitAutoGenButton" Content="Auto-generate message" Click="OnCommitAutoGenerate" Padding="10,2" Margin="8,0,0,0"/>
                                 <TextBlock x:Name="CommitStatusText" VerticalAlignment="Center" Margin="10,0,0,0"
