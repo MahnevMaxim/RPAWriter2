@@ -272,14 +272,36 @@ namespace RPAWriter.Core.AgentTools
                     // Record the assistant message that requested the tool calls.
                     messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer ?? "", ToolCalls = nativeCalls });
 
-                    foreach (var call in nativeCalls)
+                    for (var callIndex = 0; callIndex < nativeCalls.Count; callIndex++)
                     {
+                        var call = nativeCalls[callIndex];
                         cancellationToken.ThrowIfCancellationRequested();
-                        var repetition = EvaluateRepetition(detector, call.Name, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, call.Id);
+                        var repetition = EvaluateRepetition(detector, call.Name, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, call.Id, native: true);
                         if (repetition == RepetitionAction.Stop)
+                        {
+                            // The assistant "tool_calls" block added above must stay paired with a
+                            // "tool" result for every id, otherwise the provider rejects the whole
+                            // transcript (400: tool result out of sync). Close the remaining calls
+                            // with stub results so the next turn stays valid.
+                            for (var stubIndex = callIndex; stubIndex < nativeCalls.Count; stubIndex++)
+                            {
+                                var stubCall = nativeCalls[stubIndex];
+                                AppendStagnantLoopStub(messages, stubCall.Name, stubCall.Id, effectiveBudget, native: true);
+                            }
                             return Result(StagnantLoopFinalText(call.Name, effectiveBudget.MaxStagnantRepeats), response.Reasoning, messages);
+                        }
                         if (repetition == RepetitionAction.Nudge)
+                        {
+                            // The assistant "tool_calls" block above may list further calls after
+                            // this one; close them with stubs so every id stays paired with a
+                            // "tool" result before the model is re-prompted.
+                            for (var stubIndex = callIndex + 1; stubIndex < nativeCalls.Count; stubIndex++)
+                            {
+                                var stubCall = nativeCalls[stubIndex];
+                                AppendStagnantLoopStub(messages, stubCall.Name, stubCall.Id, effectiveBudget, native: true, reason: "skipped: stagnant loop nudge.");
+                            }
                             break; // skip the rest of this turn and re-prompt the model
+                        }
                         var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                         if (finalText != null)
                             return Result(finalText, response.Reasoning, messages);
@@ -305,12 +327,22 @@ namespace RPAWriter.Core.AgentTools
 
                 messages.Add(new ChatMessageData { Role = "assistant", Content = response.Answer });
 
-                foreach (var call in action.ToolCalls)
+                for (var callIndex = 0; callIndex < action.ToolCalls.Count; callIndex++)
                 {
+                    var call = action.ToolCalls[callIndex];
                     cancellationToken.ThrowIfCancellationRequested();
-                    var repetition = EvaluateRepetition(detector, call.ToolName, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, null);
+                    var repetition = EvaluateRepetition(detector, call.ToolName, call.Arguments, effectiveBudget, ref stagnantNudgeSent, messages, null, native: false);
                     if (repetition == RepetitionAction.Stop)
+                    {
+                        // Close the remaining JSON-protocol tool calls with stub results so the
+                        // model sees the calls were not executed and the transcript stays consistent.
+                        for (var stubIndex = callIndex; stubIndex < action.ToolCalls.Count; stubIndex++)
+                        {
+                            var stubCall = action.ToolCalls[stubIndex];
+                            AppendStagnantLoopStub(messages, stubCall.ToolName, null, effectiveBudget, native: false);
+                        }
                         return Result(StagnantLoopFinalText(call.ToolName, effectiveBudget.MaxStagnantRepeats), response.Reasoning, messages);
+                    }
                     if (repetition == RepetitionAction.Nudge)
                         break; // skip the rest of this turn and re-prompt the model
                     var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
@@ -341,7 +373,8 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             ref bool nudgeSent,
             List<ChatMessageData> messages,
-            string toolCallId)
+            string toolCallId,
+            bool native)
         {
             if (!detector.IsBlocked(toolName, arguments))
                 return RepetitionAction.Execute;
@@ -355,7 +388,9 @@ namespace RPAWriter.Core.AgentTools
             if (budget.StagnantLoopNudge && !nudgeSent)
             {
                 nudgeSent = true;
-                var toolRole = budget.UseToolRole ? "tool" : "user";
+                // Native tool calling requires the nudge to be a "tool" result paired with the
+                // assistant "tool_calls" id; JSON-over-chat keeps the user/tool fallback role.
+                var toolRole = native || budget.UseToolRole ? "tool" : "user";
                 messages.Add(new ChatMessageData
                 {
                     Role = toolRole,
@@ -373,6 +408,23 @@ namespace RPAWriter.Core.AgentTools
             return "Обнаружено зацикливание: агент несколько раз подряд вызвал инструмент «" +
                 (toolName ?? "") + "» с теми же аргументами (порог " + threshold + "). " +
                 "Остановлено, чтобы не сжигать бюджет. Уточните запрос или попросите агента сменить подход.";
+        }
+
+        /// <summary>
+        /// Appends a stub tool result for a call that the stagnant-loop guard did not execute
+        /// (stopped or nudged). In native mode the stub keeps the assistant <c>tool_calls</c>
+        /// block paired with a <c>tool</c> message (same <c>tool_call_id</c>), otherwise the
+        /// provider rejects the transcript on the next request.
+        /// </summary>
+        private static void AppendStagnantLoopStub(List<ChatMessageData> messages, string toolName, string toolCallId, ContextBudget budget, bool native, string reason = "blocked: stagnant loop detected.")
+        {
+            var role = native ? "tool" : (budget.UseToolRole ? "tool" : "user");
+            messages.Add(new ChatMessageData
+            {
+                Role = role,
+                Content = "Tool \"" + (toolName ?? "") + "\" " + reason,
+                ToolCallId = toolCallId ?? ""
+            });
         }
 
         private static AgentRunResult Result(string finalText, string reasoning, IReadOnlyList<ChatMessageData> messages)
