@@ -586,7 +586,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="3*" MinHeight="60"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="1*" MinHeight="80"/>
@@ -670,84 +669,84 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="PinnedHeaderPanel" Grid.Row="2" Margin="0,0,0,4"
-                        Background="#1A64B5F6"
-                        BorderThickness="0" CornerRadius="2" Padding="8,6"
-                        Visibility="Collapsed">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
-                                    VerticalAlignment="Top" Click="OnPinnedExpandToggle"
-                                    ToolTip="Expand/collapse message">
-                                <Viewbox Width="16" Height="16">
-                                    <Polyline x:Name="PinnedExpandGlyph"
-                                              Points="9,18 15,12 9,6"
-                                              Stroke="{StaticResource Dark.Text}"
-                                              StrokeThickness="2"
-                                              StrokeLineJoin="Round"
-                                              StrokeStartLineCap="Round"
-                                              StrokeEndLineCap="Round"
-                                              Fill="Transparent"/>
-                                </Viewbox>
-                            </Button>
-                            <TextBlock x:Name="PinnedSummaryText" Grid.Column="1" Margin="8,0,8,0"
-                                       VerticalAlignment="Center" TextWrapping="NoWrap"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding SingleLineDisplayText, Mode=OneWay}"/>
-                            <ScrollViewer x:Name="PinnedTextScroll" Grid.Column="1" Margin="8,0,8,0"
-                                          VerticalAlignment="Top" MaxHeight="240"
-                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                          Visibility="Collapsed">
-                                <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <ContentControl Content="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                                    VerticalAlignment="Top" Margin="0,0,10,0"
-                                    ToolTip="Copy message" Click="OnCopyPinnedMessage">
-                                <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
-                            </Button>
-                            <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
-                                    VerticalAlignment="Top"
-                                    ToolTip="Close chat (no active chat)" Click="OnCloseChat">
-                                <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
-                            </Button>
-                        </Grid>
-                        <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"
-                                                   UsedTokens="{Binding DataContext.Chat.ActiveChatConversation.UsedTokens, ElementName=MyToolWindow}"
-                                                   SessionUsage="{Binding DataContext.Chat.ActiveChatConversation.Usage, ElementName=MyToolWindow}"
-                                                   ContextWindowSize="{Binding DataContext.Chat.ContextWindowSize, ElementName=MyToolWindow}"
-                                                   CompactThresholdTokens="{Binding DataContext.Chat.CompactThresholdTokens, ElementName=MyToolWindow}"
-                                                   MaxInputTokens="{Binding DataContext.Chat.MaxInputTokens, ElementName=MyToolWindow}"/>
-                    </Grid>
-                </Border>
-
-                <Grid x:Name="MessagesHostPanel" Grid.Row="3" Margin="0,0,0,5">
+                <Grid x:Name="MessagesHostPanel" Grid.Row="2" Margin="0,0,0,5">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="0"/>
-                    <controls:MessageQueueControl x:Name="MessageQueue" Grid.Row="1" Margin="0,4,0,0"/>
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,4">
+                    <Border x:Name="PinnedHeaderPanel" Grid.Row="0" Margin="0,0,0,4"
+                            Background="#1A64B5F6"
+                            BorderThickness="0" CornerRadius="2" Padding="8,6"
+                            Visibility="Collapsed">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                                        VerticalAlignment="Top" Click="OnPinnedExpandToggle"
+                                        ToolTip="Expand/collapse message">
+                                    <Viewbox Width="16" Height="16">
+                                        <Polyline x:Name="PinnedExpandGlyph"
+                                                  Points="9,18 15,12 9,6"
+                                                  Stroke="{StaticResource Dark.Text}"
+                                                  StrokeThickness="2"
+                                                  StrokeLineJoin="Round"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  Fill="Transparent"/>
+                                    </Viewbox>
+                                </Button>
+                                <TextBlock x:Name="PinnedSummaryText" Grid.Column="1" Margin="8,0,8,0"
+                                           VerticalAlignment="Center" TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding SingleLineDisplayText, Mode=OneWay}"/>
+                                <ScrollViewer x:Name="PinnedTextScroll" Grid.Column="1" Margin="8,0,8,0"
+                                              VerticalAlignment="Top" MaxHeight="240"
+                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                              Visibility="Collapsed">
+                                    <ItemsControl ItemsSource="{Binding Blocks, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <ContentControl Content="{Binding}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                                <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                        VerticalAlignment="Top" Margin="0,0,10,0"
+                                        ToolTip="Copy message" Click="OnCopyPinnedMessage">
+                                    <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                          Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                </Button>
+                                <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
+                                        VerticalAlignment="Top"
+                                        ToolTip="Close chat (no active chat)" Click="OnCloseChat">
+                                    <TextBlock Text="✕" FontSize="12" Foreground="{StaticResource Dark.Text}"/>
+                                </Button>
+                            </Grid>
+                            <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"
+                                                       UsedTokens="{Binding DataContext.Chat.ActiveChatConversation.UsedTokens, ElementName=MyToolWindow}"
+                                                       SessionUsage="{Binding DataContext.Chat.ActiveChatConversation.Usage, ElementName=MyToolWindow}"
+                                                       ContextWindowSize="{Binding DataContext.Chat.ContextWindowSize, ElementName=MyToolWindow}"
+                                                       CompactThresholdTokens="{Binding DataContext.Chat.CompactThresholdTokens, ElementName=MyToolWindow}"
+                                                       MaxInputTokens="{Binding DataContext.Chat.MaxInputTokens, ElementName=MyToolWindow}"/>
+                        </Grid>
+                    </Border>
+                    <controls:ChatMessagesControl x:Name="ChatMessages" Grid.Row="1"/>
+                    <controls:MessageQueueControl x:Name="MessageQueue" Grid.Row="2" Margin="0,4,0,0"/>
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,4">
                         <TextBlock x:Name="AgentStatusText" VerticalAlignment="Center"
                                    Margin="0,3,8,0" TextWrapping="Wrap"
                                    Text="{Binding Chat.StatusText}"
@@ -788,21 +787,21 @@
                                    Text="{Binding Chat.StatusErrorText}"
                                    Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseErrorVisibility}}"/>
                     </StackPanel>
-                    <Button x:Name="CancelButton" Grid.Row="3" Content="Cancel" FontSize="14"
+                    <Button x:Name="CancelButton" Grid.Row="4" Content="Cancel" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,0" Click="OnCancelSend"
                             Visibility="{Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}"/>
-                    <Button x:Name="ResumeButton" Grid.Row="3" Content="Resume task" FontSize="14"
+                    <Button x:Name="ResumeButton" Grid.Row="4" Content="Resume task" FontSize="14"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1"
                             Padding="10,2"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Margin="0,0,0,0" Click="OnResumeTask"
                             Visibility="{Binding Chat.CanResume, Converter={StaticResource BoolToVis}}"/>
-                    <ItemsControl Grid.Row="4" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
+                    <ItemsControl Grid.Row="5" x:Name="AttachmentsList" Margin="0,0,0,4" Visibility="Collapsed">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel/>
@@ -825,11 +824,11 @@
                     </ItemsControl>
                 </Grid>
 
-                <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
+                <GridSplitter x:Name="ChatSplitter" Grid.Row="3" Height="5" HorizontalAlignment="Stretch"
                               VerticalAlignment="Center" ResizeDirection="Rows"
                               ResizeBehavior="PreviousAndNext"/>
 
-                <Grid x:Name="ChatInputPanel" Grid.Row="5">
+                <Grid x:Name="ChatInputPanel" Grid.Row="4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
@@ -1037,7 +1036,7 @@
                     </Grid>
                 </Border>
 
-                <Grid x:Name="HistoryViewPanel" Grid.Row="0" Grid.RowSpan="6"
+                <Grid x:Name="HistoryViewPanel" Grid.Row="0" Grid.RowSpan="5"
                       Background="{StaticResource Dark.Window}" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
