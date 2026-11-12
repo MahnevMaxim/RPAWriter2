@@ -890,5 +890,42 @@ namespace RPAWriter.Tests
 
             Assert.That(prompt, Does.Not.Contain(PromptDefaults.MemoryBankConventionInstructions));
         }
+
+        [Test]
+        public void Build_Plan_WithAllowedReadPaths_ListsThem()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Plan, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "", false, MemoryBankMode.Disabled, new[] { @"C:\Solution", @"C:\KB" });
+
+            Assert.That(prompt, Does.Contain("Allowed read paths (Plan mode)"));
+            Assert.That(prompt, Does.Contain(@"- C:\Solution"));
+            Assert.That(prompt, Does.Contain(@"- C:\KB"));
+        }
+
+        [Test]
+        public void Build_Plan_WithoutAllowedReadPaths_ShowsNone()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Plan, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All);
+
+            Assert.That(prompt, Does.Contain("Allowed read paths (Plan mode)"));
+            Assert.That(prompt, Does.Contain("(none)"));
+            Assert.That(prompt, Does.Not.Contain("{allowed_read_paths}"));
+        }
+
+        [Test]
+        public void Build_Act_DoesNotContainAllowedReadPathsSection()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All, "", false, MemoryBankMode.Disabled, new[] { @"C:\Solution" });
+
+            Assert.That(prompt, Does.Not.Contain("Allowed read paths (Plan mode)"));
+        }
+
+        [Test]
+        public void Build_PlanNative_WithAllowedReadPaths_ListsThem()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Plan, EmptyRegistry(), ToolCallingMode.Native, AgentPermissions.All, "", false, MemoryBankMode.Disabled, new[] { @"C:\Solution" });
+
+            Assert.That(prompt, Does.Contain("Allowed read paths (Plan mode)"));
+            Assert.That(prompt, Does.Contain(@"- C:\Solution"));
+        }
     }
 }

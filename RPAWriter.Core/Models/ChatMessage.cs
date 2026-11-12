@@ -174,7 +174,7 @@ namespace RPAWriter.Core.Models
             {
                 switch (Kind)
                 {
-                    case ChatMessageKind.User: return "You: ";
+                    case ChatMessageKind.User: return "";
                     case ChatMessageKind.AgentText:
                     case ChatMessageKind.ResultAnswerPlan:
                     case ChatMessageKind.ResultAnswerAct:

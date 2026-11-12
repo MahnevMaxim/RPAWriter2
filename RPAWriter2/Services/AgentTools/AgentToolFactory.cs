@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1388,7 +1388,7 @@ namespace RPAWriter2.Services.AgentTools
         }
 
         /// <summary>Allowed roots for the agent's read tools (empty entries are ignored).</summary>
-        private IReadOnlyList<string> GetReadRoots()
+        public IReadOnlyList<string> GetReadRoots()
         {
             var roots = new List<string>();
             AddRoot(roots, _getSolutionDir());

@@ -92,6 +92,13 @@ namespace RPAWriter.Core.Models
         public List<ChatHistoryMessage> Messages { get; set; } = new List<ChatHistoryMessage>();
 
         /// <summary>
+        /// Canonical provider transcript (JSON) persisted with the conversation, so a reopened chat
+        /// continues with the exact native tool_calls/tool_call_id structure and keeps the provider's
+        /// prompt cache hot. Empty for conversations saved before this field existed (legacy fallback).
+        /// </summary>
+        public string ProviderTranscriptJson { get; set; } = "";
+
+        /// <summary>
         /// Derived display flag: <c>true</c> while this conversation is the model's
         /// <c>ChatModel.ActiveChatConversation</c>. It mirrors that property only —
         /// it is not a second source of activity, is never persisted, and the view must not set it

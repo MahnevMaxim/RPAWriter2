@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
@@ -24,35 +25,40 @@ namespace RPAWriter.Core.AgentTools
         }
 
         /// <summary>Builds the prompt for a mode, protocol and allowed permission set.</summary>
-        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed)
+        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, IReadOnlyList<string> allowedReadPaths = null)
         {
             if (mode == AgentMode.Help)
                 return BuildHelpSupportPrompt();
 
+            string prompt;
             if (toolCallingMode == ToolCallingMode.Native)
             {
-                return mode == AgentMode.Act
+                prompt = mode == AgentMode.Act
                     ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-system-native.txt", PromptDefaults.AgentActSystemPromptNative)
                     : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-system-native.txt", PromptDefaults.AgentPlanSystemPromptNative);
             }
-
-            var basePrompt = PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-json-base.txt", PromptDefaults.AgentJsonBaseSystemPrompt);
-            var modeInstructions = mode == AgentMode.Act
-                ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-mode-instructions.txt", PromptDefaults.AgentActModeInstructions)
-                : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-mode-instructions.txt", PromptDefaults.AgentPlanModeInstructions);
-
-            var sb = new StringBuilder();
-            foreach (var t in registry.ForMode(mode, allowed))
+            else
             {
-                sb.Append("- ").Append(t.Name).Append(": ").Append(t.Description);
-                sb.Append(" Parameters: ").AppendLine(t.ParametersSchema);
+                var basePrompt = PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-json-base.txt", PromptDefaults.AgentJsonBaseSystemPrompt);
+                var modeInstructions = mode == AgentMode.Act
+                    ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-mode-instructions.txt", PromptDefaults.AgentActModeInstructions)
+                    : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-mode-instructions.txt", PromptDefaults.AgentPlanModeInstructions);
+
+                var sb = new StringBuilder();
+                foreach (var t in registry.ForMode(mode, allowed))
+                {
+                    sb.Append("- ").Append(t.Name).Append(": ").Append(t.Description);
+                    sb.Append(" Parameters: ").AppendLine(t.ParametersSchema);
+                }
+
+                var toolList = sb.ToString();
+                if (string.IsNullOrWhiteSpace(toolList))
+                    toolList = "(none)";
+
+                prompt = basePrompt.Replace("{tools}", toolList).Replace("{mode_instructions}", modeInstructions);
             }
 
-            var toolList = sb.ToString();
-            if (string.IsNullOrWhiteSpace(toolList))
-                toolList = "(none)";
-
-            return basePrompt.Replace("{tools}", toolList).Replace("{mode_instructions}", modeInstructions);
+            return prompt.Replace("{allowed_read_paths}", FormatAllowedReadPaths(allowedReadPaths));
         }
 
         /// <summary>
@@ -69,9 +75,9 @@ namespace RPAWriter.Core.AgentTools
         /// Builds the prompt for a mode, protocol, permission set, optional user addressing
         /// and an optional memory-bank convention.
         /// </summary>
-        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, string userName, bool addressByName, MemoryBankMode memoryBankMode)
+        public static string Build(AgentMode mode, AgentToolRegistry registry, ToolCallingMode toolCallingMode, AgentPermissions allowed, string userName, bool addressByName, MemoryBankMode memoryBankMode, IReadOnlyList<string> allowedReadPaths = null)
         {
-            var prompt = Build(mode, registry, toolCallingMode, allowed);
+            var prompt = Build(mode, registry, toolCallingMode, allowed, allowedReadPaths);
             var name = (userName ?? string.Empty).Trim();
             if (addressByName && name.Length > 0)
                 prompt = prompt + "\n\nAddress the user by their name when replying: \"" + name + "\".";
@@ -80,6 +86,24 @@ namespace RPAWriter.Core.AgentTools
                 prompt = prompt + "\n\n" + PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "memory-bank-convention.txt", PromptDefaults.MemoryBankConventionInstructions);
 
             return prompt;
+        }
+
+        /// <summary>Formats the allowed read paths into a bullet list for the prompt (empty list → "(none)").</summary>
+        private static string FormatAllowedReadPaths(IReadOnlyList<string> paths)
+        {
+            if (paths == null || paths.Count == 0)
+                return "(none)";
+
+            var sb = new StringBuilder();
+            foreach (var path in paths)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                    continue;
+                sb.Append("- ").AppendLine(path);
+            }
+
+            var result = sb.ToString();
+            return string.IsNullOrWhiteSpace(result) ? "(none)" : result;
         }
 
         /// <summary>Builds the Help-mode support prompt: the support persona plus the bundled user documentation.</summary>

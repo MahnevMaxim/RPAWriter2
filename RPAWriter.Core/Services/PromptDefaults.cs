@@ -101,7 +101,10 @@ namespace RPAWriter.Core.Services
             "Workflow:\n" +
             "1. Gather the information you need with read-only tools (several independent reads may be batched in one turn).\n" +
             "2. Do not answer final until you have actually read the relevant content.\n" +
-            "3. When you have enough information, answer with {\"action\":\"final\",...}.";
+            "3. When you have enough information, answer with {\"action\":\"final\",...}." +
+            "\n\n" +
+            "Allowed read paths (Plan mode). You may read files only inside these paths:\n" +
+            "{allowed_read_paths}";
 
         public const string AgentActModeInstructions =
             "# Mode: ACT (full access)\n\n" +
@@ -124,7 +127,10 @@ namespace RPAWriter.Core.Services
             "Always answer in Russian unless the user writes in another language.\n" +
             "Always be polite, courteous and respectful in your replies.\n\n" +
             "Reading source files: use read_files to read one or more files. It reads from the open Visual Studio editor tab (including unsaved changes and crash-recovery buffers) when the file is open, and from disk otherwise. Pass several files in one call and use start_line/end_line to page through long files.\n\n" +
-            "Tools are provided as native function definitions. Invoke them directly as function calls - do not write any text-based tool-call format (no JSON action objects, no XML or DSML tags). Call a tool whenever you need information, then answer the user in Russian. Read before you answer; never state file content you have not actually read. You may call several independent read tools in one turn.";
+            "Tools are provided as native function definitions. Invoke them directly as function calls - do not write any text-based tool-call format (no JSON action objects, no XML or DSML tags). Call a tool whenever you need information, then answer the user in Russian. Read before you answer; never state file content you have not actually read. You may call several independent read tools in one turn." +
+            "\n\n" +
+            "Allowed read paths (Plan mode). You may read files only inside these paths:\n" +
+            "{allowed_read_paths}";
 
         public const string AgentActSystemPromptNative =
             "You are an RPA robot development agent for Windows Workflow Foundation, running in ACT mode.\n" +

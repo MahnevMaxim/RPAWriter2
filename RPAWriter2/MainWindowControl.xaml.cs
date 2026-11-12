@@ -76,6 +76,7 @@ namespace RPAWriter2
         // Mode and phase are read from _chatModel directly: the footer controls bind to them, so
         // there is nothing left for the host to mirror (documentation/13-model-layer.md, phase E).
         private AgentToolRegistry? _toolRegistry;
+        private AgentToolFactory? _toolFactory;
         private AgentRunner? _agentRunner;
         private readonly List<McpClient> _mcpClients = new List<McpClient>();
         private IReadOnlyList<IAgentTool> _mcpAdapters = new List<IAgentTool>();
@@ -1980,6 +1981,20 @@ namespace RPAWriter2
             _providerTranscript = new List<ChatMessageData>();
         }
 
+        /// <summary>
+        /// Copies the canonical provider transcript onto the active conversation so the next history save
+        /// persists it. A reopened chat then restores the exact native tool_calls/tool_call_id structure
+        /// and keeps the provider's prompt cache hot. The live agent loop is not affected: it always uses
+        /// the in-memory <see cref="_providerTranscript"/>.
+        /// </summary>
+        private void PersistProviderTranscript()
+        {
+            var conversation = _chatModel?.ActiveChatConversation;
+            if (conversation == null)
+                return;
+            conversation.ProviderTranscriptJson = ProviderTranscriptCodec.Serialize(_providerTranscript);
+        }
+
         private void ShowChatStatusError(string message)
         {
             if (!Dispatcher.CheckAccess())
@@ -2655,6 +2670,7 @@ namespace RPAWriter2
 
                 var result = await run(cts.Token, progress, resumeProgress);
                 _providerTranscript = (result.Transcript ?? new List<ChatMessageData>()).ToList();
+                PersistProviderTranscript();
 
                 reasoningTimer.Stop();
 
@@ -2864,9 +2880,10 @@ namespace RPAWriter2
                     case ChatMessageKind.ToolCall:
                     case ChatMessageKind.ToolBlocked:
                     {
-                        // Fallback reconstruction from persisted history: the exact tool-call
-                        // arguments are not stored, so both the request and the result are emitted
-                        // in a flat form the provider can still consume.
+                        // Fallback reconstruction from persisted history (used only when no canonical
+                        // provider transcript was persisted): the exact tool-call arguments are not
+                        // stored, so both the request and the result are emitted in a flat, provider-safe
+                        // form. The live agent loop is unaffected — it uses the canonical transcript.
                         var payload = message.Payload as ToolCallPayload;
                         var toolName = payload?.ToolName ?? "";
                         transcript.Add(new ChatMessageData { Role = "assistant", Content = "Tool call: " + toolName });
@@ -2877,7 +2894,10 @@ namespace RPAWriter2
                         }
                         else
                         {
-                            transcript.Add(new ChatMessageData { Role = "tool", Content = "Tool \"" + toolName + "\" returned:\n" + (payload?.Result ?? "") });
+                            // Emit the result as a plain "user" message: the exact native tool_calls
+                            // structure (arguments/ids) is not persisted, and a bare "tool" role without
+                            // a matching tool_calls block is rejected by native providers (400).
+                            transcript.Add(new ChatMessageData { Role = "user", Content = "Tool \"" + toolName + "\" returned:\n" + (payload?.Result ?? "") });
                         }
                         break;
                     }
@@ -2944,7 +2964,7 @@ namespace RPAWriter2
             var runner = new AgentRunner(
                 _ai,
                 registry,
-                m => AgentPromptBuilder.Build(m, registry, toolCallingMode, allowedPermissions),
+                m => AgentPromptBuilder.Build(m, registry, toolCallingMode, allowedPermissions, GetReadRootsForPrompt()),
                 budget,
                 toolCallingMode: toolCallingMode,
                 allowedPermissions: allowedPermissions);
@@ -2998,7 +3018,7 @@ namespace RPAWriter2
                 ? ToolCallingMode.Native
                 : ToolCallingMode.JsonChat;
             var allowedPermissions = BuildAllowedPermissions();
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false, memoryBankMode), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false, memoryBankMode, GetReadRootsForPrompt()), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
@@ -3149,6 +3169,7 @@ namespace RPAWriter2
                 }).ToList();
                 _chatModel.ApplyCompactedTranscript(compactedMessages);
                 _providerTranscript = (condensed ?? transcript).ToList();
+                PersistProviderTranscript();
                 AppendCompaction("Context compacted (summarized).");
                 ScheduleHistorySave();
             }
@@ -3320,6 +3341,11 @@ namespace RPAWriter2
             return MemoryBankMode.Disabled;
         }
 
+        private IReadOnlyList<string> GetReadRootsForPrompt()
+        {
+            return _toolFactory?.GetReadRoots() ?? Array.Empty<string>();
+        }
+
         private AgentToolRegistry BuildToolRegistry(MemoryBankMode memoryBankMode)
         {
             var factory = new AgentToolFactory(
@@ -3342,6 +3368,7 @@ namespace RPAWriter2
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
                 () => _chatModel.Mode);
+            _toolFactory = factory;
             factory.PixMwfStore = PixMwfMappingStore.Shared;
             var registry = factory.CreateRegistry();
             foreach (var adapter in _mcpAdapters)
@@ -3549,9 +3576,12 @@ namespace RPAWriter2
             RehydrateCheckpoints();
             ChatMessages.ScrollToEnd();
 
-            // Rebuild the canonical provider transcript from the loaded messages (fallback path:
-            // tool arguments are not persisted, so this is a flat approximation).
-            _providerTranscript = BuildTranscript();
+            // Restore the canonical provider transcript persisted with the conversation, so the exact
+            // native tool_calls/tool_call_id structure survives a reopen and the provider's prompt cache
+            // stays hot. Legacy conversations without a persisted transcript fall back to the flat
+            // reconstruction below (the live agent loop is unaffected by that fallback).
+            var restoredTranscript = ProviderTranscriptCodec.Deserialize(_chatModel.ActiveChatConversation?.ProviderTranscriptJson);
+            _providerTranscript = restoredTranscript.Count > 0 ? restoredTranscript : BuildTranscript();
 
             _baselineCheckpointCreated = false;
             _lastCheckpointHash = GetLastCheckpointHash();

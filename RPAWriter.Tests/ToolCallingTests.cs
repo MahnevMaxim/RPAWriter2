@@ -318,6 +318,75 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task NativeMode_CompletesRunTool_ClosesRemainingToolCallsWithStubs()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("submit_and_exit", "submit", "{}", mutates: false,
+                (a, c) => Task.FromResult("The summary result"),
+                completesRun: true));
+            registry.Register(new AgentTool("another_tool", "another", "{}", mutates: false,
+                (a, c) => Task.FromResult("unused")));
+
+            var payload = new Dictionary<string, object>
+            {
+                ["choices"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["message"] = new Dictionary<string, object>
+                        {
+                            ["role"] = "assistant",
+                            ["content"] = null,
+                            ["tool_calls"] = new[]
+                            {
+                                new Dictionary<string, object>
+                                {
+                                    ["id"] = "call_1",
+                                    ["type"] = "function",
+                                    ["function"] = new Dictionary<string, object> { ["name"] = "submit_and_exit", ["arguments"] = "{}" }
+                                },
+                                new Dictionary<string, object>
+                                {
+                                    ["id"] = "call_2",
+                                    ["type"] = "function",
+                                    ["function"] = new Dictionary<string, object> { ["name"] = "another_tool", ["arguments"] = "{}" }
+                                }
+                            }
+                        },
+                        ["finish_reason"] = "tool_calls"
+                    }
+                }
+            };
+
+            var handler = new FakeHttpHandler { Responder = req => System.Text.Json.JsonSerializer.Serialize(payload) };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            {
+                ApiKey = "sk-test",
+                ToolCallingMode = ToolCallingMode.Native
+            }, new HttpClient(handler));
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, toolCallingMode: ToolCallingMode.Native);
+            var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("The summary result"));
+
+            // Every assistant tool_calls id must be followed by a paired "tool" result (native 400-safety).
+            var assistantToolCallIds = new List<string>();
+            var toolResultIds = new List<string>();
+            foreach (var message in result.Transcript)
+            {
+                if (message.ToolCalls != null)
+                    foreach (var call in message.ToolCalls)
+                        assistantToolCallIds.Add(call.Id);
+                if (message.Role == "tool")
+                    toolResultIds.Add(message.ToolCallId);
+            }
+
+            Assert.That(toolResultIds, Is.EquivalentTo(assistantToolCallIds));
+            Assert.That(toolResultIds, Does.Contain("call_2"), "the skipped call must still get a stub tool result");
+        }
+
+        [Test]
         public async Task NativeMode_MutatingToolInPlan_BlocksIt()
         {
             var executed = false;

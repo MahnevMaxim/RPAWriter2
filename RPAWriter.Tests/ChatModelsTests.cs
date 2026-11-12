@@ -29,7 +29,7 @@ namespace RPAWriter.Tests
         [Test]
         public void LabelDependsOnKindAndMode()
         {
-            Assert.That(new ChatMessage { Kind = ChatMessageKind.User }.Label, Is.EqualTo("You: "));
+            Assert.That(new ChatMessage { Kind = ChatMessageKind.User }.Label, Is.Empty);
             Assert.That(new ChatMessage { Kind = ChatMessageKind.AgentText }.Label, Is.EqualTo("Agent: "));
             Assert.That(
                 new ChatMessage { Kind = ChatMessageKind.ResultAnswerAct, Mode = "Act" }.Label,
@@ -39,12 +39,12 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void DisplayTextPrependsLabelForTextMessages()
+        public void DisplayTextUsesTextWithoutLabelForUserMessages()
         {
             var message = new ChatMessage { Kind = ChatMessageKind.User, Text = "hi" };
 
-            Assert.That(message.DisplayText, Is.EqualTo("You: hi"));
-            Assert.That(message.SingleLineDisplayText, Is.EqualTo("You: hi"));
+            Assert.That(message.DisplayText, Is.EqualTo("hi"));
+            Assert.That(message.SingleLineDisplayText, Is.EqualTo("hi"));
         }
 
         [Test]

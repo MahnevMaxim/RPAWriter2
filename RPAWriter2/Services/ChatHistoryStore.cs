@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     title TEXT NOT NULL,
     created_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL,
-    workspace_id TEXT NOT NULL DEFAULT ''
+    workspace_id TEXT NOT NULL DEFAULT '',
+    provider_transcript TEXT NULL
 );
 " + CreateMessagesSql + CreateMessagesBackupSql;
                 command.ExecuteNonQuery();
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS conversations (
             {
                 EnsureColumn(connection, "conversations", "workspace_id", "TEXT NOT NULL DEFAULT ''");
                 EnsureColumn(connection, "conversations", "is_important", "INTEGER NOT NULL DEFAULT 0");
+                EnsureColumn(connection, "conversations", "provider_transcript", "TEXT NULL");
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
@@ -157,6 +159,15 @@ LIMIT @limit;";
                 if (conversation == null)
                     return null;
 
+                using (var transcript = connection.CreateCommand())
+                {
+                    transcript.CommandText = "SELECT provider_transcript FROM conversations WHERE id = @id AND (workspace_id = @workspace OR workspace_id = '');";
+                    transcript.Parameters.AddWithValue("@id", id);
+                    transcript.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
+                    var value = transcript.ExecuteScalar();
+                    conversation.ProviderTranscriptJson = value as string ?? "";
+                }
+
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
@@ -210,14 +221,15 @@ ORDER BY position;";
                 {
                     upsert.Transaction = transaction;
                     upsert.CommandText = @"
-INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, workspace_id, is_important)
-VALUES (@id, @title, @created, @updated, @workspace, @important);";
+INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, workspace_id, is_important, provider_transcript)
+VALUES (@id, @title, @created, @updated, @workspace, @important, @provider_transcript);";
                     upsert.Parameters.AddWithValue("@id", conversation.Id);
                     upsert.Parameters.AddWithValue("@title", string.IsNullOrWhiteSpace(conversation.Title) ? "New chat" : conversation.Title);
                     upsert.Parameters.AddWithValue("@created", ToTimestamp(conversation.CreatedAtUtc));
                     upsert.Parameters.AddWithValue("@updated", ToTimestamp(conversation.UpdatedAtUtc));
                     upsert.Parameters.AddWithValue("@workspace", WorkspaceId ?? "");
                     upsert.Parameters.AddWithValue("@important", conversation.IsImportant ? 1 : 0);
+                    upsert.Parameters.AddWithValue("@provider_transcript", conversation.ProviderTranscriptJson ?? "");
                     upsert.ExecuteNonQuery();
                 }
 

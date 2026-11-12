@@ -755,7 +755,13 @@ namespace RPAWriter.Core.Services
         {
             var baseSeconds = Math.Max(0, _options.RetryBaseDelay.TotalSeconds);
             var maxSeconds = Math.Max(baseSeconds, _options.RetryMaxDelay.TotalSeconds);
-            var seconds = Math.Min(maxSeconds, baseSeconds * Math.Pow(2.0, attempt - 1));
+
+            // Cap the exponent so Math.Pow(2, exponent) stays finite. Without the cap, a zero base
+            // delay multiplied by an overflowing 2^attempt yields NaN (0 * Infinity), which makes
+            // TimeSpan.FromSeconds throw instead of the loop falling through to the provider error.
+            var exponent = Math.Min(Math.Max(attempt - 1, 0), 1023);
+            var seconds = Math.Min(maxSeconds, baseSeconds * Math.Pow(2.0, exponent));
+
             var jitter = seconds * 0.2 * _random.NextDouble();
             return TimeSpan.FromSeconds(seconds + jitter);
         }
@@ -1005,8 +1011,18 @@ namespace RPAWriter.Core.Services
 
                 if (native && string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Native tool calling: keep the "tool" role and echo the tool_call_id.
-                    list.Add(new { role = "tool", content = content, tool_call_id = m.ToolCallId ?? "" });
+                    // Native tool calling: keep the "tool" role and echo the tool_call_id. An orphaned tool
+                    // result (no tool_call_id) cannot be paired with a preceding tool_calls block, so it is
+                    // downgraded to "user" instead of sending an invalid empty tool_call_id.
+                    if (string.IsNullOrWhiteSpace(m?.ToolCallId))
+                    {
+                        role = "user";
+                        list.Add(new { role = role, content = content });
+                    }
+                    else
+                    {
+                        list.Add(new { role = "tool", content = content, tool_call_id = m.ToolCallId });
+                    }
                 }
                 else if (native && string.Equals(role, "assistant", StringComparison.OrdinalIgnoreCase) && m.ToolCalls != null && m.ToolCalls.Count > 0)
                 {

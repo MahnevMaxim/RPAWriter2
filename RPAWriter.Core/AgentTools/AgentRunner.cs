@@ -304,7 +304,17 @@ namespace RPAWriter.Core.AgentTools
                         }
                         var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
                         if (finalText != null)
+                        {
+                            // The assistant "tool_calls" block above may list further calls after the one that
+                            // completed the run; close them with stub results so every id stays paired with a
+                            // "tool" result and the next turn's transcript remains valid (400: out of sync).
+                            for (var stubIndex = callIndex + 1; stubIndex < nativeCalls.Count; stubIndex++)
+                            {
+                                var stubCall = nativeCalls[stubIndex];
+                                AppendStagnantLoopStub(messages, stubCall.Name, stubCall.Id, effectiveBudget, native: true, reason: "skipped: run completed by an earlier tool.");
+                            }
                             return Result(finalText, response.Reasoning, messages);
+                        }
                     }
                     continue;
                 }

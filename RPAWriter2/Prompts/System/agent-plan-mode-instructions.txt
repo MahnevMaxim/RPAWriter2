@@ -5,3 +5,6 @@ Workflow:
 1. Gather the information you need with read-only tools (several independent reads may be batched in one turn).
 2. Do not answer final until you have actually read the relevant content.
 3. When you have enough information, answer with {"action":"final",...}.
+
+Allowed read paths (Plan mode). You may read files only inside these paths:
+{allowed_read_paths}

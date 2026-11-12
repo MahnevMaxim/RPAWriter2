@@ -128,6 +128,22 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void SaveAndOpen_RoundTripsProviderTranscriptJson()
+        {
+            var model = CreateModel();
+            model.Messages.Add(UserText("hello"));
+            model.ActiveChatConversation.ProviderTranscriptJson = "{\"Role\":\"user\",\"Content\":\"hi\"}";
+            model.SaveHistoryNow();
+
+            var stored = _store.Peek(model.ActiveConversationId);
+            Assert.That(stored.ProviderTranscriptJson, Is.EqualTo("{\"Role\":\"user\",\"Content\":\"hi\"}"));
+
+            var reopened = CreateModel(withActiveChat: false);
+            Assert.That(reopened.OpenConversation(model.ActiveConversationId), Is.True);
+            Assert.That(reopened.ActiveChatConversation.ProviderTranscriptJson, Is.EqualTo("{\"Role\":\"user\",\"Content\":\"hi\"}"));
+        }
+
+        [Test]
         public void Run_IsIdempotent()
         {
             var model = CreateModel();

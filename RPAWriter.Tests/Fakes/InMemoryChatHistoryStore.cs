@@ -158,6 +158,7 @@ namespace RPAWriter.Tests.Fakes
                 CreatedAtUtc = source.CreatedAtUtc,
                 UpdatedAtUtc = source.UpdatedAtUtc,
                 IsImportant = source.IsImportant,
+                ProviderTranscriptJson = source.ProviderTranscriptJson ?? "",
                 // IsActive is deliberately not copied: the green indicator is view state, not data.
                 Messages = (source.Messages ?? new List<ChatHistoryMessage>())
                     .Select(m => new ChatHistoryMessage
