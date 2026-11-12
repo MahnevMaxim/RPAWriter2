@@ -37,6 +37,8 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> _askQuestionAsync;
         private readonly Func<string?> _getSkillsPath;
         private readonly Func<IReadOnlyList<string>> _getAdditionalReadRoots;
+        private readonly Func<bool> _getDenyServiceDirectories;
+        private readonly Func<bool> _getDenySensitiveFiles;
         private readonly ShellCommandService _shell = new ShellCommandService();
         private readonly MemoryBankMode _memoryBankMode;
         private readonly Func<string, string, CancellationToken, Task<string>> _spawnSubAgentAsync;
@@ -58,6 +60,8 @@ namespace RPAWriter2.Services.AgentTools
             Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> askQuestionAsync,
             Func<string?> getSkillsPath,
             Func<IReadOnlyList<string>> getAdditionalReadRoots,
+            Func<bool> getDenyServiceDirectories,
+            Func<bool> getDenySensitiveFiles,
             MemoryBankMode memoryBankMode,
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
@@ -76,6 +80,8 @@ namespace RPAWriter2.Services.AgentTools
             _askQuestionAsync = askQuestionAsync ?? throw new ArgumentNullException(nameof(askQuestionAsync));
             _getSkillsPath = getSkillsPath ?? throw new ArgumentNullException(nameof(getSkillsPath));
             _getAdditionalReadRoots = getAdditionalReadRoots ?? (() => Array.Empty<string>());
+            _getDenyServiceDirectories = getDenyServiceDirectories ?? (() => true);
+            _getDenySensitiveFiles = getDenySensitiveFiles ?? (() => true);
             _memoryBankMode = memoryBankMode;
             _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
             _enableSubagents = enableSubagents;
@@ -1414,7 +1420,7 @@ namespace RPAWriter2.Services.AgentTools
         /// </summary>
         private bool IsReadAllowed(string fullPath)
         {
-            return ReadPathPolicy.IsReadAllowed(fullPath, GetReadRoots(), _getMode());
+            return ReadPathPolicy.IsReadAllowed(fullPath, GetReadRoots(), _getMode(), _getDenyServiceDirectories(), _getDenySensitiveFiles());
         }
 
         private string ResolvePath(string path)

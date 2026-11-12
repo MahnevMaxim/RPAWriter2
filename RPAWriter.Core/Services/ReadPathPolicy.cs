@@ -41,7 +41,7 @@ namespace RPAWriter.Core.Services
         /// denied directory or a sensitive/secret file. Returns false for empty/invalid paths and when
         /// no roots are configured (secure by default).
         /// </summary>
-        public static bool IsAllowed(string fullPath, IReadOnlyCollection<string> allowedRoots)
+        public static bool IsAllowed(string fullPath, IReadOnlyCollection<string> allowedRoots, bool denyServiceDirectories = true, bool denySensitiveFiles = true)
         {
             if (string.IsNullOrWhiteSpace(fullPath))
                 return false;
@@ -57,13 +57,16 @@ namespace RPAWriter.Core.Services
             }
 
             // 1. Deny service/build directories anywhere along the path.
-            if (GetPathSegments(full).Any(DeniedDirectoryNames.Contains))
+            if (denyServiceDirectories && GetPathSegments(full).Any(DeniedDirectoryNames.Contains))
                 return false;
 
             // 2. Deny sensitive/secret file names.
-            var fileName = Path.GetFileName(full);
-            if (!string.IsNullOrWhiteSpace(fileName) && IsDeniedFileName(fileName))
-                return false;
+            if (denySensitiveFiles)
+            {
+                var fileName = Path.GetFileName(full);
+                if (!string.IsNullOrWhiteSpace(fileName) && IsDeniedFileName(fileName))
+                    return false;
+            }
 
             // 3. Allow only inside one of the configured roots.
             if (allowedRoots == null || allowedRoots.Count == 0)
@@ -101,11 +104,11 @@ namespace RPAWriter.Core.Services
         /// Mode-aware read gate. In Act mode the agent has full read access (any path, including
         /// secrets); in every other mode the strict <see cref="IsAllowed"/> policy is applied.
         /// </summary>
-        public static bool IsReadAllowed(string fullPath, IReadOnlyCollection<string> allowedRoots, AgentMode mode)
+        public static bool IsReadAllowed(string fullPath, IReadOnlyCollection<string> allowedRoots, AgentMode mode, bool denyServiceDirectories = true, bool denySensitiveFiles = true)
         {
             if (mode == AgentMode.Act)
                 return true;
-            return IsAllowed(fullPath, allowedRoots);
+            return IsAllowed(fullPath, allowedRoots, denyServiceDirectories, denySensitiveFiles);
         }
 
         private static IEnumerable<string> GetPathSegments(string fullPath)

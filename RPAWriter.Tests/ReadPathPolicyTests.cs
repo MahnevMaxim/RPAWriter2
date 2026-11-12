@@ -113,5 +113,34 @@ namespace RPAWriter.Tests
         {
             Assert.That(ReadPathPolicy.IsReadAllowed(@"C:\Solution\.env", SolutionRoot, AgentMode.Help), Is.False);
         }
+
+        [Test]
+        public void IsAllowed_DeniedDirectories_CanBeDisabled()
+        {
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\bin\Debug\app.dll", SolutionRoot, denyServiceDirectories: false), Is.True);
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\obj\a.cs", SolutionRoot, denyServiceDirectories: false), Is.True);
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\.git\config", SolutionRoot, denyServiceDirectories: false), Is.True);
+            // Sensitive-file denial is still active.
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\.env", SolutionRoot, denyServiceDirectories: false), Is.False);
+        }
+
+        [Test]
+        public void IsAllowed_SecretFiles_CanBeDisabled()
+        {
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\.env", SolutionRoot, denySensitiveFiles: false), Is.True);
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\appsettings.json", SolutionRoot, denySensitiveFiles: false), Is.True);
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\cert.pem", SolutionRoot, denySensitiveFiles: false), Is.True);
+            // Service-directory denial is still active.
+            Assert.That(ReadPathPolicy.IsAllowed(@"C:\Solution\bin\a.dll", SolutionRoot, denySensitiveFiles: false), Is.False);
+        }
+
+        [Test]
+        public void IsReadAllowed_PlanMode_FlagsControlPolicy()
+        {
+            Assert.That(ReadPathPolicy.IsReadAllowed(@"C:\Solution\bin\a.dll", SolutionRoot, AgentMode.Plan, denyServiceDirectories: false), Is.True);
+            Assert.That(ReadPathPolicy.IsReadAllowed(@"C:\Solution\.env", SolutionRoot, AgentMode.Plan, denySensitiveFiles: false), Is.True);
+            // Act ignores the flags (full access).
+            Assert.That(ReadPathPolicy.IsReadAllowed(@"C:\Solution\.env", SolutionRoot, AgentMode.Act, denyServiceDirectories: false, denySensitiveFiles: false), Is.True);
+        }
     }
 }

@@ -92,6 +92,8 @@ namespace RPAWriter.Models
 
         private readonly ObservableCollection<string> _additionalReadPaths = new ObservableCollection<string>();
         private string _selectedReadPath;
+        private bool _denyServiceDirectories = true;
+        private bool _denySensitiveFiles = true;
 
         // Global fallback values of the log paths, kept so Save can write them back unchanged when
         // the effective (UI) values are workspace-scoped instead.
@@ -209,7 +211,9 @@ namespace RPAWriter.Models
                 AutoCaptureRuntimeExceptions = _autoCaptureRuntimeExceptions,
                 CheckpointsEnabled = _checkpointsEnabled,
                 RobotNameHistory = new List<string>(_robotNameHistory),
-                AdditionalReadPaths = new List<string>(_additionalReadPaths)
+                AdditionalReadPaths = new List<string>(_additionalReadPaths),
+                DenyServiceDirectories = _denyServiceDirectories,
+                DenySensitiveFiles = _denySensitiveFiles
             };
         }
 
@@ -364,6 +368,9 @@ namespace RPAWriter.Models
                         _additionalReadPaths.Add(path.Trim());
                 }
             }
+
+            DenyServiceDirectories = data.DenyServiceDirectories;
+            DenySensitiveFiles = data.DenySensitiveFiles;
         }
 
         #region Read scope commands
@@ -579,6 +586,12 @@ namespace RPAWriter.Models
 
         /// <summary>Currently selected additional read directory (for the Remove command).</summary>
         public string SelectedReadPath { get => _selectedReadPath; set => SetProperty(ref _selectedReadPath, value); }
+
+        /// <summary>Deny reading service/build directories in non-Act modes.</summary>
+        public bool DenyServiceDirectories { get => _denyServiceDirectories; set => SetProperty(ref _denyServiceDirectories, value); }
+
+        /// <summary>Deny reading sensitive/secret files in non-Act modes.</summary>
+        public bool DenySensitiveFiles { get => _denySensitiveFiles; set => SetProperty(ref _denySensitiveFiles, value); }
 
         public int ContextWindowSize { get => _contextWindowSize; set => SetProperty(ref _contextWindowSize, value); }
 

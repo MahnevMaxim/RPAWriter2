@@ -174,6 +174,12 @@ namespace RPAWriter.Core.Services
         /// <summary>Additional directories the agent may read in Plan mode (beyond solution/KB/robots/skills).</summary>
         public List<string> AdditionalReadPaths { get; set; } = new List<string>();
 
+        /// <summary>Deny reading service/build directories (bin, obj, .git, .vs, node_modules, packages, TestResults, .idea, .vscode, __pycache__) in non-Act modes.</summary>
+        public bool DenyServiceDirectories { get; set; } = true;
+
+        /// <summary>Deny reading sensitive/secret files (.env, web.config, SSH keys, certificates, appsettings*.json, *credentials*) in non-Act modes.</summary>
+        public bool DenySensitiveFiles { get; set; } = true;
+
         /// <summary>
         /// Normalizes the settings in place: clamps out-of-range numbers and resets invalid enum
         /// strings to their defaults. Pure and independent of any store.

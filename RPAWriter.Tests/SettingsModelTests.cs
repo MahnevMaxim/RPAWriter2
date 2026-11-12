@@ -370,5 +370,22 @@ namespace RPAWriter.Tests
 
             Assert.That(reloaded.AdditionalReadPaths, Is.EquivalentTo(new[] { @"C:\Extra" }));
         }
+
+        [Test]
+        public void Save_RoundTripsReadPolicyFlags()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.DenyServiceDirectories = false;
+            model.DenySensitiveFiles = false;
+
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.DenyServiceDirectories, Is.False);
+            Assert.That(reloaded.DenySensitiveFiles, Is.False);
+        }
     }
 }

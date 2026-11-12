@@ -3335,6 +3335,8 @@ namespace RPAWriter2
                 AskQuestionAsync,
                 () => (_settings?.SkillsPath ?? "").Trim(),
                 () => (IReadOnlyList<string>)(_settings?.AdditionalReadPaths ?? new List<string>()),
+                () => _settings?.DenyServiceDirectories ?? true,
+                () => _settings?.DenySensitiveFiles ?? true,
                 memoryBankMode,
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
