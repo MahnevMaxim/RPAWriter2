@@ -43,6 +43,7 @@ namespace RPAWriter.Core.Models
         private bool _isActive;
         private bool _isImportant;
         private int _usedTokens;
+        private int _lastCacheHitTokens;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -147,6 +148,24 @@ namespace RPAWriter.Core.Models
             }
         }
 
+        /// <summary>
+        /// Cache-hit tokens reported for the most recent request (per-request, not the cumulative
+        /// <see cref="Usage"/> total). Runtime-only; drives the light-green cache segment of the
+        /// context-window bar. Written only by <see cref="AccumulateUsage"/>.
+        /// </summary>
+        public int LastCacheHitTokens
+        {
+            get => _lastCacheHitTokens;
+            private set
+            {
+                if (_lastCacheHitTokens != value)
+                {
+                    _lastCacheHitTokens = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         /// <summary>Adds a single request's usage to <see cref="Usage"/> and notifies bindings.</summary>
         public void AccumulateUsage(TokenUsage delta)
         {
@@ -159,6 +178,7 @@ namespace RPAWriter.Core.Models
             Usage.CacheHitTokens += delta.CacheHitTokens;
             Usage.CacheMissTokens += delta.CacheMissTokens;
             Usage.EstimatedCostUsd += delta.EstimatedCostUsd;
+            LastCacheHitTokens = Math.Max(0, delta.CacheHitTokens);
             OnPropertyChanged(nameof(Usage));
         }
 

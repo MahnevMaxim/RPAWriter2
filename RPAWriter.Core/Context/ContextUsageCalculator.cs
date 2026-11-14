@@ -37,6 +37,9 @@ namespace RPAWriter.Core.Context
         /// <summary>Fill ratio, clamped to 0..100; meaningful only when <see cref="IsAvailable"/> is true.</summary>
         public double RatioPercent { get; set; }
 
+        /// <summary>Fill ratio of the cache-hit segment (0..100), clamped to <see cref="RatioPercent"/>.</summary>
+        public double CacheHitRatioPercent { get; set; }
+
         /// <summary>Visual severity derived from the configured thresholds.</summary>
         public ContextUsageStatus Status { get; set; }
 
@@ -58,15 +61,17 @@ namespace RPAWriter.Core.Context
     {
         /// <summary>
         /// Computes the indicator state from the estimated input tokens, the context window
-        /// size, the two budget thresholds (compact and max-input) and the optional cumulative
-        /// session usage reported by the provider.
+        /// size, the two budget thresholds (compact and max-input), the optional cumulative
+        /// session usage reported by the provider and the cache-hit tokens of the most recent
+        /// request (the light-green segment, clamped to the used ratio).
         /// </summary>
         public static ContextUsageInfo Compute(
             int usedTokens,
             int contextWindowSize,
             int compactThresholdTokens,
             int maxInputTokens,
-            TokenUsage sessionUsage)
+            TokenUsage sessionUsage,
+            int cacheHitTokens = 0)
         {
             var info = new ContextUsageInfo
             {
@@ -85,6 +90,9 @@ namespace RPAWriter.Core.Context
 
             info.IsAvailable = true;
             info.RatioPercent = Math.Min(100.0, 100.0 * info.UsedTokens / info.ContextWindowSize);
+            info.CacheHitRatioPercent = Math.Min(
+                info.RatioPercent,
+                Math.Min(100.0, 100.0 * Math.Max(0, cacheHitTokens) / info.ContextWindowSize));
             info.FillText = string.Format(
                 CultureInfo.InvariantCulture,
                 "Context window: {0:N0} / {1:N0} tokens ({2}%)",

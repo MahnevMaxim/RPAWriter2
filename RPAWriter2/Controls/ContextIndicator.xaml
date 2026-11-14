@@ -11,8 +11,18 @@
     </UserControl.Resources>
 
     <StackPanel>
-        <ProgressBar x:Name="FillBar" Height="4" Minimum="0" Maximum="100" Value="0"
-                     Foreground="{StaticResource Dark.Text}"/>
+        <Grid x:Name="FillTrack" Height="4">
+            <Border Background="#33FFFFFF"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="CacheHitColumn" Width="0*"/>
+                    <ColumnDefinition x:Name="MissColumn" Width="0*"/>
+                    <ColumnDefinition x:Name="RemainderColumn" Width="1*"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="CacheHitSegment" Grid.Column="0" Background="#A5D6A7"/>
+                <Border x:Name="MissSegment" Grid.Column="1" Background="#6E6E6E"/>
+            </Grid>
+        </Grid>
         <TextBlock x:Name="FillText" Margin="0,4,0,0" Foreground="#C8C8C8"
                    Text="Context window: —"/>
         <TextBlock x:Name="StatsText" Margin="0,2,0,0" Foreground="#9A9A9A"

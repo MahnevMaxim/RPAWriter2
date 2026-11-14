@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -18,6 +19,7 @@ namespace RPAWriter2.Controls
         private static readonly Brush NormalBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x64, 0xB5, 0xF6)));
         private static readonly Brush WarningBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00)));
         private static readonly Brush OverflowBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36)));
+        private static readonly Brush CacheHitBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xA5, 0xD6, 0xA7)));
 
         public static readonly DependencyProperty UsedTokensProperty = DependencyProperty.Register(
             nameof(UsedTokens), typeof(int), typeof(ContextIndicator),
@@ -33,6 +35,10 @@ namespace RPAWriter2.Controls
 
         public static readonly DependencyProperty MaxInputTokensProperty = DependencyProperty.Register(
             nameof(MaxInputTokens), typeof(int), typeof(ContextIndicator),
+            new PropertyMetadata(0, OnStateChanged));
+
+        public static readonly DependencyProperty CacheHitTokensProperty = DependencyProperty.Register(
+            nameof(CacheHitTokens), typeof(int), typeof(ContextIndicator),
             new PropertyMetadata(0, OnStateChanged));
 
         public static readonly DependencyProperty SessionUsageProperty = DependencyProperty.Register(
@@ -77,6 +83,13 @@ namespace RPAWriter2.Controls
             set => SetValue(MaxInputTokensProperty, value);
         }
 
+        /// <summary>Cache-hit tokens of the most recent request; rendered as the light-green segment.</summary>
+        public int CacheHitTokens
+        {
+            get => (int)GetValue(CacheHitTokensProperty);
+            set => SetValue(CacheHitTokensProperty, value);
+        }
+
         /// <summary>Usage of the active conversation (total/cache/cost).</summary>
         public TokenUsage SessionUsage
         {
@@ -101,10 +114,17 @@ namespace RPAWriter2.Controls
                 ContextWindowSize,
                 CompactThresholdTokens,
                 MaxInputTokens,
-                SessionUsage);
+                SessionUsage,
+                CacheHitTokens);
 
-            FillBar.Value = info.RatioPercent;
-            FillBar.Foreground = BrushFor(info.Status);
+            var usedPercent = info.IsAvailable ? info.RatioPercent : 0.0;
+            var cachePercent = info.IsAvailable ? info.CacheHitRatioPercent : 0.0;
+
+            CacheHitColumn.Width = new GridLength(cachePercent, GridUnitType.Star);
+            MissColumn.Width = new GridLength(Math.Max(0.0, usedPercent - cachePercent), GridUnitType.Star);
+            RemainderColumn.Width = new GridLength(Math.Max(0.0, 100.0 - usedPercent), GridUnitType.Star);
+            CacheHitSegment.Background = CacheHitBrush;
+            MissSegment.Background = BrushFor(info.Status);
 
             FillText.Text = info.FillText;
             FillText.Visibility = ShowDetails ? Visibility.Visible : Visibility.Collapsed;

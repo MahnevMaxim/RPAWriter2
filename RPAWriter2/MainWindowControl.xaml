@@ -738,6 +738,7 @@
                             </Grid>
                             <controls:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Margin="0,6,0,0"
                                                        UsedTokens="{Binding DataContext.Chat.ActiveChatConversation.UsedTokens, ElementName=MyToolWindow}"
+                                                       CacheHitTokens="{Binding DataContext.Chat.ActiveChatConversation.LastCacheHitTokens, ElementName=MyToolWindow}"
                                                        SessionUsage="{Binding DataContext.Chat.ActiveChatConversation.Usage, ElementName=MyToolWindow}"
                                                        ContextWindowSize="{Binding DataContext.Chat.ContextWindowSize, ElementName=MyToolWindow}"
                                                        CompactThresholdTokens="{Binding DataContext.Chat.CompactThresholdTokens, ElementName=MyToolWindow}"

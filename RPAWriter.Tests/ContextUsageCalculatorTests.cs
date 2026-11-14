@@ -88,5 +88,38 @@ namespace RPAWriter.Tests
 
             Assert.That(info.StatsText, Is.EqualTo("Total 10"));
         }
+
+        [Test]
+        public void Compute_CacheHitRatio_IsProportionalToWindow()
+        {
+            var info = ContextUsageCalculator.Compute(30000, 100000, 0, 0, null, cacheHitTokens: 20000);
+
+            Assert.That(info.CacheHitRatioPercent, Is.EqualTo(20.0).Within(0.001));
+        }
+
+        [Test]
+        public void Compute_CacheHitRatio_ClampsToUsedRatio()
+        {
+            var info = ContextUsageCalculator.Compute(10000, 100000, 0, 0, null, cacheHitTokens: 50000);
+
+            Assert.That(info.RatioPercent, Is.EqualTo(10.0).Within(0.001));
+            Assert.That(info.CacheHitRatioPercent, Is.EqualTo(10.0).Within(0.001));
+        }
+
+        [Test]
+        public void Compute_CacheHitRatio_ZeroWithoutWindow()
+        {
+            var info = ContextUsageCalculator.Compute(1000, 0, 0, 0, null, cacheHitTokens: 500);
+
+            Assert.That(info.CacheHitRatioPercent, Is.Zero);
+        }
+
+        [Test]
+        public void Compute_CacheHitRatio_ZeroWhenNoCacheHit()
+        {
+            var info = ContextUsageCalculator.Compute(30000, 100000, 0, 0, null, cacheHitTokens: 0);
+
+            Assert.That(info.CacheHitRatioPercent, Is.Zero);
+        }
     }
 }

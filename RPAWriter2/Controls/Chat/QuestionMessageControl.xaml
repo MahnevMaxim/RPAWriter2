@@ -65,8 +65,6 @@
 
             <Border Margin="0,8,0,0"
                     Background="{StaticResource Chat.LastActBackground}"
-                    BorderBrush="{StaticResource Chat.LastActBorder}"
-                    BorderThickness="1"
                     CornerRadius="3"
                     Padding="8,4"
                     Visibility="{Binding Payload.IsFreeTextAnswer, Converter={StaticResource BoolToVis}}">

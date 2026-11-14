@@ -1525,6 +1525,16 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void RecordTokenUsage_SetsLastCacheHitFromRequest()
+        {
+            var model = CreateModel();
+
+            model.RecordTokenUsage(new TokenUsage { CacheHitTokens = 89, CacheMissTokens = 11 });
+
+            Assert.That(model.ActiveChatConversation.LastCacheHitTokens, Is.EqualTo(89));
+        }
+
+        [Test]
         public void SetEstimatedInputTokens_UpdatesActiveConversation()
         {
             var model = CreateModel();
