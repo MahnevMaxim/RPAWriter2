@@ -2463,6 +2463,8 @@ namespace RPAWriter2
             CommitAutoGenButton.IsEnabled = !busy;
         }
 
+        private const int CommitResultAutoHideSeconds = 5;
+
         /// <summary>
         /// Shows the commit result as a colored bar under the toolbar buttons instead of
         /// writing it into the chat: green on success, orange on failure.
@@ -2476,6 +2478,7 @@ namespace RPAWriter2
             }
             CommitResultBar.Kind = success ? NotificationKind.Success : NotificationKind.Error;
             CommitResultBar.Message = message;
+            CommitResultBar.AutoHideSeconds = success ? CommitResultAutoHideSeconds : 0;
             CommitResultBar.Visibility = Visibility.Visible;
         }
 

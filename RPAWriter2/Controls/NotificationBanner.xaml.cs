@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace RPAWriter2.Controls
 {
@@ -25,7 +26,7 @@ namespace RPAWriter2.Controls
 
         public static readonly DependencyProperty MessageProperty = DependencyProperty.Register(
             nameof(Message), typeof(string), typeof(NotificationBanner),
-            new PropertyMetadata(string.Empty));
+            new PropertyMetadata(string.Empty, OnMessageChanged));
 
         public static readonly DependencyProperty AccentBrushProperty = DependencyProperty.Register(
             nameof(AccentBrush), typeof(Brush), typeof(NotificationBanner),
@@ -40,9 +41,16 @@ namespace RPAWriter2.Controls
         public static readonly DependencyProperty ShowCloseProperty = DependencyProperty.Register(
             nameof(ShowClose), typeof(bool), typeof(NotificationBanner), new PropertyMetadata(true));
 
+        public static readonly DependencyProperty AutoHideSecondsProperty = DependencyProperty.Register(
+            nameof(AutoHideSeconds), typeof(int), typeof(NotificationBanner),
+            new PropertyMetadata(0, OnAutoHideSecondsChanged));
+
+        private DispatcherTimer? _autoHideTimer;
+
         public NotificationBanner()
         {
             InitializeComponent();
+            IsVisibleChanged += OnIsVisibleChanged;
         }
 
         /// <summary>Raised when the user clicks the close button.</summary>
@@ -86,6 +94,64 @@ namespace RPAWriter2.Controls
         {
             get => (bool)GetValue(ShowCloseProperty);
             set => SetValue(ShowCloseProperty, value);
+        }
+
+        /// <summary>
+        /// Number of seconds after which the banner hides itself by raising
+        /// <see cref="CloseRequested"/>. Zero (default) keeps the banner visible until the
+        /// user closes it manually.
+        /// </summary>
+        public int AutoHideSeconds
+        {
+            get => (int)GetValue(AutoHideSecondsProperty);
+            set => SetValue(AutoHideSecondsProperty, value);
+        }
+
+        private static void OnAutoHideSecondsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            ((NotificationBanner)d).RestartAutoHide();
+        }
+
+        private static void OnMessageChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            ((NotificationBanner)d).RestartAutoHide();
+        }
+
+        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if ((bool)e.NewValue)
+                RestartAutoHide();
+            else
+                StopAutoHide();
+        }
+
+        private void RestartAutoHide()
+        {
+            StopAutoHide();
+
+            if (AutoHideSeconds <= 0 || !IsVisible || string.IsNullOrEmpty(Message))
+                return;
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(AutoHideSeconds) };
+            timer.Tick += OnAutoHideTick;
+            _autoHideTimer = timer;
+            timer.Start();
+        }
+
+        private void StopAutoHide()
+        {
+            if (_autoHideTimer == null)
+                return;
+
+            _autoHideTimer.Stop();
+            _autoHideTimer.Tick -= OnAutoHideTick;
+            _autoHideTimer = null;
+        }
+
+        private void OnAutoHideTick(object? sender, EventArgs e)
+        {
+            StopAutoHide();
+            CloseRequested?.Invoke(this, new RoutedEventArgs());
         }
 
         private static void OnKindChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
