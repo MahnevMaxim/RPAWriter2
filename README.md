@@ -82,7 +82,7 @@
 | 11 | [Окно Converter](documentation/11-converter.md) | Конвертация UiPath/PIX → WF, импорт библиотек активностей, маппинг PIX ↔ MWF |
 | 12 | [Чекпоинты](documentation/12-checkpoints.md) | Авто-снимки файлов (теневой git-репозиторий), условия отсутствия конфликта с репозиторием робота, Compare/Restore |
 | 13 | [Слой моделей](documentation/13-model-layer.md) | `RPAWriter.Mvvm` + `RPAWriter.Models`, правила модели (без View/ViewModel, покрыта тестами), `ChatModel` и `LogAnalyzer` как эталоны модели |
-| 14 | [Рабочие пространства и MVVM-план](documentation/14-workspaces-and-mvvm-plan.md) | План: разделение настроек/истории/UI по открытому решению, DPAPI для API-ключа |
+| 14 | [Рабочие пространства](documentation/14-workspaces.md) | Разделение истории/UI и путей логов по открытому решению или открытой папке, DPAPI для API-ключа |
 | 15 | [Инструменты агента](documentation/15-agent-tools.md) | Каталог инструментов, tool calling, подтверждение вызовов, очередь сообщений, Resume task, stagnant loop, reasoning effort, skills, Mermaid |
 | 16 | [Права агента и политика чтения](documentation/16-permissions-and-security.md) | Права инструментов, read roots, запрет служебных каталогов и секретных файлов, субагенты, секреты (DPAPI), аудит безопасности, автонастройка VS |
 | 17 | [MCP-серверы](documentation/17-mcp.md) | Настройка `mcpServers`, транспорты stdio/HTTP/SSE, реестр серверов, инструменты MCP в чате |

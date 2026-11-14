@@ -285,7 +285,7 @@ dotnet test RPAWriter.Tests\RPAWriter.Tests.csproj --collect:"XPlat Code Coverag
 - `ChatHistoryStore` и `UiStateStore` остались статическими «сырыми» хранилищами в `RPAWriter2/Services`;
   модели работают через `IChatHistoryStore`/`IUiStateStore`, которые адаптируют
   `SqliteChatHistoryStore` и `JsonUiStateStore`.
-- Рабочие пространства (фаза B, см. `14-workspaces-and-mvvm-plan.md`): `IChatHistoryStore` получил
+- Рабочие пространства (см. `14-workspaces.md`): `IChatHistoryStore` получил
   `WorkspaceId` (история фильтруется по открытому решению или открытой папке), `ui_state.json` пишется per-workspace,
   лог-пути настроек скоупятся через `WorkspaceLogSettings`/`IWorkspaceLogSettingsStore`, а API-ключ
   вынесен в `ISecretsStore` (`DpapiSecretsStore` в VSIX).
@@ -616,7 +616,7 @@ if (string.IsNullOrWhiteSpace(_robotName))
 | Контрол | Привязка |
 |---|---|
 | `ModeToggle` (`SegmentedToggle`) | `SelectedValue={Binding Chat.Mode, Converter={StaticResource ModeToToggle}, Mode=TwoWay}` |
-| `InputBox` (рамка) | `Style` c `DataTrigger` по `{Binding Chat.Mode}`: Plan → `Mode.PlanBrush`, Act → `Mode.ActBrush`, Help → `Mode.HelpBrush` |
+| `ChatInputBorder` (рамка вокруг `InputBox` и кнопок) | `Style` c `DataTrigger` по `{Binding Chat.Mode}`: Plan → `Mode.PlanBrush`, Act → `Mode.ActBrush`, Help → `Mode.HelpBrush` |
 | `CancelButton` | `Visibility={Binding Chat.Phase, Converter={StaticResource PhaseStreamingVisibility}}` |
 | `DoItButton` | `Click="OnDoItClick"`, `IsEnabled={Binding Chat.Phase, Converter={StaticResource PhaseNotStreaming}}` |
 | `ResumeButton` | `Visibility={Binding Chat.CanResume, Converter={StaticResource BoolToVis}}` |
@@ -652,9 +652,11 @@ if (string.IsNullOrWhiteSpace(_robotName))
   «модель → тумблер → `OnModeChanged`» больше не дублирует запись). `OnModeChanged` теперь только
   персистит. Восстановление сессии идёт мимо сеттера через `ChatModel.RestoreMode(...)`, поэтому
   при загрузке вкладки запись не появляется.
-- `Style` у `InputBox` задан явно, поэтому он наследует прежний вид через
-  `BasedOn="{StaticResource {x:Type TextBox}}"`: локальный стиль иначе «съел» бы неявный стиль
-  `TextBox` из ресурсов окна (фон, кисть каретки, padding).
+- Рамка цвета режима перенесена с `InputBox` на обёртку `ChatInputBorder`, которая обнимает и
+  поле ввода, и кнопки. `BorderBrush` задан только в `Style` (дефолт — `Mode.PlanBrush`), а не
+  локальным атрибутом: локальное значение имеет приоритет над `DataTrigger` в стиле и «заморозило»
+  бы цвет. Сам `InputBox` внутри обёртки прозрачный (`Background="Transparent"`, `BorderThickness="0"`),
+  поэтому его прежний явный стиль/шаблон с кастомной рамкой больше не нужен.
 - Локальные `Visibility="Collapsed"` у `CancelButton`/`ResumeButton` удалены: начальные значения
   совпадают с дефолтом модели (`Phase = Idle`, `HasResumableRun = false`), поэтому при загрузке
   ничего не «мигает».
