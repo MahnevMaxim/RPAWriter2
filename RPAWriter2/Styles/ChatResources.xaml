@@ -121,7 +121,8 @@
                                 <Setter Property="BorderThickness" Value="1"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding KindName}" Value="User">
-                                        <Setter Property="BorderBrush" Value="{StaticResource Chat.UserBorder}"/>
+                                        <Setter Property="BorderBrush" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
                                         <Setter Property="Background" Value="{StaticResource Chat.UserBackground}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding KindName}" Value="ToolCall">
