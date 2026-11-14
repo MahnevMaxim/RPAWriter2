@@ -996,6 +996,10 @@
                             <CheckBox x:Name="AllowMcpCheckBox" Content="MCP"
                                       Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
                                       Foreground="{StaticResource Dark.Text}"/>
+                            <CheckBox x:Name="AskBeforeEachToolCheckBox" Content="Ask before each tool"
+                                      Checked="OnPermissionChanged" Unchecked="OnPermissionChanged" Margin="0,4,0,0"
+                                      Foreground="{StaticResource Dark.Text}"
+                                      ToolTip="Ask for approval before the agent executes each tool call"/>
                         </StackPanel>
                     </Border>
                 </Grid>

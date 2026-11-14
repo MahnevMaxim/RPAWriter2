@@ -1,0 +1,63 @@
+<UserControl x:Class="RPAWriter2.Controls.Chat.ApprovalMessageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chat="clr-namespace:RPAWriter2.Controls.Chat">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/ChatResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <chat:ChatMessageCard>
+        <StackPanel>
+            <TextBlock Text="{Binding Payload.ToolName}" TextWrapping="Wrap" FontWeight="SemiBold"
+                       Foreground="{StaticResource Dark.Text}"/>
+            <TextBlock Text="{Binding Payload.Description}" TextWrapping="Wrap"
+                       Foreground="{StaticResource Dark.Text}" Margin="0,5,0,0">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Payload.Description}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <!-- Approve/reject buttons: the panel collapses to 0 height once decided. When it
+                 becomes visible it carries its own 5px top margin so the spacing between the
+                 description and the buttons matches the project-wide 5px element gap. -->
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,0"
+                        Visibility="{Binding Payload.ShowButtons, Converter={StaticResource BoolToVis}}">
+                <Button Content="Approve" Click="OnApproveClick"
+                        Style="{StaticResource Question.OptionButtonStyle}"
+                        BorderBrush="{StaticResource Approval.ApproveBorder}" Margin="0,0,6,0"/>
+                <Button Content="Reject" Click="OnRejectClick"
+                        Style="{StaticResource Question.OptionButtonStyle}"
+                        BorderBrush="{StaticResource Approval.RejectBorder}" Margin="0,0,6,0"/>
+                <Button Content="Approve all" Click="OnApproveAllClick"
+                        Style="{StaticResource Question.OptionButtonStyle}"
+                        BorderBrush="{StaticResource Approval.ApproveBorder}" Margin="0,0,6,0"/>
+                <Button Content="Reject all" Click="OnRejectAllClick"
+                        Style="{StaticResource Question.OptionButtonStyle}"
+                        BorderBrush="{StaticResource Approval.RejectBorder}"/>
+            </StackPanel>
+
+            <!-- Decision line: collapsed to 0 height while pending, 5px margin once shown. -->
+            <Border Margin="0,5,0,0"
+                    Background="#00000000"
+                    BorderBrush="{StaticResource Approval.DecidedBorder}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="8,4"
+                    Visibility="{Binding Payload.IsDecided, Converter={StaticResource BoolToVis}}">
+                <TextBlock TextWrapping="Wrap">
+                    <Run Text="Decision: " FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
+                    <Run Text="{Binding Payload.DecisionText}" Foreground="{StaticResource Dark.Text}"/>
+                </TextBlock>
+            </Border>
+        </StackPanel>
+    </chat:ChatMessageCard>
+</UserControl>

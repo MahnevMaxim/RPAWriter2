@@ -105,6 +105,60 @@ namespace RPAWriter.Core.Models
     }
 
     /// <summary>
+    /// A pending tool call shown to the user for approve/reject before execution
+    /// (<see cref="ChatMessageKind.Approval"/>). <see cref="Decision"/> records the
+    /// outcome ("" while pending, "approved"/"rejected" after the user decides), which
+    /// collapses the buttons to zero height.
+    /// </summary>
+    public sealed class ApprovalPayload : ChatPayload, INotifyPropertyChanged
+    {
+        private string _decision = "";
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        /// <summary>Machine name of the tool the agent wants to run.</summary>
+        public string ToolName { get; set; } = "";
+
+        /// <summary>Short description/arguments summary of the proposed tool call.</summary>
+        public string Description { get; set; } = "";
+
+        /// <summary>Approval outcome: "" (pending), "approved" or "rejected".</summary>
+        public string Decision
+        {
+            get => _decision;
+            set
+            {
+                if (_decision != value)
+                {
+                    _decision = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsDecided));
+                    OnPropertyChanged(nameof(ShowButtons));
+                    OnPropertyChanged(nameof(DecisionText));
+                }
+            }
+        }
+
+        /// <summary>True once the user approved or rejected the tool call.</summary>
+        public bool IsDecided => !string.IsNullOrEmpty(Decision);
+
+        /// <summary>True while the decision is pending; drives the approve/reject buttons visibility (0 height when false).</summary>
+        public bool ShowButtons => !IsDecided;
+
+        /// <summary>Human-readable decision line shown after the user decides.</summary>
+        public string DecisionText => Decision == "approved" ? "Approved" : Decision == "rejected" ? "Rejected" : "";
+
+        /// <summary>True when the user clicked an "apply to the whole run" button instead of a single decision.</summary>
+        public bool ApplyToAll { get; set; }
+
+        private void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+
+    /// <summary>
     /// Live status of a single sub-agent (spawn_agent): updated in place as the
     /// sub-agent runs (tool calls, latest tool) and finalized with its report.
     /// </summary>

@@ -117,6 +117,9 @@ namespace RPAWriter.Core.Services
         /// <summary>Allow MCP-provided tools.</summary>
         public bool AllowMcp { get; set; } = false;
 
+        /// <summary>Ask the user to approve each tool call before the agent executes it.</summary>
+        public bool AskBeforeEachTool { get; set; } = false;
+
         /// <summary>JSON configuration of MCP servers (the "mcpServers" shape), e.g. Playwright MCP.</summary>
         public string McpServersJson { get; set; } = "";
 

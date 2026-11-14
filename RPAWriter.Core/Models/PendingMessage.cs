@@ -60,6 +60,9 @@ namespace RPAWriter.Core.Models
 
         public bool HasAttachments => Attachments != null && Attachments.Count > 0;
 
+        /// <summary>True when the queued message can be steered into the agent (v1: text-only, no attachments).</summary>
+        public bool CanSteer => !HasAttachments && !string.IsNullOrWhiteSpace(Text);
+
         public string AttachmentSummary => HasAttachments ? "📎 " + Attachments.Count : "";
 
         public string DeliveryToolTip => Delivery == PendingDelivery.Steer

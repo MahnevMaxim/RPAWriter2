@@ -37,6 +37,7 @@ namespace RPAWriter2.Controls
             AddHandler(ChatMessageCard.CopyRequestedEvent, new RoutedEventHandler(OnCopyRequested));
             AddHandler(ChatMessageCard.QuestionAnsweredEvent, new RoutedEventHandler(OnQuestionAnswered));
             AddHandler(ChatMessageCard.QuestionSkippedEvent, new RoutedEventHandler(OnQuestionSkipped));
+            AddHandler(ChatMessageCard.ApprovalDecidedEvent, new RoutedEventHandler(OnApprovalDecided));
             AddHandler(ChatMessageCard.CheckpointRestoreRequestedEvent, new RoutedEventHandler(OnCheckpointRestoreRequested));
             AddHandler(ChatMessageCard.DiffOpenRequestedEvent, new RoutedEventHandler(OnDiffOpenRequested));
         }
@@ -81,6 +82,9 @@ namespace RPAWriter2.Controls
 
         /// <summary>Raised after the user skipped a question; <see cref="QuestionPayload.Answer"/>/IsSkipped are already set.</summary>
         public event EventHandler<ChatMessage>? QuestionSkipped;
+
+        /// <summary>Raised after the user approved or rejected a pending tool call; <see cref="ApprovalPayload.Decision"/> is already set.</summary>
+        public event EventHandler<ChatMessage>? ApprovalDecided;
 
         /// <summary>Raised when the user clicks the Restore button of a checkpoint indicator.</summary>
         public event EventHandler<ChatMessage>? CheckpointRestoreRequested;
@@ -182,6 +186,12 @@ namespace RPAWriter2.Controls
         {
             if (e is ChatMessageRoutedEventArgs args && args.Message != null)
                 QuestionSkipped?.Invoke(this, args.Message);
+        }
+
+        private void OnApprovalDecided(object sender, RoutedEventArgs e)
+        {
+            if (e is ChatMessageRoutedEventArgs args && args.Message != null)
+                ApprovalDecided?.Invoke(this, args.Message);
         }
 
         private void OnCheckpointRestoreRequested(object sender, RoutedEventArgs e)

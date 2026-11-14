@@ -27,6 +27,7 @@ namespace RPAWriter2.Controls.Chat
                 [ChatMessageKind.ModeSwitch] = typeof(ModeSwitchMessageControl),
                 [ChatMessageKind.DiffEdit] = typeof(DiffEditMessageControl),
                 [ChatMessageKind.Question] = typeof(QuestionMessageControl),
+                [ChatMessageKind.Approval] = typeof(ApprovalMessageControl),
                 [ChatMessageKind.Subagent] = typeof(SubagentMessageControl),
                 [ChatMessageKind.Checkpoint] = typeof(CheckpointMessageControl)
             };

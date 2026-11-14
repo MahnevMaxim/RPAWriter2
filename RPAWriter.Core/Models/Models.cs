@@ -102,6 +102,8 @@ namespace RPAWriter.Core.Models
         DiffEdit,
         /// <summary>An interactive question asked by the agent, with answer options.</summary>
         Question,
+        /// <summary>A pending tool call shown to the user for approve/reject before execution.</summary>
+        Approval,
         /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
         Subagent,
         /// <summary>A saved file checkpoint (shadow git snapshot) with an optional per-iteration diff and a Restore action.</summary>

@@ -516,6 +516,107 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public async Task RunAsync_SteerBetweenIterations_IsInjectedAndAnswered()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) => Task.FromResult("tool-result")));
+
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"tool_call\",\"tool\":\"my_tool\",\"arguments\":{}}", FinishReason = "stop" },
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"steered\"}", FinishReason = "stop" });
+
+            // First poll (iteration 0) has nothing to steer; the second poll injects the message
+            // right after the previous tool call completed — a clean iteration boundary.
+            var polls = 0;
+            Func<string> steerSource = () => ++polls == 2 ? "do this now" : null;
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync(
+                new List<ChatMessageData>(), "go", null, AgentMode.Act, null,
+                CancellationToken.None, null, null, steerSource);
+
+            Assert.That(result.FinalText, Is.EqualTo("steered"));
+
+            var transcript = result.Transcript;
+            Assert.That(transcript.Count, Is.EqualTo(5));
+            Assert.That(transcript[3].Role, Is.EqualTo("user"));
+            Assert.That(transcript[3].Content, Is.EqualTo("do this now"));
+            Assert.That(transcript[4].Role, Is.EqualTo("assistant"));
+            Assert.That(transcript[4].Content, Is.EqualTo("steered"));
+        }
+
+        [Test]
+        public async Task RunAsync_NativeMode_SteerDoesNotBreakToolPairing()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) => Task.FromResult("tool-result")));
+
+            var responses = new Queue<string>();
+            responses.Enqueue(NativeToolCalls("my_tool", "{}"));
+            responses.Enqueue(Completion("steered"));
+
+            var handler = new FakeHttpHandler { Responder = req => responses.Dequeue() };
+            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test" }, new HttpClient(handler));
+
+            var polls = 0;
+            Func<string> steerSource = () => ++polls == 2 ? "do this now" : null;
+
+            var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4, toolCallingMode: ToolCallingMode.Native);
+            var result = await runner.RunAsync(
+                new List<ChatMessageData>(), "go", null, AgentMode.Act, null,
+                CancellationToken.None, null, null, steerSource);
+
+            Assert.That(result.FinalText, Is.EqualTo("steered"));
+
+            var transcript = result.Transcript;
+            var toolResultIndex = -1;
+            var steerIndex = -1;
+            for (var i = 0; i < transcript.Count; i++)
+            {
+                if (transcript[i].Role == "tool") toolResultIndex = i;
+                if (transcript[i].Role == "user" && transcript[i].Content == "do this now") steerIndex = i;
+            }
+
+            Assert.That(toolResultIndex, Is.GreaterThanOrEqualTo(0), "the native tool call must stay paired with a tool result");
+            Assert.That(transcript[toolResultIndex].ToolCallId, Is.EqualTo("call_1"));
+            Assert.That(steerIndex, Is.GreaterThanOrEqualTo(0), "the steer message must be injected");
+        }
+
+        [Test]
+        public async Task RunAsync_NullSteerSource_TranscriptIsUnchanged()
+        {
+            var registry = new AgentToolRegistry();
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync(
+                new List<ChatMessageData>(), "go", null, AgentMode.Act, null,
+                CancellationToken.None);
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(result.Transcript.Count, Is.EqualTo(2));
+            Assert.That(result.Transcript[0].Role, Is.EqualTo("user"));
+            Assert.That(result.Transcript[1].Role, Is.EqualTo("assistant"));
+        }
+
+        [Test]
+        public async Task RunAsync_WhitespaceSteer_IsIgnored()
+        {
+            var registry = new AgentToolRegistry();
+            var ai = new FakeAiProvider(
+                new ChatResponse { Answer = "{\"action\":\"final\",\"text\":\"done\"}", FinishReason = "stop" });
+
+            var runner = new AgentRunner(ai, registry, mode => "SYSTEM", maxIterations: 4);
+            var result = await runner.RunAsync(
+                new List<ChatMessageData>(), "go", null, AgentMode.Act, null,
+                CancellationToken.None, null, null, () => "   ");
+
+            Assert.That(result.FinalText, Is.EqualTo("done"));
+            Assert.That(result.Transcript.Count, Is.EqualTo(2), "whitespace steer is not appended");
+        }
+
+        [Test]
         public async Task RunAsync_MultipleToolCallsInOneTurn_ExecutesAll()
         {
             var calls = new List<string>();

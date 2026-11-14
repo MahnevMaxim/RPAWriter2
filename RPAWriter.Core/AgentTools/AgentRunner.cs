@@ -19,6 +19,9 @@ namespace RPAWriter.Core.AgentTools
         /// <summary>Short text for the chat progress line (e.g. a file path). Empty means use <see cref="Result"/>.</summary>
         public string DisplayResult { get; set; } = "";
         public bool Blocked { get; set; }
+
+        /// <summary>True when the tool was skipped because the user rejected it at the approval gate.</summary>
+        public bool Rejected { get; set; }
     }
 
     /// <summary>Result of an agent run: final text and whether any tool was blocked.</summary>
@@ -85,6 +88,7 @@ namespace RPAWriter.Core.AgentTools
         private readonly Func<AgentMode, string> _systemPromptFactory;
         private readonly ToolCallingMode _toolCallingMode;
         private readonly AgentPermissions _allowedPermissions;
+        private readonly ToolApprovalGate _approvalGate;
         private readonly ContextBudget _budget;
         private readonly ITokenEstimator _estimator;
         private readonly IContextCondenser _condenser;
@@ -115,8 +119,9 @@ namespace RPAWriter.Core.AgentTools
             Func<AgentMode, string> systemPromptFactory,
             int maxIterations = 8,
             ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat,
-            AgentPermissions allowedPermissions = AgentPermissions.All)
-            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations }, null, toolCallingMode, allowedPermissions)
+            AgentPermissions allowedPermissions = AgentPermissions.All,
+            ToolApprovalGate approvalGate = null)
+            : this(ai, registry, systemPromptFactory, new ContextBudget { MaxIterations = maxIterations }, null, toolCallingMode, allowedPermissions, approvalGate)
         {
         }
 
@@ -127,13 +132,15 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             string compactSystemPrompt = null,
             ToolCallingMode toolCallingMode = ToolCallingMode.JsonChat,
-            AgentPermissions allowedPermissions = AgentPermissions.All)
+            AgentPermissions allowedPermissions = AgentPermissions.All,
+            ToolApprovalGate approvalGate = null)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _systemPromptFactory = systemPromptFactory ?? throw new ArgumentNullException(nameof(systemPromptFactory));
             _toolCallingMode = toolCallingMode;
             _allowedPermissions = allowedPermissions;
+            _approvalGate = approvalGate;
             _budget = budget ?? new ContextBudget();
 
             _estimator = new TokenEstimator();
@@ -181,7 +188,8 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress = null,
-            IProgress<AgentResumeSnapshot> resumeProgress = null)
+            IProgress<AgentResumeSnapshot> resumeProgress = null,
+            Func<string> steerSource = null)
         {
             var effectiveBudget = budget ?? _budget;
             var systemPrompt = _systemPromptFactory(mode);
@@ -198,7 +206,7 @@ namespace RPAWriter.Core.AgentTools
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
             var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
 
-            return await RunLoopAsync(messages, 0, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress).ConfigureAwait(false);
+            return await RunLoopAsync(messages, 0, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -213,7 +221,8 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget budget,
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress = null,
-            IProgress<AgentResumeSnapshot> resumeProgress = null)
+            IProgress<AgentResumeSnapshot> resumeProgress = null,
+            Func<string> steerSource = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -224,7 +233,7 @@ namespace RPAWriter.Core.AgentTools
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
             var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
 
-            return await RunLoopAsync(messages, snapshot.NextIteration, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress).ConfigureAwait(false);
+            return await RunLoopAsync(messages, snapshot.NextIteration, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource).ConfigureAwait(false);
         }
 
         /// <summary>Shared agentic tool loop; <paramref name="startIteration"/> resumes a saved snapshot mid-run.</summary>
@@ -238,7 +247,8 @@ namespace RPAWriter.Core.AgentTools
             ContextBudget effectiveBudget,
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress,
-            IProgress<AgentResumeSnapshot> resumeProgress)
+            IProgress<AgentResumeSnapshot> resumeProgress,
+            Func<string> steerSource)
         {
             var protocolAttempts = 0;
             var detector = new ToolRepetitionDetector(effectiveBudget.MaxStagnantRepeats);
@@ -247,6 +257,14 @@ namespace RPAWriter.Core.AgentTools
             for (var i = startIteration; i < maxIterations; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Drain a steered message (if any) before the checkpoint so a later Cancel/Resume
+                // replays a transcript that already contains it. Steer lands only here — at a clean
+                // iteration boundary — so a native tool_calls block from the previous iteration
+                // stays paired with its tool results and the provider never sees a dangling call.
+                var steerText = steerSource?.Invoke();
+                if (!string.IsNullOrWhiteSpace(steerText))
+                    messages.Add(new ChatMessageData { Role = "user", Content = steerText });
 
                 // Publish a resumable checkpoint before mutating the transcript for this
                 // iteration. Cancelling now re-runs only this iteration: the partial model
@@ -566,6 +584,25 @@ namespace RPAWriter.Core.AgentTools
             }
 
             var args = call.Arguments ?? new JObject();
+
+            var decision = await RequestApprovalAsync(tool, args, cancellationToken).ConfigureAwait(false);
+            if (decision == ToolApprovalDecision.Reject)
+            {
+                ToolExecuted?.Invoke(this, new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Rejected = true,
+                    Result = "Rejected by the user."
+                });
+                messages.Add(new ChatMessageData
+                {
+                    Role = "tool",
+                    Content = "Tool \"" + tool.Name + "\" was rejected by the user.",
+                    ToolCallId = call.Id ?? ""
+                });
+                return null;
+            }
+
             string resultText;
             try
             {
@@ -640,6 +677,24 @@ namespace RPAWriter.Core.AgentTools
                 return null;
             }
 
+            var decision = await RequestApprovalAsync(tool, call.Arguments, cancellationToken).ConfigureAwait(false);
+            if (decision == ToolApprovalDecision.Reject)
+            {
+                var rejectRole = budget.UseToolRole ? "tool" : "user";
+                ToolExecuted?.Invoke(this, new AgentToolCall
+                {
+                    ToolName = tool.Name,
+                    Rejected = true,
+                    Result = "Rejected by the user."
+                });
+                messages.Add(new ChatMessageData
+                {
+                    Role = rejectRole,
+                    Content = "Tool \"" + tool.Name + "\" was rejected by the user."
+                });
+                return null;
+            }
+
             string resultText;
             try
             {
@@ -704,6 +759,33 @@ namespace RPAWriter.Core.AgentTools
             list.Add(new ChatMessageData { Role = "assistant", Content = response?.Answer ?? "" });
             list.Add(new ChatMessageData { Role = "user", Content = MaxTokensRecoveryNudge });
             return list;
+        }
+
+        /// <summary>Asks the injected approval gate (when present) whether to run a tool.</summary>
+        private async Task<ToolApprovalDecision> RequestApprovalAsync(
+            IAgentTool tool,
+            JObject arguments,
+            CancellationToken cancellationToken)
+        {
+            if (_approvalGate == null)
+                return ToolApprovalDecision.Approve;
+
+            var request = new ToolApprovalRequest
+            {
+                ToolName = tool.Name,
+                Permission = tool.Permission,
+                Mutates = tool.Mutates,
+                Description = tool.Description,
+                ArgumentsSummary = SummarizeArguments(arguments)
+            };
+            return await _approvalGate(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static string SummarizeArguments(JObject arguments)
+        {
+            var json = arguments?.ToString(Newtonsoft.Json.Formatting.None) ?? "";
+            const int max = 500;
+            return json.Length <= max ? json : json.Substring(0, max) + "…";
         }
 
         private static string Truncate(string text, int max)

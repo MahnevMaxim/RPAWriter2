@@ -28,6 +28,9 @@
     <SolidColorBrush x:Key="Question.OptionBorder" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="Question.AnswerBorder" Color="#9A9A9A"/>
     <SolidColorBrush x:Key="Question.AnswerBackground" Color="#339A9A9A"/>
+    <SolidColorBrush x:Key="Approval.ApproveBorder" Color="#4CAF50"/>
+    <SolidColorBrush x:Key="Approval.RejectBorder" Color="#F44336"/>
+    <SolidColorBrush x:Key="Approval.DecidedBorder" Color="#9A9A9A"/>
 
     <!-- Agent mode accent brushes (same colors as the mode toggle under the input box). -->
     <SolidColorBrush x:Key="Mode.PlanBrush" Color="#64B5F6"/>
@@ -226,7 +229,13 @@
                                                 <DataTrigger Binding="{Binding KindName}" Value="AgentText">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
-                                                <!-- The header title duplicates the body's first line for User/SystemNotice;
+                                                <DataTrigger Binding="{Binding KindName}" Value="Error">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding KindName}" Value="Subagent">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <!-- The header title duplicates the body's first line for User/SystemNotice/Error/Subagent;
                                                      hide it while the card is expanded so the text is not shown twice. -->
                                                 <MultiDataTrigger>
                                                     <MultiDataTrigger.Conditions>
@@ -238,6 +247,20 @@
                                                 <MultiDataTrigger>
                                                     <MultiDataTrigger.Conditions>
                                                         <Condition Binding="{Binding KindName}" Value="SystemNotice"/>
+                                                        <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </MultiDataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding KindName}" Value="Error"/>
+                                                        <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </MultiDataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding KindName}" Value="Subagent"/>
                                                         <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
                                                     </MultiDataTrigger.Conditions>
                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -288,6 +311,9 @@
                 <Setter Property="IsExpanded" Value="True"/>
             </DataTrigger>
             <DataTrigger Binding="{Binding KindName}" Value="Question">
+                <Setter Property="IsExpanded" Value="True"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding KindName}" Value="Approval">
                 <Setter Property="IsExpanded" Value="True"/>
             </DataTrigger>
             <DataTrigger Binding="{Binding KindName}" Value="ModeSwitch">

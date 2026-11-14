@@ -37,6 +37,9 @@ namespace RPAWriter2.Controls
         /// <summary>Raised after any queue mutation (for host logging; optional).</summary>
         public event EventHandler? Changed;
 
+        /// <summary>Raised when the user asks to force-send a queued message to the agent out of turn.</summary>
+        public event Action<PendingMessage>? SteerRequested;
+
         private void AttachCollection(ObservableCollection<PendingMessage> collection)
         {
             _messages.CollectionChanged -= OnCollectionChanged;
@@ -93,13 +96,11 @@ namespace RPAWriter2.Controls
                 _messages.Remove(item);
         }
 
-        private void OnToggleDelivery(object sender, RoutedEventArgs e)
+        private void OnSteer(object sender, RoutedEventArgs e)
         {
             var item = ItemOf(sender);
             if (item == null) return;
-            item.Delivery = item.Delivery == PendingDelivery.Steer
-                ? PendingDelivery.Queue
-                : PendingDelivery.Steer;
+            SteerRequested?.Invoke(item);
         }
 
         private void OnClearAll(object sender, RoutedEventArgs e)

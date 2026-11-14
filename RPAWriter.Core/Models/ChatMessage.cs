@@ -187,8 +187,9 @@ namespace RPAWriter.Core.Models
 
         /// <summary>
         /// Text shown in the message header ("top" line): tool name for tool calls, the mode
-        /// text for mode switches, the first message line for user/system notices, and a fixed
-        /// "Reasoning" label for agent text; empty otherwise.
+        /// text for mode switches, the first message line for user/system notices and errors,
+        /// the sub-agent task for sub-agent cards, and a fixed "Reasoning" label for agent text;
+        /// empty otherwise.
         /// </summary>
         public string MessageTitle
         {
@@ -205,6 +206,12 @@ namespace RPAWriter.Core.Models
                         return FirstLine(Text);
                     case ChatMessageKind.AgentText:
                         return "Reasoning";
+                    case ChatMessageKind.Error:
+                        return FirstLine(Text);
+                    case ChatMessageKind.Subagent:
+                        return FirstLine((Payload as SubagentPayload)?.Item?.Prompt ?? "");
+                    case ChatMessageKind.Approval:
+                        return (Payload as ApprovalPayload)?.ToolName ?? "";
                     default:
                         return "";
                 }
@@ -265,6 +272,13 @@ namespace RPAWriter.Core.Models
                             text += " Restore";
                     }
                     return text;
+                }
+
+                if (Kind == ChatMessageKind.Approval)
+                {
+                    var a = Payload as ApprovalPayload;
+                    var prefix = a?.Decision == "approved" ? "✓ " : a?.Decision == "rejected" ? "✗ " : "⏸ ";
+                    return prefix + (a?.ToolName ?? "");
                 }
 
                 var t = Text ?? "";

@@ -62,6 +62,19 @@ namespace RPAWriter.Core.Services
                 };
             }
 
+            if (message.Payload is ApprovalPayload approval)
+            {
+                return new ChatHistoryMessage
+                {
+                    Kind = message.Kind,
+                    Text = approval.ToolName ?? "",
+                    ToolName = approval.Decision ?? "",
+                    Reasoning = message.Reasoning,
+                    Mode = message.Mode,
+                    TimestampUtc = message.TimestampUtc
+                };
+            }
+
             var tool = message.Payload as ToolCallPayload;
             return new ChatHistoryMessage
             {
@@ -112,6 +125,20 @@ namespace RPAWriter.Core.Services
                         Answer = message.ToolName ?? "",
                         IsSkipped = string.Equals(message.ToolName, SkipAnswerText, StringComparison.Ordinal),
                         Options = message.Options ?? new List<string>()
+                    },
+                    TimestampUtc = RestoreTimestamp(message.TimestampUtc)
+                };
+            }
+
+            if (message.Kind == ChatMessageKind.Approval)
+            {
+                return new ChatMessage
+                {
+                    Kind = message.Kind,
+                    Payload = new ApprovalPayload
+                    {
+                        ToolName = message.Text ?? "",
+                        Decision = message.ToolName ?? ""
                     },
                     TimestampUtc = RestoreTimestamp(message.TimestampUtc)
                 };

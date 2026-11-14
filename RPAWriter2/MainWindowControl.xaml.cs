@@ -106,8 +106,25 @@ namespace RPAWriter2
         private readonly ObservableCollection<MessageSample> _messageSamples = new ObservableCollection<MessageSample>();
 
         private CancellationTokenSource? _chatCts;
+
+        /// <summary>A steered message captured atomically so the consumed slot can be cleared on the UI thread.</summary>
+        private sealed class SteerSlot
+        {
+            public readonly PendingMessage Message;
+            public readonly string Text;
+            public SteerSlot(PendingMessage message, string text) { Message = message; Text = text; }
+        }
+
+        // Single-slot steer state for the running turn. At most one steered message is in flight;
+        // the message stays queued until the agent loop consumes it (TakeSteer), so a steer that
+        // arrives right before the turn ends is not lost — the drain loop runs it normally.
+        private volatile SteerSlot _steerSlot;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
+        private TaskCompletionSource<ToolApprovalDecision>? _approvalTcs;
+        private ChatMessage? _activeApproval;
+        private bool _approveAllInRun;
+        private bool _denyAllInRun;
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -182,12 +199,14 @@ namespace RPAWriter2
             ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
             ChatMessages.Messages = _messages;
             MessageQueue.Messages = _pendingMessages;
+            MessageQueue.SteerRequested += OnSteerRequested;
             ChatMessages.Filter = message => !ReferenceEquals(message, _pinnedMessage);
             ChatMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
             ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
             ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
             ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
+            ChatMessages.ApprovalDecided += OnChatMessageApprovalDecided;
             AttachmentsList.ItemsSource = _attachments;
             SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
             HistoryList.ItemsSource = _conversations;
@@ -360,6 +379,80 @@ namespace RPAWriter2
                     _questionTcs = null;
                 }
             }
+        }
+
+        /// <summary>
+        /// Approval gate for the agent runner: decides whether a tool call may execute. When the
+        /// user already chose "Approve all"/"Reject all" for this run it answers without UI;
+        /// otherwise it shows the approval card and waits for the user's decision.
+        /// Invoked by the runner on a background thread.
+        /// </summary>
+        private async Task<ToolApprovalDecision> ApproveToolAsync(ToolApprovalRequest request, CancellationToken ct)
+        {
+            if (_approveAllInRun)
+                return ToolApprovalDecision.Approve;
+            if (_denyAllInRun)
+                return ToolApprovalDecision.Reject;
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+
+            var summary = string.IsNullOrWhiteSpace(request.ArgumentsSummary) ? "" : request.ArgumentsSummary.Trim();
+            if (summary == "{}")
+                summary = "";
+
+            var message = new ChatMessage
+            {
+                Kind = ChatMessageKind.Approval,
+                Payload = new ApprovalPayload
+                {
+                    ToolName = request.ToolName ?? "",
+                    Description = summary
+                }
+            };
+            _activeApproval = message;
+            AppendChatMessage(message);
+            _chatModel.PauseStatus();
+
+            LogService.ChatInfo("Tool approval requested: \"" + (request.ToolName ?? "") + "\".");
+
+            var tcs = new TaskCompletionSource<ToolApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _approvalTcs = tcs;
+            using (ct.Register(() => tcs.TrySetCanceled()))
+            {
+                try
+                {
+                    var decision = await tcs.Task;
+                    _chatModel.ResumeStatus();
+                    return decision;
+                }
+                finally
+                {
+                    _activeApproval = null;
+                    _approvalTcs = null;
+                }
+            }
+        }
+
+        private void OnChatMessageApprovalDecided(object? sender, ChatMessage message)
+        {
+            if (_approvalTcs == null)
+            {
+                LogService.ChatWarn("ApprovalDecided but _approvalTcs is null (decision may be lost); activeApproval=" + (_activeApproval != null) + ".");
+                return;
+            }
+            if (message.Payload is not ApprovalPayload payload)
+                return;
+
+            var decision = payload.Decision == "rejected" ? ToolApprovalDecision.Reject : ToolApprovalDecision.Approve;
+            if (payload.ApplyToAll)
+            {
+                if (decision == ToolApprovalDecision.Approve) _approveAllInRun = true;
+                else _denyAllInRun = true;
+            }
+
+            LogService.ChatInfo("Tool approval decision: " + payload.Decision + (payload.ApplyToAll ? " (apply to all)" : "") + ".");
+            ScheduleHistorySave();
+            _approvalTcs.TrySetResult(decision);
         }
 
         private void OnChatMessageCopyRequested(object? sender, ChatMessage message)
@@ -2550,6 +2643,43 @@ namespace RPAWriter2
             return _chatModel.DequeueNext();
         }
 
+        private void OnSteerRequested(PendingMessage item)
+        {
+            if (item == null || _steerSlot != null)
+                return;
+
+            // v1: text-only steering — messages with attachments stay queued so their files are
+            // not silently dropped (the steer button is already disabled for them in the control).
+            var text = (item.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text) || item.HasAttachments)
+                return;
+
+            // Only mark it as steered: the message is removed from the queue and shown in the chat
+            // by TakeSteer when the agent loop actually consumes it, so an unconsumed steer (the
+            // turn ended right after the click) falls back to a normal queued message.
+            _steerSlot = new SteerSlot(item, text);
+        }
+
+        /// <summary>
+        /// Polled by <see cref="AgentRunner"/> at each iteration boundary. Atomically takes the
+        /// pending steer (at most one) and, on the UI thread, drops it from the queue and shows it
+        /// in the chat. Runs on the agent's background thread.
+        /// </summary>
+        private string TakeSteer()
+        {
+            var slot = Interlocked.Exchange(ref _steerSlot, null);
+            if (slot == null)
+                return string.Empty;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _pendingMessages.Remove(slot.Message);
+                AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = slot.Text });
+            }));
+
+            return slot.Text;
+        }
+
         /// <summary>Executes a single agent turn (one user message) to completion.</summary>
         private async Task RunSingleTurnAsync(string text, IReadOnlyList<ChatAttachment>? attachments)
         {
@@ -2620,7 +2750,7 @@ namespace RPAWriter2
 
             var budget = BuildContextBudget();
             await RunAgentTurnAsync(_chatModel.Mode, budget, "input chars=" + promptText.Length + ", images=" + images.Count, thinking,
-                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _chatModel.Mode, budget, ct, progress, resumeProgress));
+                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _chatModel.Mode, budget, ct, progress, resumeProgress, TakeSteer));
         }
 
         /// <summary>
@@ -2637,6 +2767,8 @@ namespace RPAWriter2
             var modeName = mode.ToString();
             var cts = new CancellationTokenSource();
             _chatCts = cts;
+            _approveAllInRun = false;
+            _denyAllInRun = false;
             StartChatStatus();
             LogService.ChatInfo("Agent chat request started (mode=" + modeName + (string.IsNullOrEmpty(startDetail) ? "" : ", " + startDetail) + ").");
 
@@ -2756,6 +2888,9 @@ namespace RPAWriter2
             finally
             {
                 reasoningTimer.Stop();
+                // Any steer not consumed by this turn's loop reverts to a normal queued message:
+                // it is still in the queue and the drain loop will run it next.
+                _steerSlot = null;
                 if (!Dispatcher.CheckAccess())
                     Dispatcher.Invoke(new Action(() => { _chatCts = null; PushEstimatedInputTokens(); }));
                 else
@@ -2775,7 +2910,7 @@ namespace RPAWriter2
             AppendChatMessage(thinking);
 
             await RunAgentTurnAsync(mode, budget, "resume", thinking,
-                (ct, progress, resumeProgress) => _agentRunner.ResumeAsync(snapshot, mode, budget, ct, progress, resumeProgress));
+                (ct, progress, resumeProgress) => _agentRunner.ResumeAsync(snapshot, mode, budget, ct, progress, resumeProgress, TakeSteer));
         }
 
         /// <summary>Removes the "Request cancelled." notice added by a cancelled turn before resuming.</summary>
@@ -3018,7 +3153,7 @@ namespace RPAWriter2
                 ? ToolCallingMode.Native
                 : ToolCallingMode.JsonChat;
             var allowedPermissions = BuildAllowedPermissions();
-            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false, memoryBankMode, GetReadRootsForPrompt()), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions);
+            _agentRunner = new AgentRunner(_ai, registry, mode => AgentPromptBuilder.Build(mode, registry, toolCallingMode, allowedPermissions, _settings?.UserName ?? "", _settings?.AddressByName ?? false, memoryBankMode, GetReadRootsForPrompt()), toolCallingMode: toolCallingMode, allowedPermissions: allowedPermissions, approvalGate: _settings?.AskBeforeEachTool == true ? ApproveToolAsync : null);
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
@@ -3207,6 +3342,7 @@ namespace RPAWriter2
                 AllowExecuteCommandCheckBox.IsChecked = _settings.AllowExecuteCommand;
                 AllowWebFetchCheckBox.IsChecked = _settings.AllowWebFetch;
                 AllowMcpCheckBox.IsChecked = _settings.AllowMcp;
+                AskBeforeEachToolCheckBox.IsChecked = _settings.AskBeforeEachTool;
             }
             finally
             {
@@ -3317,6 +3453,7 @@ namespace RPAWriter2
             _settings.AllowExecuteCommand = AllowExecuteCommandCheckBox?.IsChecked ?? false;
             _settings.AllowWebFetch = AllowWebFetchCheckBox?.IsChecked ?? false;
             _settings.AllowMcp = AllowMcpCheckBox?.IsChecked ?? false;
+            _settings.AskBeforeEachTool = AskBeforeEachToolCheckBox?.IsChecked ?? false;
             SettingsStore.Save(_settings);
             RebuildAgentTools();
         }
@@ -3384,7 +3521,9 @@ namespace RPAWriter2
                 return;
             }
             var detail = string.IsNullOrWhiteSpace(e.DisplayResult) ? e.Result : e.DisplayResult;
-            LogService.ChatInfo("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
+            LogService.ChatInfo("Agent tool executed: " + (e.ToolName ?? "") + (e.Blocked ? " (blocked)" : "") + (e.Rejected ? " (rejected)" : "") + ", result chars=" + (detail == null ? 0 : detail.Length));
+            if (e.Rejected)
+                return; // The approval card already shows the reject decision.
             if (string.Equals(e.ToolName, "ask_question", StringComparison.OrdinalIgnoreCase))
                 return; // The interactive question message already shows the Q&A.
             if (string.Equals(e.ToolName, "spawn_agent", StringComparison.OrdinalIgnoreCase))

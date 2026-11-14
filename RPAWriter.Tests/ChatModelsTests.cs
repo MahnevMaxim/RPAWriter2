@@ -140,6 +140,26 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void MessageTitleUsesFirstNonEmptyLineForErrors()
+        {
+            var message = new ChatMessage { Kind = ChatMessageKind.Error, Text = "\n\n  request timed out  \nmore" };
+
+            Assert.That(message.MessageTitle, Is.EqualTo("request timed out"));
+        }
+
+        [Test]
+        public void MessageTitleUsesPromptForSubagent()
+        {
+            var message = new ChatMessage
+            {
+                Kind = ChatMessageKind.Subagent,
+                Payload = new SubagentPayload { Item = new SubagentStatusItem { Prompt = "\n\n  scan repo  \nsecond" } }
+            };
+
+            Assert.That(message.MessageTitle, Is.EqualTo("scan repo"));
+        }
+
+        [Test]
         public void ReasoningDisplayTextTrimsStreamingTail()
         {
             var message = new ChatMessage { Reasoning = new string('x', 9000), IsThinking = true };
