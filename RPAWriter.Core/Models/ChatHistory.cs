@@ -44,6 +44,7 @@ namespace RPAWriter.Core.Models
         private bool _isImportant;
         private int _usedTokens;
         private int _lastCacheHitTokens;
+        private int _lastCacheMissTokens;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -166,6 +167,24 @@ namespace RPAWriter.Core.Models
             }
         }
 
+        /// <summary>
+        /// Cache-miss tokens reported for the most recent request (per-request, not the cumulative
+        /// <see cref="Usage"/> total). Runtime-only; drives the cache split text line of the
+        /// context-window indicator. Written only by <see cref="AccumulateUsage"/>.
+        /// </summary>
+        public int LastCacheMissTokens
+        {
+            get => _lastCacheMissTokens;
+            private set
+            {
+                if (_lastCacheMissTokens != value)
+                {
+                    _lastCacheMissTokens = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         /// <summary>Adds a single request's usage to <see cref="Usage"/> and notifies bindings.</summary>
         public void AccumulateUsage(TokenUsage delta)
         {
@@ -179,6 +198,7 @@ namespace RPAWriter.Core.Models
             Usage.CacheMissTokens += delta.CacheMissTokens;
             Usage.EstimatedCostUsd += delta.EstimatedCostUsd;
             LastCacheHitTokens = Math.Max(0, delta.CacheHitTokens);
+            LastCacheMissTokens = Math.Max(0, delta.CacheMissTokens);
             OnPropertyChanged(nameof(Usage));
         }
 

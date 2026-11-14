@@ -416,6 +416,7 @@ namespace RPAWriter.Tests
             Assert.That(conversation.Usage.EstimatedCostUsd, Is.Zero);
             Assert.That(conversation.UsedTokens, Is.Zero);
             Assert.That(conversation.LastCacheHitTokens, Is.Zero);
+            Assert.That(conversation.LastCacheMissTokens, Is.Zero);
         }
 
         [Test]
@@ -442,8 +443,10 @@ namespace RPAWriter.Tests
             Assert.That(conversation.Usage.CacheMissTokens, Is.EqualTo(6));
             Assert.That(conversation.Usage.EstimatedCostUsd, Is.EqualTo(0.001));
             Assert.That(conversation.LastCacheHitTokens, Is.EqualTo(4));
+            Assert.That(conversation.LastCacheMissTokens, Is.EqualTo(6));
             Assert.That(raised, Contains.Item(nameof(ChatConversation.Usage)));
             Assert.That(raised, Contains.Item(nameof(ChatConversation.LastCacheHitTokens)));
+            Assert.That(raised, Contains.Item(nameof(ChatConversation.LastCacheMissTokens)));
         }
 
         [Test]
@@ -454,6 +457,16 @@ namespace RPAWriter.Tests
             conversation.AccumulateUsage(new TokenUsage { CacheHitTokens = -3 });
 
             Assert.That(conversation.LastCacheHitTokens, Is.Zero);
+        }
+
+        [Test]
+        public void AccumulateUsage_ClampsNegativeCacheMissToZero()
+        {
+            var conversation = new ChatConversation();
+
+            conversation.AccumulateUsage(new TokenUsage { CacheMissTokens = -4 });
+
+            Assert.That(conversation.LastCacheMissTokens, Is.Zero);
         }
 
         [Test]

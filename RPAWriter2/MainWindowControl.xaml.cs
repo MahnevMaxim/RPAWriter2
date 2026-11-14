@@ -338,47 +338,62 @@ namespace RPAWriter2
         }
 
         /// <summary>
+        /// Runs an async action on the WPF dispatcher thread and awaits its result. The agent loop
+        /// invokes interactive flows (questions, tool approvals) from a background thread, and the
+        /// tool window must touch its controls only on the dispatcher. Using the dispatcher directly
+        /// (rather than the VS JoinableTaskFactory) keeps the switch reliable inside a tool window.
+        /// </summary>
+        private async Task<T> InvokeOnDispatcherAsync<T>(Func<Task<T>> action, CancellationToken ct)
+        {
+            if (Dispatcher.CheckAccess())
+                return await action();
+
+            return await Dispatcher.InvokeAsync(action, DispatcherPriority.Normal, ct).Task.Unwrap();
+        }
+
+        /// <summary>
         /// Shows an interactive question in the chat (with answer buttons) and waits for the
         /// user's answer. Invoked by the ask_question tool handler, possibly on a background thread.
         /// </summary>
         private async Task<string> AskQuestionAsync(string question, IReadOnlyList<string> options, CancellationToken ct)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
-
-            var alreadyActive = _questionTcs != null;
-            var message = new ChatMessage
+            return await InvokeOnDispatcherAsync(async () =>
             {
-                Kind = ChatMessageKind.Question,
-                Payload = new QuestionPayload { Question = question ?? "", Options = options ?? new List<string>() }
-            };
-            _activeQuestion = message;
-            AppendChatMessage(message);
-            _chatModel.PauseStatus();
-
-            LogService.ChatInfo("Question shown: \"" + (question ?? "").Replace("\r", " ").Replace("\n", " ") + "\" (options=" + (options?.Count ?? 0) + "); alreadyActive=" + alreadyActive + ".");
-
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _questionTcs = tcs;
-            using (ct.Register(() => tcs.TrySetCanceled()))
-            {
-                try
+                var alreadyActive = _questionTcs != null;
+                var message = new ChatMessage
                 {
-                    var answer = await tcs.Task;
-                    _chatModel.ResumeStatus();
-                    LogService.ChatInfo("Question completed: answer=\"" + (answer ?? "").Replace("\r", " ").Replace("\n", " ") + "\", canceled=" + tcs.Task.IsCanceled + ".");
-                    return answer;
-                }
-                finally
+                    Kind = ChatMessageKind.Question,
+                    Payload = new QuestionPayload { Question = question ?? "", Options = options ?? new List<string>() }
+                };
+                _activeQuestion = message;
+                AppendChatMessage(message);
+                _chatModel.PauseStatus();
+
+                LogService.ChatInfo("Question shown: \"" + (question ?? "").Replace("\r", " ").Replace("\n", " ") + "\" (options=" + (options?.Count ?? 0) + "); alreadyActive=" + alreadyActive + ".");
+
+                var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _questionTcs = tcs;
+                using (ct.Register(() => tcs.TrySetCanceled()))
                 {
-                    if (tcs.Task.IsCanceled && _activeQuestion?.Payload is QuestionPayload q && string.IsNullOrEmpty(q.Answer))
+                    try
                     {
-                        q.Answer = ChatMessagesControl.SkipAnswerText;
-                        q.IsSkipped = true;
+                        var answer = await tcs.Task;
+                        _chatModel.ResumeStatus();
+                        LogService.ChatInfo("Question completed: answer=\"" + (answer ?? "").Replace("\r", " ").Replace("\n", " ") + "\", canceled=" + tcs.Task.IsCanceled + ".");
+                        return answer;
                     }
-                    _activeQuestion = null;
-                    _questionTcs = null;
+                    finally
+                    {
+                        if (tcs.Task.IsCanceled && _activeQuestion?.Payload is QuestionPayload q && string.IsNullOrEmpty(q.Answer))
+                        {
+                            q.Answer = ChatMessagesControl.SkipAnswerText;
+                            q.IsSkipped = true;
+                        }
+                        _activeQuestion = null;
+                        _questionTcs = null;
+                    }
                 }
-            }
+            }, ct);
         }
 
         /// <summary>
@@ -394,42 +409,58 @@ namespace RPAWriter2
             if (_denyAllInRun)
                 return ToolApprovalDecision.Reject;
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
-
-            var summary = string.IsNullOrWhiteSpace(request.ArgumentsSummary) ? "" : request.ArgumentsSummary.Trim();
-            if (summary == "{}")
-                summary = "";
-
-            var message = new ChatMessage
+            try
             {
-                Kind = ChatMessageKind.Approval,
-                Payload = new ApprovalPayload
+                LogService.ChatDebug("Tool approval gate entered for \"" + (request.ToolName ?? "") + "\".");
+
+                return await InvokeOnDispatcherAsync(async () =>
                 {
-                    ToolName = request.ToolName ?? "",
-                    Description = summary
-                }
-            };
-            _activeApproval = message;
-            AppendChatMessage(message);
-            _chatModel.PauseStatus();
+                    var summary = string.IsNullOrWhiteSpace(request.ArgumentsSummary) ? "" : request.ArgumentsSummary.Trim();
+                    if (summary == "{}")
+                        summary = "";
 
-            LogService.ChatInfo("Tool approval requested: \"" + (request.ToolName ?? "") + "\".");
+                    var message = new ChatMessage
+                    {
+                        Kind = ChatMessageKind.Approval,
+                        Payload = new ApprovalPayload
+                        {
+                            ToolName = request.ToolName ?? "",
+                            Description = summary
+                        }
+                    };
+                    _activeApproval = message;
+                    AppendChatMessage(message);
+                    _chatModel.PauseStatus();
 
-            var tcs = new TaskCompletionSource<ToolApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _approvalTcs = tcs;
-            using (ct.Register(() => tcs.TrySetCanceled()))
+                    LogService.ChatInfo("Tool approval requested: \"" + (request.ToolName ?? "") + "\".");
+
+                    var tcs = new TaskCompletionSource<ToolApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _approvalTcs = tcs;
+                    using (ct.Register(() => tcs.TrySetCanceled()))
+                    {
+                        try
+                        {
+                            var decision = await tcs.Task;
+                            _chatModel.ResumeStatus();
+                            LogService.ChatInfo("Tool approval decision received: " + decision + " for \"" + (request.ToolName ?? "") + "\".");
+                            return decision;
+                        }
+                        finally
+                        {
+                            _activeApproval = null;
+                            _approvalTcs = null;
+                        }
+                    }
+                }, ct);
+            }
+            catch (OperationCanceledException)
             {
-                try
-                {
-                    var decision = await tcs.Task;
-                    _chatModel.ResumeStatus();
-                    return decision;
-                }
-                finally
-                {
-                    _activeApproval = null;
-                    _approvalTcs = null;
-                }
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogService.ChatError("Tool approval failed for \"" + (request.ToolName ?? "") + "\": " + ex.Message);
+                throw;
             }
         }
 

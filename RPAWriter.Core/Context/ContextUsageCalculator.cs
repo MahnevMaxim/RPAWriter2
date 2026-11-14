@@ -51,6 +51,9 @@ namespace RPAWriter.Core.Context
 
         /// <summary>Secondary session-statistics line, e.g. "Total 45,000  ·  Cache hit 8,000  ·  $0.1234".</summary>
         public string StatsText { get; set; } = "";
+
+        /// <summary>Per-request cache split line, e.g. "Cache hit / miss: 14,000 / 3,000"; empty when there is no cache activity.</summary>
+        public string CacheText { get; set; } = "";
     }
 
     /// <summary>
@@ -62,8 +65,9 @@ namespace RPAWriter.Core.Context
         /// <summary>
         /// Computes the indicator state from the estimated input tokens, the context window
         /// size, the two budget thresholds (compact and max-input), the optional cumulative
-        /// session usage reported by the provider and the cache-hit tokens of the most recent
-        /// request (the light-green segment, clamped to the used ratio).
+        /// session usage reported by the provider and the cache-hit/cache-miss tokens of the
+        /// most recent request (the light-green segment is clamped to the used ratio; the
+        /// hit/miss split is also rendered as <see cref="ContextUsageInfo.CacheText"/>).
         /// </summary>
         public static ContextUsageInfo Compute(
             int usedTokens,
@@ -71,13 +75,16 @@ namespace RPAWriter.Core.Context
             int compactThresholdTokens,
             int maxInputTokens,
             TokenUsage sessionUsage,
-            int cacheHitTokens = 0)
+            int cacheHitTokens = 0,
+            int cacheMissTokens = 0)
         {
             var info = new ContextUsageInfo
             {
                 UsedTokens = Math.Max(0, usedTokens),
                 ContextWindowSize = Math.Max(0, contextWindowSize)
             };
+
+            info.CacheText = BuildCacheText(cacheHitTokens, cacheMissTokens);
 
             if (info.ContextWindowSize <= 0)
             {
@@ -113,6 +120,18 @@ namespace RPAWriter.Core.Context
                 return ContextUsageStatus.Warning;
 
             return ContextUsageStatus.Normal;
+        }
+
+        private static string BuildCacheText(int cacheHitTokens, int cacheMissTokens)
+        {
+            if (cacheHitTokens <= 0 && cacheMissTokens <= 0)
+                return string.Empty;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Cache hit / miss: {0:N0} / {1:N0}",
+                Math.Max(0, cacheHitTokens),
+                Math.Max(0, cacheMissTokens));
         }
 
         private static string BuildStatsText(TokenUsage usage)

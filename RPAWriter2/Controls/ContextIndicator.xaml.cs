@@ -41,6 +41,10 @@ namespace RPAWriter2.Controls
             nameof(CacheHitTokens), typeof(int), typeof(ContextIndicator),
             new PropertyMetadata(0, OnStateChanged));
 
+        public static readonly DependencyProperty CacheMissTokensProperty = DependencyProperty.Register(
+            nameof(CacheMissTokens), typeof(int), typeof(ContextIndicator),
+            new PropertyMetadata(0, OnStateChanged));
+
         public static readonly DependencyProperty SessionUsageProperty = DependencyProperty.Register(
             nameof(SessionUsage), typeof(TokenUsage), typeof(ContextIndicator),
             new PropertyMetadata(null, OnStateChanged));
@@ -90,6 +94,13 @@ namespace RPAWriter2.Controls
             set => SetValue(CacheHitTokensProperty, value);
         }
 
+        /// <summary>Cache-miss tokens of the most recent request; rendered in the cache split text line.</summary>
+        public int CacheMissTokens
+        {
+            get => (int)GetValue(CacheMissTokensProperty);
+            set => SetValue(CacheMissTokensProperty, value);
+        }
+
         /// <summary>Usage of the active conversation (total/cache/cost).</summary>
         public TokenUsage SessionUsage
         {
@@ -115,7 +126,8 @@ namespace RPAWriter2.Controls
                 CompactThresholdTokens,
                 MaxInputTokens,
                 SessionUsage,
-                CacheHitTokens);
+                CacheHitTokens,
+                CacheMissTokens);
 
             var usedPercent = info.IsAvailable ? info.RatioPercent : 0.0;
             var cachePercent = info.IsAvailable ? info.CacheHitRatioPercent : 0.0;
@@ -128,6 +140,12 @@ namespace RPAWriter2.Controls
 
             FillText.Text = info.FillText;
             FillText.Visibility = ShowDetails ? Visibility.Visible : Visibility.Collapsed;
+
+            var cache = info.CacheText;
+            CacheText.Text = cache;
+            CacheText.Visibility = ShowDetails && !string.IsNullOrEmpty(cache)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
 
             var stats = info.StatsText;
             StatsText.Text = stats;

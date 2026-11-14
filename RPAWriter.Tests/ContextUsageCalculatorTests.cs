@@ -121,5 +121,29 @@ namespace RPAWriter.Tests
 
             Assert.That(info.CacheHitRatioPercent, Is.Zero);
         }
+
+        [Test]
+        public void Compute_CacheText_FormatsHitAndMiss()
+        {
+            var info = ContextUsageCalculator.Compute(1000, 409600, 0, 0, null, cacheHitTokens: 14000, cacheMissTokens: 3000);
+
+            Assert.That(info.CacheText, Is.EqualTo("Cache hit / miss: 14,000 / 3,000"));
+        }
+
+        [Test]
+        public void Compute_CacheText_EmptyWhenNoCacheActivity()
+        {
+            var info = ContextUsageCalculator.Compute(1000, 409600, 0, 0, null, cacheHitTokens: 0, cacheMissTokens: 0);
+
+            Assert.That(info.CacheText, Is.Empty);
+        }
+
+        [Test]
+        public void Compute_CacheText_ClampsNegativeComponentToZero()
+        {
+            var info = ContextUsageCalculator.Compute(1000, 409600, 0, 0, null, cacheHitTokens: -5, cacheMissTokens: 3000);
+
+            Assert.That(info.CacheText, Is.EqualTo("Cache hit / miss: 0 / 3,000"));
+        }
     }
 }

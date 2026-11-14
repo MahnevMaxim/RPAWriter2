@@ -25,6 +25,8 @@
         </Grid>
         <TextBlock x:Name="FillText" Margin="0,4,0,0" Foreground="#C8C8C8"
                    Text="Context window: —"/>
+        <TextBlock x:Name="CacheText" Margin="0,2,0,0" Foreground="#9A9A9A"
+                   TextWrapping="Wrap" Visibility="Collapsed"/>
         <TextBlock x:Name="StatsText" Margin="0,2,0,0" Foreground="#9A9A9A"
                    TextWrapping="Wrap" Visibility="Collapsed"/>
     </StackPanel>

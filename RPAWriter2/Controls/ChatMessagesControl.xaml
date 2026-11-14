@@ -15,8 +15,64 @@
             <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
             <conv:MermaidCodeToElementConverter x:Key="MermaidCodeToElement"/>
 
+            <Style x:Key="CodeScrollBarStyle" TargetType="ScrollBar">
+                <Setter Property="Background" Value="#2E2E30"/>
+                <Setter Property="MinWidth" Value="10"/>
+                <Setter Property="MinHeight" Value="10"/>
+                <Setter Property="Height" Value="10"/>
+                <Setter Property="VerticalAlignment" Value="Bottom"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Background="{TemplateBinding Background}">
+                                <Track x:Name="PART_Track" Focusable="False" IsDirectionReversed="False">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}"
+                                                      Style="{StaticResource ScrollBarPageButton}"/>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="{x:Static ScrollBar.PageRightCommand}"
+                                                      Style="{StaticResource ScrollBarPageButton}"/>
+                                    </Track.IncreaseRepeatButton>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <ControlTemplate x:Key="CodeScrollViewerTemplate" TargetType="ScrollViewer">
+                <Grid Background="{TemplateBinding Background}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Grid.Row="0"
+                                            CanContentScroll="{TemplateBinding CanContentScroll}"
+                                            Content="{TemplateBinding Content}"
+                                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                                            ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                            Margin="{TemplateBinding Padding}"/>
+                    <ScrollBar x:Name="PART_HorizontalScrollBar" Grid.Row="1"
+                               Orientation="Horizontal"
+                               Style="{StaticResource CodeScrollBarStyle}"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Bottom"
+                               ViewportSize="{TemplateBinding ViewportWidth}"
+                               Minimum="0"
+                               Maximum="{TemplateBinding ScrollableWidth}"
+                               Value="{TemplateBinding HorizontalOffset}"
+                               Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
+                               Cursor="Arrow"/>
+                </Grid>
+            </ControlTemplate>
+
             <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
                 <EventSetter Event="PreviewMouseWheel" Handler="OnCodeScrollPreviewMouseWheel"/>
+                <Setter Property="Template" Value="{StaticResource CodeScrollViewerTemplate}"/>
             </Style>
 
             <DataTemplate DataType="{x:Type core:TextMessageBlock}">
