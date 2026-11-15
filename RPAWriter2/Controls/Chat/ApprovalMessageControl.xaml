@@ -55,7 +55,7 @@
                     Visibility="{Binding Payload.IsDecided, Converter={StaticResource BoolToVis}}">
                 <TextBlock TextWrapping="Wrap">
                     <Run Text="Decision: " FontWeight="SemiBold" Foreground="{StaticResource Dark.Text}"/>
-                    <Run Text="{Binding Payload.DecisionText}" Foreground="{StaticResource Dark.Text}"/>
+                    <Run Text="{Binding Payload.DecisionText, Mode=OneWay}" Foreground="{StaticResource Dark.Text}"/>
                 </TextBlock>
             </Border>
         </StackPanel>

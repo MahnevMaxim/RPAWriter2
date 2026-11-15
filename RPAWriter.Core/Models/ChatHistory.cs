@@ -132,9 +132,9 @@ namespace RPAWriter.Core.Models
         public TokenUsage Usage { get; } = new TokenUsage();
 
         /// <summary>
-        /// Estimated input tokens currently occupying the model's context window for this
-        /// conversation. Runtime-only; updated by the model from the provider's prompt assembly
-        /// and token reports.
+        /// Real prompt tokens reported by the provider for the most recent request
+        /// (<c>prompt_tokens</c>, equal to cache-hit + cache-miss). This value fills the
+        /// context-window indicator. Runtime-only; written only by <see cref="AccumulateUsage"/>.
         /// </summary>
         public int UsedTokens
         {
@@ -199,6 +199,7 @@ namespace RPAWriter.Core.Models
             Usage.EstimatedCostUsd += delta.EstimatedCostUsd;
             LastCacheHitTokens = Math.Max(0, delta.CacheHitTokens);
             LastCacheMissTokens = Math.Max(0, delta.CacheMissTokens);
+            UsedTokens = Math.Max(0, delta.PromptTokens);
             OnPropertyChanged(nameof(Usage));
         }
 

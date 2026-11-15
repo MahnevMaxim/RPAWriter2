@@ -1535,31 +1535,21 @@ namespace RPAWriter.Tests
         }
 
         [Test]
-        public void SetEstimatedInputTokens_UpdatesActiveConversation()
+        public void RecordTokenUsage_SetsUsedTokensFromPromptTokens()
         {
             var model = CreateModel();
 
-            model.SetEstimatedInputTokens(1234);
+            model.RecordTokenUsage(new TokenUsage { PromptTokens = 1234, CacheHitTokens = 400, CacheMissTokens = 834 });
 
             Assert.That(model.ActiveChatConversation.UsedTokens, Is.EqualTo(1234));
         }
 
         [Test]
-        public void SetEstimatedInputTokens_IsNoOpWhenChatIsClosed()
-        {
-            var model = CreateModel(withActiveChat: false);
-
-            model.SetEstimatedInputTokens(1234);
-
-            Assert.That(model.ActiveChatConversation, Is.Null);
-        }
-
-        [Test]
-        public void SetEstimatedInputTokens_ClampsNegativeToZero()
+        public void RecordTokenUsage_UsedTokensClampsNegativePromptToZero()
         {
             var model = CreateModel();
 
-            model.SetEstimatedInputTokens(-5);
+            model.RecordTokenUsage(new TokenUsage { PromptTokens = -5 });
 
             Assert.That(model.ActiveChatConversation.UsedTokens, Is.Zero);
         }
@@ -1569,8 +1559,7 @@ namespace RPAWriter.Tests
         {
             var model = CreateModel();
 
-            model.RecordTokenUsage(new TokenUsage { TotalTokens = 42 });
-            model.SetEstimatedInputTokens(999);
+            model.RecordTokenUsage(new TokenUsage { TotalTokens = 42, PromptTokens = 999 });
             model.StartNewChat();
 
             Assert.That(model.ActiveChatConversation.Usage.TotalTokens, Is.Zero);

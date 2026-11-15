@@ -442,9 +442,11 @@ namespace RPAWriter.Tests
             Assert.That(conversation.Usage.CacheHitTokens, Is.EqualTo(4));
             Assert.That(conversation.Usage.CacheMissTokens, Is.EqualTo(6));
             Assert.That(conversation.Usage.EstimatedCostUsd, Is.EqualTo(0.001));
+            Assert.That(conversation.UsedTokens, Is.EqualTo(10));
             Assert.That(conversation.LastCacheHitTokens, Is.EqualTo(4));
             Assert.That(conversation.LastCacheMissTokens, Is.EqualTo(6));
             Assert.That(raised, Contains.Item(nameof(ChatConversation.Usage)));
+            Assert.That(raised, Contains.Item(nameof(ChatConversation.UsedTokens)));
             Assert.That(raised, Contains.Item(nameof(ChatConversation.LastCacheHitTokens)));
             Assert.That(raised, Contains.Item(nameof(ChatConversation.LastCacheMissTokens)));
         }

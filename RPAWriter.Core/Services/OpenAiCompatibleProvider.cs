@@ -927,9 +927,15 @@ namespace RPAWriter.Core.Services
             }
 
             if (hitTokens == 0 && missTokens == 0)
+            {
                 missTokens = Math.Max(0, promptTokens);
-            else if (missTokens == 0)
+            }
+            else
+            {
+                // Keep hit + miss == prompt_tokens so the indicator's segments always sum
+                // to the provider-reported input of the request.
                 missTokens = Math.Max(0, promptTokens - hitTokens);
+            }
         }
 
         /// <summary>Estimates the cost of one request from its token split and per-million prices.</summary>

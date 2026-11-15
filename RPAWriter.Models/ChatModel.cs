@@ -1083,14 +1083,6 @@ namespace RPAWriter.Models
             conversation.AccumulateUsage(usage);
         }
 
-        /// <summary>Stores the estimated input tokens occupying the window for the active conversation.</summary>
-        public void SetEstimatedInputTokens(int tokens)
-        {
-            var conversation = ActiveChatConversation;
-            if (conversation != null)
-                conversation.UsedTokens = Math.Max(0, tokens);
-        }
-
         #endregion Context counters
 
         #region UI state

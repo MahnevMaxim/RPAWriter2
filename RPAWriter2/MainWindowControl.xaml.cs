@@ -305,7 +305,6 @@ namespace RPAWriter2
             HookRetryNotifier();
             HookPromptNotifier();
             PushContextWindow();
-            PushEstimatedInputTokens();
         }
 
         private string KbPath()
@@ -948,11 +947,6 @@ namespace RPAWriter2
 
         private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
         {
-            if (!Dispatcher.CheckAccess())
-                Dispatcher.BeginInvoke(new Action(() => _chatModel.SetEstimatedInputTokens(e.EstimatedInputTokens)));
-            else
-                _chatModel.SetEstimatedInputTokens(e.EstimatedInputTokens);
-
             var dump = FormatPromptDump(e);
             LogService.ChatInfo(dump);
             try
@@ -1034,14 +1028,6 @@ namespace RPAWriter2
                 provider?.ContextWindowSize ?? 0,
                 provider != null ? budget.CompactThresholdTokens : 0,
                 provider != null ? budget.MaxInputTokens : 0);
-        }
-
-        private void PushEstimatedInputTokens()
-        {
-            var usedTokens = _chatCts == null
-                ? new TokenEstimator().Estimate("", _providerTranscript)
-                : _chatModel.ActiveChatConversation?.UsedTokens ?? 0;
-            _chatModel.SetEstimatedInputTokens(usedTokens);
         }
 
         private void ShowError(Exception ex)
@@ -2926,11 +2912,10 @@ namespace RPAWriter2
                 // it is still in the queue and the drain loop will run it next.
                 _steerSlot = null;
                 if (!Dispatcher.CheckAccess())
-                    Dispatcher.Invoke(new Action(() => { _chatCts = null; PushEstimatedInputTokens(); }));
+                    Dispatcher.Invoke(new Action(() => { _chatCts = null; }));
                 else
                 {
                     _chatCts = null;
-                    PushEstimatedInputTokens();
                 }
                 cts.Dispose();
             }

@@ -28,7 +28,7 @@ namespace RPAWriter.Core.Context
     /// </summary>
     public sealed class ContextUsageInfo
     {
-        /// <summary>Estimated input tokens occupying the window (never negative).</summary>
+        /// <summary>Provider-reported prompt tokens of the most recent request (never negative).</summary>
         public int UsedTokens { get; set; }
 
         /// <summary>Model context window size in tokens (never negative).</summary>
@@ -63,7 +63,7 @@ namespace RPAWriter.Core.Context
     public static class ContextUsageCalculator
     {
         /// <summary>
-        /// Computes the indicator state from the estimated input tokens, the context window
+        /// Computes the indicator state from the provider-reported prompt tokens, the context window
         /// size, the two budget thresholds (compact and max-input), the optional cumulative
         /// session usage reported by the provider and the cache-hit/cache-miss tokens of the
         /// most recent request (the light-green segment is clamped to the used ratio; the
