@@ -88,7 +88,7 @@ Workspace-скоупленные настройки (только лог-фай�
 параметры, `UserName`, `AddressByName`, `SpeechToText*`, `VoskModelPath`, `SpeechAutoSend`,
 `ShowControls`, `AutoCaptureRuntimeExceptions`, `KnowledgeBasePath`, `RobotsRootPath`,
 `RobotTemplateName`, `PackagesPath`, `RulesPath`, `SkillsPath`, `LogProvidersPath`,
-`SecurityAuditMode`, `ShowRobotCreator`, `CheckpointsEnabled`, `Allow*`) — **global**.
+`SecurityAuditMode`, `ShowRobotCreator`, `CheckpointsEnabled`, `RoslynSemanticsEnabled`, `Allow*`) — **global**.
 
 Примечание: `LogProvidersPath` — это каталог провайдеров логов (общий ресурс, не «логи»),
 остаётся global. Если потребуется скоупить и его — это однострочное добавление.

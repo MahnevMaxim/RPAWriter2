@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>RPAWriter.Roslyn</RootNamespace>
+    <AssemblyName>RPAWriter.Roslyn</AssemblyName>
+    <!--
+      Roslyn semantic analysis shared between the VSIX and the tests.
+      The assemblies are taken from the oldest supported Visual Studio (VS 2022 / Roslyn 4.x, netstandard2.0),
+      so the types match the in-proc VisualStudioWorkspace at runtime and remain testable from net8.0.
+      Override RoslynVsInstallRoot to point at the Visual Studio installation root
+      when vswhere cannot locate it.
+    -->
+    <RoslynVsInstallRoot Condition="'$(RoslynVsInstallRoot)' == ''"></RoslynVsInstallRoot>
+  </PropertyGroup>
+
+  <Target Name="ResolveVsRoslynReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <PropertyGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <VsRoslynDir>$(RoslynVsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices</VsRoslynDir>
+      <VsPublicAssembliesDir>$(RoslynVsInstallRoot)\Common7\IDE\PublicAssemblies</VsPublicAssembliesDir>
+    </PropertyGroup>
+    <Error Condition="'$(RoslynVsInstallRoot)' == ''"
+           Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
+    <ItemGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <Reference Include="Microsoft.CodeAnalysis">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.Workspaces.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.Workspaces.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="System.Collections.Immutable">
+        <HintPath>$(VsPublicAssembliesDir)\System.Collections.Immutable.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+
+</Project>

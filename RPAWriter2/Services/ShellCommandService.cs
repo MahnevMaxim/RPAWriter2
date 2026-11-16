@@ -31,7 +31,9 @@ namespace RPAWriter2.Services
             string command,
             string workingDirectory,
             CancellationToken cancellationToken = default,
-            int timeoutSeconds = 300)
+            int timeoutSeconds = 300,
+            int maxOutputChars = MaxOutputChars,
+            bool forceEnglishDotnet = false)
         {
             if (string.IsNullOrWhiteSpace(command))
                 throw new ArgumentException("command is required.", nameof(command));
@@ -59,6 +61,13 @@ namespace RPAWriter2.Services
             };
 
             GitEnvironmentSanitizer.Sanitize(psi);
+
+
+            // Keep dotnet CLI diagnostics/summaries in English so the build/test output filter can
+            // parse them reliably regardless of the OS locale (e.g. Russian Windows prints
+            // "Пройден!" instead of "Passed!").
+            if (forceEnglishDotnet)
+                psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
 
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
@@ -90,7 +99,7 @@ namespace RPAWriter2.Services
                     var combined = new StringBuilder();
                     if (stdout.Length > 0) combined.AppendLine(stdout.ToString());
                     if (stderr.Length > 0) combined.AppendLine(stderr.ToString());
-                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd());
+                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd(), maxOutputChars);
 
                     LogService.Info("powershell -Command -> exit=" + code + ", output=" + text.Length + " chars");
 
@@ -166,7 +175,7 @@ namespace RPAWriter2.Services
                     var combined = new StringBuilder();
                     if (stdout.Length > 0) combined.AppendLine(stdout.ToString());
                     if (stderr.Length > 0) combined.AppendLine(stderr.ToString());
-                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd());
+                    var text = Truncate(StripClixml(combined.ToString()).TrimEnd(), MaxOutputChars);
                     LogService.Info(Path.GetFileName(fileName) + " -> exit=" + code + ", output=" + text.Length + " chars");
                     if (code != 0)
                         return new ShellCommandResult { ExitCode = code, Output = text, Success = false };
@@ -200,10 +209,11 @@ namespace RPAWriter2.Services
             return ClixmlRegex.Replace(text, string.Empty);
         }
 
-        private static string Truncate(string text)
+        private static string Truncate(string text, int maxOutputChars)
         {
-            if (string.IsNullOrEmpty(text) || text.Length <= MaxOutputChars) return text;
-            return text.Substring(0, MaxOutputChars) + "\n…(truncated)";
+            if (maxOutputChars <= 0) maxOutputChars = MaxOutputChars;
+            if (string.IsNullOrEmpty(text) || text.Length <= maxOutputChars) return text;
+            return text.Substring(0, maxOutputChars) + "\n…(truncated)";
         }
     }
 

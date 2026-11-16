@@ -72,11 +72,15 @@ namespace RPAWriter.Core.Services
             "Верни СТРОГО JSON без текста вокруг: {\"algorithm\":\"<итоговый алгоритм в Markdown>\",\"questions\":\"<список вопросов в Markdown>\"}.\n\n" +
             "Техническое задание:\n{spec}\n\n{drafts}";
 
+        public const string RoslynNavigationHint =
+            "C# navigation: prefer the semantic tools first - code_outline (structure and signatures without method bodies), find_symbol_usages (compiler-verified references), get_inheritance (type hierarchy), get_diagnostics (background errors/warnings). Request the full file text with read_files only right before editing a file, or for non-C# files. These Roslyn tools only cover files inside the open Visual Studio solution.";
+
         public const string AgentJsonBaseSystemPrompt =
             "You are an RPA robot development agent for Windows Workflow Foundation.\n" +
             "Always answer in Russian unless the user writes in another language.\n" +
             "Always be polite, courteous and respectful in your replies.\n\n" +
             "Reading source files: use read_files to read one or more files. It reads from the open Visual Studio editor tab (including unsaved changes and crash-recovery buffers) when the file is open, and from disk otherwise. Pass several files in one call and use start_line/end_line to page through long files.\n\n" +
+            "{roslyn_navigation}\n\n" +
             "Available tools:\n{tools}\n\n" +
             "## Output format (STRICT - the only accepted format)\n\n" +
             "Respond with EXACTLY ONE JSON object per turn and nothing else.\n\n" +
@@ -127,6 +131,8 @@ namespace RPAWriter.Core.Services
             "Always answer in Russian unless the user writes in another language.\n" +
             "Always be polite, courteous and respectful in your replies.\n\n" +
             "Reading source files: use read_files to read one or more files. It reads from the open Visual Studio editor tab (including unsaved changes and crash-recovery buffers) when the file is open, and from disk otherwise. Pass several files in one call and use start_line/end_line to page through long files.\n\n" +
+            "{roslyn_navigation}\n\n" +
+            "Available tools:\n{tools}\n\n" +
             "Tools are provided as native function definitions. Invoke them directly as function calls - do not write any text-based tool-call format (no JSON action objects, no XML or DSML tags). Call a tool whenever you need information, then answer the user in Russian. Read before you answer; never state file content you have not actually read. You may call several independent read tools in one turn." +
             "\n\n" +
             "Allowed read paths (Plan mode). You may read files only inside these paths:\n" +
@@ -138,6 +144,8 @@ namespace RPAWriter.Core.Services
             "Always answer in Russian unless the user writes in another language.\n" +
             "Always be polite, courteous and respectful in your replies.\n\n" +
             "Reading source files: use read_files to read one or more files. It reads from the open Visual Studio editor tab (including unsaved changes and crash-recovery buffers) when the file is open, and from disk otherwise. Pass several files in one call and use start_line/end_line to page through long files.\n\n" +
+            "{roslyn_navigation}\n\n" +
+            "Available tools:\n{tools}\n\n" +
             "Tools are provided as native function definitions. Invoke them directly as function calls - do not write any text-based tool-call format (no JSON action objects, no XML or DSML tags). Workflow: read before you change, make the change (edit_open_document for an open editor tab, or apply_fix / write_file), then verify with build and read_errors before answering the user in Russian. You may call several independent tools in one turn.";
 
         public const string AnalyzeOutputWindow =

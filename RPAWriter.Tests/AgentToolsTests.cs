@@ -1028,5 +1028,82 @@ namespace RPAWriter.Tests
             Assert.That(prompt, Does.Contain("Allowed read paths (Plan mode)"));
             Assert.That(prompt, Does.Contain(@"- C:\Solution"));
         }
+
+        [Test]
+        public void Build_WithoutRoslynTools_OmitsNavigationHint()
+        {
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, EmptyRegistry(), ToolCallingMode.JsonChat, AgentPermissions.All);
+
+            Assert.That(prompt, Does.Not.Contain("code_outline"));
+            Assert.That(prompt, Does.Not.Contain("{roslyn_navigation}"));
+        }
+
+        [Test]
+        public void Build_WithRoslynTools_IncludesNavigationHint()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("code_outline", "outline", "{}", mutates: false, (a, c) => Task.FromResult("")));
+
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, registry, ToolCallingMode.JsonChat, AgentPermissions.All);
+
+            Assert.That(prompt, Does.Contain("C# navigation: prefer the semantic tools first"));
+            Assert.That(prompt, Does.Not.Contain("{roslyn_navigation}"));
+        }
+
+        [Test]
+        public void Build_Native_IncludesAvailableToolList()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read_files", "Read files", "{}", mutates: false, (a, c) => Task.FromResult("")));
+
+            var prompt = AgentPromptBuilder.Build(AgentMode.Act, registry, ToolCallingMode.Native, AgentPermissions.All);
+
+            Assert.That(prompt, Does.Contain("Available tools:"));
+            Assert.That(prompt, Does.Contain("read_files"));
+        }
+    }
+
+    [TestFixture]
+    public class AgentToolRegistryDisableTests
+    {
+        [Test]
+        public void Disable_HidesToolFromForMode()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("convert_uipath", "Convert a UiPath XAML file to Workflow Foundation and write the artifacts.", "{\"path\":\"string\"}", mutates: true, (a, c) => Task.FromResult("done")));
+            registry.Disable("convert_uipath");
+
+            var actTools = registry.ForMode(AgentMode.Act, AgentPermissions.All);
+
+            Assert.That(actTools, Is.Empty);
+        }
+
+        [Test]
+        public void Disable_BlocksExecutionWithReason()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read_spec", "spec", "{}", mutates: false, (a, c) => Task.FromResult("done")));
+            registry.Disable("read_spec");
+
+            var ok = registry.TryGetExecutableTool("read_spec", AgentMode.Plan, AgentPermissions.All, out var tool, out var reason);
+
+            Assert.That(ok, Is.False);
+            Assert.That(tool, Is.Not.Null);
+            Assert.That(reason, Does.Contain("disabled"));
+        }
+
+        [Test]
+        public void Disable_DoesNotAffectOtherTools()
+        {
+            var registry = new AgentToolRegistry();
+            registry.Register(new AgentTool("read_spec", "spec", "{}", mutates: false, (a, c) => Task.FromResult("done")));
+            registry.Register(new AgentTool("read_files", "files", "{}", mutates: false, (a, c) => Task.FromResult("done")));
+            registry.Disable("read_spec");
+
+            var actTools = registry.ForMode(AgentMode.Plan, AgentPermissions.All);
+
+            Assert.That(actTools.Count, Is.EqualTo(1));
+            Assert.That(actTools[0].Name, Is.EqualTo("read_files"));
+        }
     }
 }

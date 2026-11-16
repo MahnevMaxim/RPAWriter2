@@ -24,6 +24,85 @@
          See documentation/13-model-layer.md. -->
     <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
     <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
+    <!-- Roslyn semantic analysis (pure, testable without Visual Studio). -->
+    <ProjectReference Include="..\RPAWriter.Roslyn\RPAWriter.Roslyn.csproj" />
   </ItemGroup>
+
+  <Target Name="ResolveVsRoslynReferences" BeforeTargets="ResolveAssemblyReferences">
+    <!--
+      The Roslyn assemblies are referenced from the installed Visual Studio so the tests exercise
+      exactly the same Roslyn version (VS 2022 / Roslyn 4.x) that the VSIX loads at runtime in both VS 2022 and VS 2026. They are
+      copied local here so the net8.0 test host can load them without Visual Studio.
+    -->
+    <PropertyGroup>
+      <RoslynVsInstallRoot Condition="'$(RoslynVsInstallRoot)' == ''"></RoslynVsInstallRoot>
+    </PropertyGroup>
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <PropertyGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <VsRoslynDir>$(RoslynVsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices</VsRoslynDir>
+      <VsPublicAssembliesDir>$(RoslynVsInstallRoot)\Common7\IDE\PublicAssemblies</VsPublicAssembliesDir>
+    </PropertyGroup>
+    <Error Condition="'$(RoslynVsInstallRoot)' == ''"
+           Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
+    <ItemGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <Reference Include="Microsoft.CodeAnalysis">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.Workspaces.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Collections.Immutable">
+        <HintPath>$(VsPublicAssembliesDir)\System.Collections.Immutable.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Reflection.Metadata">
+        <HintPath>$(VsPublicAssembliesDir)\System.Reflection.Metadata.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Composition.AttributedModel">
+        <HintPath>$(VsRoslynDir)\Core\System.Composition.AttributedModel.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Composition.Convention">
+        <HintPath>$(VsRoslynDir)\Core\System.Composition.Convention.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Composition.Hosting">
+        <HintPath>$(VsRoslynDir)\Core\System.Composition.Hosting.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Composition.Runtime">
+        <HintPath>$(VsRoslynDir)\Core\System.Composition.Runtime.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="System.Composition.TypedParts">
+        <HintPath>$(VsRoslynDir)\Core\System.Composition.TypedParts.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.Workspaces.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+      <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+        <HintPath>$(VsRoslynDir)\Core\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
 
 </Project>

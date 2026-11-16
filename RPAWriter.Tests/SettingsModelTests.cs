@@ -160,6 +160,56 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void RoslynSemanticsEnabled_DefaultsToTrue()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+            model.Run();
+
+            Assert.That(model.RoslynSemanticsEnabled, Is.True);
+        }
+
+        [Test]
+        public void RoslynSemanticsEnabled_RoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            model.RoslynSemanticsEnabled = false;
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.RoslynSemanticsEnabled, Is.False);
+        }
+
+        [Test]
+        public void FilterBuildTestOutput_DefaultsToTrue()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+            model.Run();
+
+            Assert.That(model.FilterBuildTestOutput, Is.True);
+        }
+
+        [Test]
+        public void FilterBuildTestOutput_RoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            model.FilterBuildTestOutput = false;
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(reloaded.FilterBuildTestOutput, Is.False);
+        }
+
+        [Test]
         public void SaveSettingsCommand_PersistsAndRaisesEvent()
         {
             var store = new InMemorySettingsStore();
@@ -386,6 +436,118 @@ namespace RPAWriter.Tests
 
             Assert.That(reloaded.DenyServiceDirectories, Is.False);
             Assert.That(reloaded.DenySensitiveFiles, Is.False);
+        }
+
+        [Test]
+        public void AgentToolGroups_DefaultsAllEnabled()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+            model.Run();
+
+            Assert.That(model.AgentToolGroups, Has.Count.EqualTo(4));
+
+            var allNames = new List<string>();
+            foreach (var group in model.AgentToolGroups)
+            {
+                foreach (var item in group.Items)
+                {
+                    Assert.That(item.IsEnabled, Is.True);
+                    allNames.Add(item.Name);
+                }
+            }
+
+            Assert.That(allNames, Has.Count.EqualTo(15));
+            Assert.That(allNames, Does.Contain("read_robot_sources"));
+            Assert.That(allNames, Does.Contain("read_spec"));
+            Assert.That(allNames, Does.Contain("list_kb"));
+            Assert.That(allNames, Does.Contain("convert_uipath"));
+        }
+
+        [Test]
+        public void DisabledAgentTools_RoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            var convert = FindTool(model, "convert_uipath");
+            Assert.That(convert, Is.Not.Null);
+            convert.IsEnabled = false;
+
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            var reloadedConvert = FindTool(reloaded, "convert_uipath");
+            Assert.That(reloadedConvert, Is.Not.Null);
+            Assert.That(reloadedConvert.IsEnabled, Is.False);
+            Assert.That(FindTool(reloaded, "read_spec").IsEnabled, Is.True);
+        }
+
+        [Test]
+        public void NativeToolGroups_DefaultsAllEnabled()
+        {
+            var model = new SettingsModel(new InMemorySettingsStore());
+            model.Run();
+
+            var allNames = new List<string>();
+            foreach (var group in model.NativeToolGroups)
+            {
+                foreach (var item in group.Items)
+                {
+                    allNames.Add(item.Name);
+                }
+            }
+
+            Assert.That(allNames, Has.Count.EqualTo(24));
+            Assert.That(allNames, Does.Contain("read_files"));
+            Assert.That(allNames, Does.Contain("editor"));
+            Assert.That(allNames, Does.Contain("code_outline"));
+        }
+
+        [Test]
+        public void DisabledAgentTools_NativeRoundTripsThroughSaveAndLoad()
+        {
+            var store = new InMemorySettingsStore();
+            var model = new SettingsModel(store);
+            model.Run();
+
+            var editor = FindNativeTool(model, "editor");
+            editor.IsEnabled = false;
+            model.SaveSettingsCommand();
+
+            var reloaded = new SettingsModel(store);
+            reloaded.Run();
+
+            Assert.That(FindNativeTool(reloaded, "editor").IsEnabled, Is.False);
+            Assert.That(FindNativeTool(reloaded, "read_files").IsEnabled, Is.True);
+        }
+
+        private static AgentToolToggleItem FindNativeTool(SettingsModel model, string name)
+        {
+            foreach (var group in model.NativeToolGroups)
+            {
+                foreach (var item in group.Items)
+                {
+                    if (item.Name == name)
+                        return item;
+                }
+            }
+            return null;
+        }
+
+        private static AgentToolToggleItem FindTool(SettingsModel model, string name)
+        {
+            foreach (var group in model.AgentToolGroups)
+            {
+                foreach (var item in group.Items)
+                {
+                    if (item.Name == name)
+                        return item;
+                }
+            }
+            return null;
         }
     }
 }

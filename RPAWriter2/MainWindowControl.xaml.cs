@@ -53,6 +53,7 @@ namespace RPAWriter2
         private IAiProvider _ai;
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
+        private RoslynWorkspaceService _roslyn;
         private OutputWindowService _outputWindow;
         private readonly GitService _git = new GitService();
         private readonly CheckpointServiceFactory _checkpoints = new CheckpointServiceFactory();
@@ -269,6 +270,7 @@ namespace RPAWriter2
             _stt = SpeechToTextFactory.Create(_settings);
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
+            _roslyn = new RoslynWorkspaceService();
             _outputWindow = new OutputWindowService();
             RebuildAgentTools();
             RefreshMcpToolsAsync();
@@ -2769,8 +2771,9 @@ namespace RPAWriter2
             AppendChatMessage(thinking);
 
             var budget = BuildContextBudget();
+            var environment = BuildAgentToolEnvironment();
             await RunAgentTurnAsync(_chatModel.Mode, budget, "input chars=" + promptText.Length + ", images=" + images.Count, thinking,
-                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _chatModel.Mode, budget, ct, progress, resumeProgress, TakeSteer));
+                (ct, progress, resumeProgress) => _agentRunner.RunAsync(history, promptText, images, _chatModel.Mode, budget, ct, environment, progress, resumeProgress, TakeSteer));
         }
 
         /// <summary>
@@ -2928,8 +2931,9 @@ namespace RPAWriter2
             var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
+            var environment = snapshot.Environment ?? BuildAgentToolEnvironment();
             await RunAgentTurnAsync(mode, budget, "resume", thinking,
-                (ct, progress, resumeProgress) => _agentRunner.ResumeAsync(snapshot, mode, budget, ct, progress, resumeProgress, TakeSteer));
+                (ct, progress, resumeProgress) => _agentRunner.ResumeAsync(snapshot, mode, budget, ct, environment, progress, resumeProgress, TakeSteer));
         }
 
         /// <summary>Removes the "Request cancelled." notice added by a cancelled turn before resuming.</summary>
@@ -3152,6 +3156,34 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => { item.Status = "failed"; item.Error = ex.Message; }));
                 return "spawn_agent sub-agent failed: " + ex.Message;
             }
+        }
+
+        /// <summary>
+        /// Captures the tool environment available right now: the registry built from the current
+        /// settings and MCP adapters, the calling protocol, the enabled permission categories, the
+        /// memory-bank mode, the read roots and the user addressing. Built at the start of every
+        /// dialogue turn so the system prompt always matches the tools that can actually run.
+        /// </summary>
+        private AgentToolEnvironment BuildAgentToolEnvironment()
+        {
+            var memoryBankMode = ParseMemoryBankMode();
+            var registry = BuildToolRegistry(memoryBankMode);
+            _toolRegistry = registry;
+
+            var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
+                ? ToolCallingMode.Native
+                : ToolCallingMode.JsonChat;
+
+            return new AgentToolEnvironment
+            {
+                Registry = registry,
+                ToolCallingMode = toolCallingMode,
+                AllowedPermissions = BuildAllowedPermissions(),
+                MemoryBankMode = memoryBankMode,
+                AllowedReadPaths = GetReadRootsForPrompt(),
+                UserName = _settings?.UserName ?? "",
+                AddressByName = _settings?.AddressByName ?? false
+            };
         }
 
         private void RebuildAgentTools()
@@ -3489,6 +3521,11 @@ namespace RPAWriter2
             return allowed;
         }
 
+        private IReadOnlyCollection<string> GetDisabledAgentTools()
+        {
+            return _settings?.DisabledAgentTools ?? new List<string>();
+        }
+
         private MemoryBankMode ParseMemoryBankMode()
         {
             var value = _settings?.MemoryBankMode;
@@ -3514,16 +3551,20 @@ namespace RPAWriter2
                 () => _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2),
                 _buildFeedback,
                 _robotTemplate,
+                _roslyn,
                 AskQuestionAsync,
                 () => (_settings?.SkillsPath ?? "").Trim(),
                 () => (IReadOnlyList<string>)(_settings?.AdditionalReadPaths ?? new List<string>()),
                 () => _settings?.DenyServiceDirectories ?? true,
                 () => _settings?.DenySensitiveFiles ?? true,
+                _settings.RoslynSemanticsEnabled,
+                _settings.FilterBuildTestOutput,
                 memoryBankMode,
                 RunSubAgentAsync,
                 _settings.AllowSubagents,
                 _settings.SubagentMaxDepth,
-                () => _chatModel.Mode);
+                () => _chatModel.Mode,
+                GetDisabledAgentTools);
             _toolFactory = factory;
             factory.PixMwfStore = PixMwfMappingStore.Shared;
             var registry = factory.CreateRegistry();

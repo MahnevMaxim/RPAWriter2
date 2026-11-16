@@ -99,6 +99,23 @@
 | **Show robot creation control in chat** | Показывать контрол создания робота (номер робота + кнопка **Create robot**) в верхней части чата, когда решение не открыто | вкл. |
 | **Open RPA Writer Converter →** | Открыть отдельное окно конвертера UiPath → XAML/C# | — |
 
+### Agent tools
+
+Отдельные галочки для RPA-доменных инструментов агента. Выключенный инструмент полностью
+скрывается от модели и не исполняется. Галочка действует как дополнительный фильтр поверх
+категории права (см. [Права агента](16-permissions-and-security.md)): инструмент активен, только
+если включены и его галочка, и его категория права (mutating-инструменты доступны только в Act).
+
+| Группа | Инструменты |
+|---|---|
+| **RPA** | `read_robot_sources`, `generate_robot`, `create_robot` |
+| **Spec** | `read_spec`, `analyze_spec`, `decompose_tasks`, `reconstruct_spec`, `map_task_to_solution` |
+| **KB** | `list_kb`, `find_similar`, `kb_import`, `kb_add` |
+| **RPA convert** | `convert_uipath`, `list_pix_mwf_activities`, `map_pix_mwf_arguments` |
+
+По умолчанию все галочки включены. В подписи каждой галочки показывается реальное имя инструмента
+и его описание (например, `convert_uipath — Convert a UiPath XAML file to Workflow Foundation and write the artifacts.`).
+
 ## General
 
 Прочие настройки.
@@ -111,6 +128,7 @@
 | **Address me by name** | Агент обращается к вам по имени | выкл. |
 | **Deploy project name** | Имя проекта для deploy: сборка в конфигурации **Publish**; если пусто — авто-поиск RPA-проекта | пусто |
 | **Show controls** | Показывать скрытую вкладку **Controls** | выкл. |
+| **Roslyn semantics (C# code navigation)** | Включает семантические C#-инструменты: `code_outline`, `find_symbol_usages`, `get_inheritance`, `get_diagnostics` | вкл. |
 | **Agent read scope (Plan mode)** | Дополнительные каталоги, доступные агенту для чтения в режиме Plan (список путей с добавлением/удалением) | пусто |
 | **Deny service/build directories** | Запретить агенту читать файлы внутри `bin`, `obj`, `.git`, `.vs`, `node_modules`, `packages`, `TestResults`, `.idea`, `.vscode`, `__pycache__` | вкл. |
 | **Deny sensitive/secret files** | Запретить агенту читать секретные файлы: `.env`, `web.config`, SSH-ключи, `*.pem`/`*.key`/`*.pfx`/`*.p12`/`*.snk`/`*.rdp`/`*.user`/`*.secret`, `appsettings*.json`, файлы с `credential` в имени | вкл. |

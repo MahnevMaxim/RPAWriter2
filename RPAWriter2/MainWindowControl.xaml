@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="RPAWriter2.MainWindowControl"
+<UserControl x:Class="RPAWriter2.MainWindowControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -1553,6 +1553,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="KB directory" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1597,6 +1598,61 @@
                                         </ControlTemplate>
                                     </Button.Template>
                                 </Button>
+
+                                <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,16,0,0">
+                                    <TextBlock Text="Agent tools" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{StaticResource Dark.Text}"/>
+                                    <ItemsControl ItemsSource="{Binding Settings.AgentToolGroups}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,0,0,8">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="0,0,0,2" Foreground="{StaticResource Dark.Text}"/>
+                                                    <ItemsControl ItemsSource="{Binding Items}" Margin="12,0,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}" Margin="0,1,0,1" VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}">
+                                                                    <TextBlock TextWrapping="Wrap" MaxWidth="600">
+                                                                        <Run Text="{Binding Name, Mode=OneWay}" FontFamily="Consolas"/>
+                                                                        <Run Text=" — "/>
+                                                                        <Run Text="{Binding Description, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                </CheckBox>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="Native tools">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <Grid Margin="8" VerticalAlignment="Top">
+                                <ItemsControl ItemsSource="{Binding Settings.NativeToolGroups}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,0,8">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="0,0,0,2" Foreground="{StaticResource Dark.Text}"/>
+                                                <ItemsControl ItemsSource="{Binding Items}" Margin="12,0,0,0">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}" Margin="0,1,0,1" VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}">
+                                                                <TextBlock TextWrapping="Wrap" MaxWidth="600">
+                                                                    <Run Text="{Binding Name, Mode=OneWay}" FontFamily="Consolas"/>
+                                                                    <Run Text=" — "/>
+                                                                    <Run Text="{Binding Description, Mode=OneWay}"/>
+                                                                </TextBlock>
+                                                            </CheckBox>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>
@@ -1623,6 +1679,9 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Log file path" VerticalAlignment="Center" Margin="0,0,8,4"/>
@@ -1646,8 +1705,15 @@
                                 <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowControlsCheckBox" IsChecked="{Binding Settings.ShowControls, Mode=TwoWay}"
                                           Content="Show controls" Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"/>
 
-                                <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Text="Agent read scope (Plan mode)" VerticalAlignment="Center" Margin="0,8,0,2" Foreground="{StaticResource Dark.Text}"/>
-                                <DockPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
+                                <CheckBox Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+                                          x:Name="RoslynSemanticsCheckBox"
+                                          IsChecked="{Binding Settings.RoslynSemanticsEnabled, Mode=TwoWay}"
+                                          Content="Roslyn semantics (C# code navigation)"
+                                          Margin="0,8,0,4" Foreground="{StaticResource Dark.Text}"
+                                          ToolTip="Включить семантические C#-инструменты: code_outline, find_symbol_usages, get_inheritance, get_diagnostics"/>
+
+                                <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Text="Agent read scope (Plan mode)" VerticalAlignment="Center" Margin="0,8,0,2" Foreground="{StaticResource Dark.Text}"/>
+                                <DockPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
                                     <StackPanel DockPanel.Dock="Right" Orientation="Vertical" Margin="8,0,0,0">
                                         <Button Content="Add folder…" Command="{Binding Cmd}" CommandParameter="AddReadPathCommand" Margin="0,0,0,4"/>
                                         <Button Content="Remove selected" Command="{Binding Cmd}" CommandParameter="RemoveReadPathCommand"/>
@@ -1695,37 +1761,43 @@
                                     </ListBox>
                                 </DockPanel>
 
-                                <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                                <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0">
                                     <CheckBox x:Name="DenyServiceDirectoriesCheckBox" IsChecked="{Binding Settings.DenyServiceDirectories, Mode=TwoWay}"
                                               Content="Deny service/build directories" Foreground="{StaticResource Dark.Text}"/>
                                     <TextBlock Text="Blocks the agent from reading files inside: bin, obj, .git, .vs, node_modules, packages, TestResults, .idea, .vscode, __pycache__."
                                                FontSize="11" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="20,2,0,0"/>
                                 </StackPanel>
 
-                                <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                                <StackPanel Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0">
                                     <CheckBox x:Name="DenySensitiveFilesCheckBox" IsChecked="{Binding Settings.DenySensitiveFiles, Mode=TwoWay}"
                                               Content="Deny sensitive/secret files" Foreground="{StaticResource Dark.Text}"/>
                                     <TextBlock Text="Blocks the agent from reading: .env, web.config, SSH keys (id_rsa, id_dsa, id_ecdsa, id_ed25519), keys and certificates (*.pem, *.key, *.pfx, *.p12, *.snk, *.rdp, *.user, *.secret), appsettings*.json, and any file whose name contains &quot;credential&quot;."
                                                FontSize="11" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="20,2,0,0"/>
                                 </StackPanel>
 
-                                <Button Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2" Content="Refresh prompts from disk"
+                                <Button Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Content="Refresh prompts from disk"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="RefreshPromptsFromDiskCommand"/>
 
-                                <Button Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Content="Export documentation"
+                                <Button Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" Content="Export documentation"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportDocumentationCommand"/>
 
-                                <Button Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
+                                <Button Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2" Content="Export prompts"
                                         HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding Cmd}" CommandParameter="ExportPromptsCommand"/>
 
-                                <CheckBox Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox" IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
+                                <CheckBox Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="2" x:Name="AutoCaptureRuntimeExceptionsCheckBox" IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
                                           Content="Auto-capture runtime exceptions" Margin="0,12,0,0" Foreground="{StaticResource Dark.Text}"/>
 
-                                <TextBlock Grid.Row="13" Grid.Column="0" Text="Deploy project name" VerticalAlignment="Top" Margin="0,12,8,4"/>
-                                <StackPanel Grid.Row="13" Grid.Column="1" Margin="0,12,0,4">
+                                <TextBlock Grid.Row="14" Grid.Column="0" Text="Deploy project name" VerticalAlignment="Top" Margin="0,12,8,4"/>
+                                <StackPanel Grid.Row="14" Grid.Column="1" Margin="0,12,0,4">
                                     <TextBox x:Name="DeployProjectNameBox" Text="{Binding Settings.DeployProjectName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                     <TextBlock Text="Enter the project name without the .csproj extension" FontSize="11" Foreground="#C8C8C8" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
+                                <CheckBox Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="2" x:Name="FilterBuildTestOutputCheckBox"
+                                          IsChecked="{Binding Settings.FilterBuildTestOutput, Mode=TwoWay}"
+                                          Content="Filter build/test output (compact summary)"
+                                          Margin="0,12,0,0" Foreground="{StaticResource Dark.Text}"
+                                          ToolTip="Return only errors/warnings (code + path) for dotnet build and a passed/failed/skipped summary for dotnet test instead of raw console output"/>
+
                             </Grid>
                         </ScrollViewer>
                     </TabItem>

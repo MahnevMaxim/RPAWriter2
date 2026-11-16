@@ -171,11 +171,20 @@ namespace RPAWriter.Core.Services
         /// <summary>Automatically snapshot workspace files into a shadow git repository per iteration (checkpoints).</summary>
         public bool CheckpointsEnabled { get; set; } = true;
 
+        /// <summary>Enable the Roslyn C# semantic tools (code_outline, find_symbol_usages, get_inheritance, get_diagnostics).</summary>
+        public bool RoslynSemanticsEnabled { get; set; } = true;
+
+        /// <summary>Summarize dotnet build/test output in run_commands instead of returning raw console text.</summary>
+        public bool FilterBuildTestOutput { get; set; } = true;
+
         /// <summary>Recently used production robot names (most recent first).</summary>
         public List<string> RobotNameHistory { get; set; } = new List<string>();
 
         /// <summary>Additional directories the agent may read in Plan mode (beyond solution/KB/robots/skills).</summary>
         public List<string> AdditionalReadPaths { get; set; } = new List<string>();
+
+        /// <summary>Names of the RPA-domain agent tools the user has disabled in Settings → RPA (empty = all enabled).</summary>
+        public List<string> DisabledAgentTools { get; set; } = new List<string>();
 
         /// <summary>Deny reading service/build directories (bin, obj, .git, .vs, node_modules, packages, TestResults, .idea, .vscode, __pycache__) in non-Act modes.</summary>
         public bool DenyServiceDirectories { get; set; } = true;
@@ -268,6 +277,22 @@ namespace RPAWriter.Core.Services
                         cleaned.Add(trimmed);
                 }
                 settings.AdditionalReadPaths = cleaned;
+            }
+
+            if (settings.DisabledAgentTools == null)
+            {
+                settings.DisabledAgentTools = new List<string>();
+            }
+            else
+            {
+                var cleanedTools = new List<string>();
+                foreach (var name in settings.DisabledAgentTools)
+                {
+                    var trimmed = name?.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                        cleanedTools.Add(trimmed);
+                }
+                settings.DisabledAgentTools = cleanedTools;
             }
         }
     }

@@ -11,11 +11,14 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using EnvDTE;
 using EnvDTE80;
+using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Shell;
 using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Models;
 using RPAWriter.Core.Services;
+using RPAWriter.Roslyn;
+using RPAWriter2.Services;
 
 namespace RPAWriter2.Services.AgentTools
 {
@@ -34,6 +37,9 @@ namespace RPAWriter2.Services.AgentTools
         private readonly Func<DTE2?> _getDte;
         private readonly IBuildFeedbackService _buildFeedback;
         private readonly RobotTemplateService _robotTemplate;
+        private readonly RoslynWorkspaceService _roslyn;
+        private readonly bool _enableRoslynSemantics;
+        private readonly bool _filterBuildTestOutput;
         private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> _askQuestionAsync;
         private readonly Func<string?> _getSkillsPath;
         private readonly Func<IReadOnlyList<string>> _getAdditionalReadRoots;
@@ -45,6 +51,7 @@ namespace RPAWriter2.Services.AgentTools
         private readonly bool _enableSubagents;
         private readonly int _subagentMaxDepth;
         private readonly Func<AgentMode> _getMode;
+        private readonly Func<IReadOnlyCollection<string>> _getDisabledTools;
         private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
@@ -57,16 +64,20 @@ namespace RPAWriter2.Services.AgentTools
             Func<DTE2?> getDte,
             IBuildFeedbackService buildFeedback,
             RobotTemplateService robotTemplate,
+            RoslynWorkspaceService roslyn,
             Func<string, IReadOnlyList<string>, CancellationToken, Task<string>> askQuestionAsync,
             Func<string?> getSkillsPath,
             Func<IReadOnlyList<string>> getAdditionalReadRoots,
             Func<bool> getDenyServiceDirectories,
             Func<bool> getDenySensitiveFiles,
+            bool enableRoslynSemantics,
+            bool filterBuildTestOutput,
             MemoryBankMode memoryBankMode,
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
             int subagentMaxDepth,
-            Func<AgentMode> getMode)
+            Func<AgentMode> getMode,
+            Func<IReadOnlyCollection<string>> getDisabledTools = null)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSpec = getSpec ?? throw new ArgumentNullException(nameof(getSpec));
@@ -77,16 +88,20 @@ namespace RPAWriter2.Services.AgentTools
             _getDte = getDte ?? throw new ArgumentNullException(nameof(getDte));
             _buildFeedback = buildFeedback ?? throw new ArgumentNullException(nameof(buildFeedback));
             _robotTemplate = robotTemplate ?? throw new ArgumentNullException(nameof(robotTemplate));
+            _roslyn = roslyn ?? throw new ArgumentNullException(nameof(roslyn));
             _askQuestionAsync = askQuestionAsync ?? throw new ArgumentNullException(nameof(askQuestionAsync));
             _getSkillsPath = getSkillsPath ?? throw new ArgumentNullException(nameof(getSkillsPath));
             _getAdditionalReadRoots = getAdditionalReadRoots ?? (() => Array.Empty<string>());
             _getDenyServiceDirectories = getDenyServiceDirectories ?? (() => true);
             _getDenySensitiveFiles = getDenySensitiveFiles ?? (() => true);
+            _enableRoslynSemantics = enableRoslynSemantics;
+            _filterBuildTestOutput = filterBuildTestOutput;
             _memoryBankMode = memoryBankMode;
             _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
             _enableSubagents = enableSubagents;
             _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
             _getMode = getMode ?? throw new ArgumentNullException(nameof(getMode));
+            _getDisabledTools = getDisabledTools ?? (() => Array.Empty<string>());
         }
 
         /// <summary>
@@ -113,6 +128,15 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("list_kb", "List the solutions in the knowledge base.", "{}", false, ListKbAsync));
             registry.Register(new AgentTool("read_errors", "Read compiler errors from the Visual Studio Error List.", "{}", false, ReadErrorsAsync));
             registry.Register(new AgentTool("read_output", "Read the Visual Studio Output window text.", "{}", false, ReadOutputAsync));
+            // Roslyn semantic tools: read compressed semantics from the live VisualStudioWorkspace
+            // instead of raw file text (major token savings; compiler-verified, includes unsaved buffers).
+            if (_enableRoslynSemantics)
+            {
+                registry.Register(new AgentTool("code_outline", "Return a semantic outline of a C# file: types and members with signatures and line ranges, WITHOUT method bodies. Uses the live Roslyn VisualStudioWorkspace, so it sees unsaved editor changes. This is ~90% smaller than reading the file text — prefer it over read_files for C# navigation. Requires the file to be part of the open Visual Studio solution.", "{\"path\":\"string\"}", false, CodeOutlineAsync, CodeOutlineDisplayAsync));
+                registry.Register(new AgentTool("find_symbol_usages", "Find all references to a C# symbol, verified by the compiler (not grep). Provide the declaration name and optionally the file that declares it. Returns file:line:col plus the line text for each usage. Requires the symbol to be in the open Visual Studio solution.", "{\"symbol\":\"string\",\"file?\":\"string\",\"maxResults?\":\"integer\"}", false, FindSymbolUsagesAsync, FindSymbolUsagesDisplayAsync));
+                registry.Register(new AgentTool("get_inheritance", "Return the inheritance tree of a C# type: base types, implemented interfaces, and derived/implementing types. Provide the type name and optionally the file that declares it. Uses compiler-verified symbol data from the open solution.", "{\"symbol\":\"string\",\"file?\":\"string\"}", false, GetInheritanceAsync, GetInheritanceDisplayAsync));
+                registry.Register(new AgentTool("get_diagnostics", "Return Roslyn background diagnostics (errors/warnings) for a C# file without running a build. Provide the file path (must be in the open solution), or omit it to analyze the active editor document.", "{\"path?\":\"string\"}", false, GetDiagnosticsAsync, GetDiagnosticsDisplayAsync));
+            }
             // Temporarily excluded in favor of read_files:
             registry.Register(new AgentTool("open_file_in_visual_studio", "Open a file in Visual Studio and activate its tab. Use to bring a file into the editor so the user can see it, then read its live content with read_files. Does not read the file content from disk.", "{\"path\":\"string\"}", false, OpenFileAsync));
             // registry.Register(new AgentTool("read_open_document", "Read the content currently shown in an open editor tab (includes unsaved changes). Provide \"path\" to read a specific open tab; omit it to read the active document. Never reads from disk. Prefer this over read_file for files being edited.", "{\"path\":\"string\"}", false, ReadOpenDocumentAsync, ReadOpenDocumentDisplayAsync));
@@ -179,6 +203,12 @@ namespace RPAWriter2.Services.AgentTools
             registry.Register(new AgentTool("download_file", "Download a file from a URL and save it to disk.", "{\"url\":\"string\",\"path\":\"string\"}", true, DownloadFileAsync, permission: AgentPermissions.WebFetch));
             registry.Register(new AgentTool("list_pix_mwf_activities", "List the PIX and MWF activities known to the converter libraries together with their full argument descriptions (name, type, direction, description, required, default value). Use this to obtain the data needed to match PIX arguments to MWF arguments.", "{}", false, ListPixMwfActivitiesAsync));
             registry.Register(new AgentTool("map_pix_mwf_arguments", "Map one PIX activity argument to one MWF activity argument in the PIX to MWF mapping store. pix_activity and pix_argument are required. Pass an empty mwf_argument to unmap. conversion is one of None, ToString, Parse, DateTimeFormat, Custom; conversion_expression is the format string or a custom C# expression template where {0} is the source value.", "{\"pix_activity\":\"string\",\"pix_argument\":\"string\",\"mwf_argument?\":\"string\",\"conversion?\":\"string\",\"conversion_expression?\":\"string\"}", true, MapPixMwfArgumentsAsync));
+
+            foreach (var name in _getDisabledTools())
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                    registry.Disable(name);
+            }
 
             return registry;
         }
@@ -384,6 +414,7 @@ namespace RPAWriter2.Services.AgentTools
         private const int ReadFilesMaxLines = 2000;
         private const int ReadFilesMaxChars = 48000; // ~47k characters, matching Cline
         private const int SearchMaxCharsPerQuery = 48000; // ~48k characters per query, matching Cline
+        private const int BuildTestMaxOutputChars = 200000; // capture enough for build/test summaries before filtering
 
         /// <summary>
         /// Cline-compatible file reader. Reads one or more files by absolute (or solution-relative)
@@ -668,7 +699,7 @@ namespace RPAWriter2.Services.AgentTools
             return resolved.Path ?? doc.Name;
         }
 
-        private (Document? Doc, string? Path, string? Error) ResolveOpenDocument(JObject args)
+        private (EnvDTE.Document? Doc, string? Path, string? Error) ResolveOpenDocument(JObject args)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -678,7 +709,7 @@ namespace RPAWriter2.Services.AgentTools
             var dte = _getDte();
             if (dte == null) return (null, null, "Visual Studio is not available.");
 
-            Document? doc;
+            EnvDTE.Document? doc;
             if (p != null)
             {
                 doc = VsDocumentService.FindOpenDocument(dte, p);
@@ -869,6 +900,139 @@ namespace RPAWriter2.Services.AgentTools
             }
 
             return sb.ToString().TrimEnd();
+        }
+
+        private async Task<string> CodeOutlineAsync(JObject args, CancellationToken ct)
+        {
+            var path = ResolvePath(args["path"]?.Value<string>() ?? "");
+            if (string.IsNullOrWhiteSpace(path)) return "Missing \"path\" argument.";
+            if (!IsReadAllowed(path)) return "Access denied: " + path;
+
+            var document = await _roslyn.GetDocumentAsync(path, ct).ConfigureAwait(false);
+            if (document == null)
+                return "Not a C# document in the open Visual Studio solution: " + path + " (Roslyn semantic tools require the file to be part of the open solution).";
+
+            try
+            {
+                var outline = await RoslynAnalysis.BuildOutlineAsync(document, ct).ConfigureAwait(false);
+                return RoslynOutputFormatter.FormatOutline(outline, path);
+            }
+            catch (Exception ex)
+            {
+                return "Failed to build the code outline for " + path + ": " + ex.Message;
+            }
+        }
+
+        private Task<string> CodeOutlineDisplayAsync(JObject args, CancellationToken ct)
+        {
+            return Task.FromResult(ResolvePath(args["path"]?.Value<string>() ?? ""));
+        }
+
+        private async Task<string> FindSymbolUsagesAsync(JObject args, CancellationToken ct)
+        {
+            var symbol = args["symbol"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(symbol)) return "Missing \"symbol\" argument.";
+
+            var solution = _roslyn.GetSolution();
+            if (solution == null) return "Visual Studio workspace is not available.";
+
+            var file = ResolvePath(args["file"]?.Value<string>() ?? "");
+            Microsoft.CodeAnalysis.Document scopeDocument = null;
+            if (!string.IsNullOrWhiteSpace(file))
+            {
+                if (!IsReadAllowed(file)) return "Access denied: " + file;
+                scopeDocument = await _roslyn.GetDocumentAsync(file, ct).ConfigureAwait(false);
+            }
+
+            var maxResults = args["maxResults"]?.Value<int>() ?? 100;
+
+            try
+            {
+                var result = await RoslynAnalysis.FindSymbolUsagesAsync(solution, symbol, scopeDocument, maxResults, ct).ConfigureAwait(false);
+                return RoslynOutputFormatter.FormatUsages(result);
+            }
+            catch (Exception ex)
+            {
+                return "Failed to find usages of \"" + symbol + "\": " + ex.Message;
+            }
+        }
+
+        private Task<string> FindSymbolUsagesDisplayAsync(JObject args, CancellationToken ct)
+        {
+            return Task.FromResult(args["symbol"]?.Value<string>() ?? "");
+        }
+
+        private async Task<string> GetInheritanceAsync(JObject args, CancellationToken ct)
+        {
+            var symbol = args["symbol"]?.Value<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(symbol)) return "Missing \"symbol\" argument.";
+
+            var solution = _roslyn.GetSolution();
+            if (solution == null) return "Visual Studio workspace is not available.";
+
+            var file = ResolvePath(args["file"]?.Value<string>() ?? "");
+            Microsoft.CodeAnalysis.Document scopeDocument = null;
+            if (!string.IsNullOrWhiteSpace(file))
+            {
+                if (!IsReadAllowed(file)) return "Access denied: " + file;
+                scopeDocument = await _roslyn.GetDocumentAsync(file, ct).ConfigureAwait(false);
+            }
+
+            try
+            {
+                var info = await RoslynAnalysis.GetInheritanceAsync(solution, symbol, scopeDocument, ct).ConfigureAwait(false);
+                return RoslynOutputFormatter.FormatInheritance(info);
+            }
+            catch (Exception ex)
+            {
+                return "Failed to resolve inheritance of \"" + symbol + "\": " + ex.Message;
+            }
+        }
+
+        private Task<string> GetInheritanceDisplayAsync(JObject args, CancellationToken ct)
+        {
+            return Task.FromResult(args["symbol"]?.Value<string>() ?? "");
+        }
+
+        private async Task<string> GetDiagnosticsAsync(JObject args, CancellationToken ct)
+        {
+            var rawPath = args["path"]?.Value<string>() ?? "";
+            Microsoft.CodeAnalysis.Document document;
+            string displayPath;
+
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+                var dte = _getDte();
+                var active = dte?.ActiveDocument;
+                if (active == null) return "No document is active in the editor.";
+                displayPath = active.FullName;
+                if (string.IsNullOrWhiteSpace(displayPath)) return "The active document has no file path.";
+            }
+            else
+            {
+                displayPath = ResolvePath(rawPath);
+                if (!IsReadAllowed(displayPath)) return "Access denied: " + displayPath;
+            }
+
+            document = await _roslyn.GetDocumentAsync(displayPath, ct).ConfigureAwait(false);
+            if (document == null)
+                return "Not a C# document in the open Visual Studio solution: " + displayPath;
+
+            try
+            {
+                var diagnostics = await RoslynAnalysis.GetDiagnosticsAsync(document, ct).ConfigureAwait(false);
+                return RoslynOutputFormatter.FormatDiagnostics(displayPath, diagnostics);
+            }
+            catch (Exception ex)
+            {
+                return "Failed to read diagnostics for " + displayPath + ": " + ex.Message;
+            }
+        }
+
+        private Task<string> GetDiagnosticsDisplayAsync(JObject args, CancellationToken ct)
+        {
+            return Task.FromResult(ResolvePath(args["path"]?.Value<string>() ?? ""));
         }
 
         private async Task<string> ReadOutputAsync(JObject args, CancellationToken ct)
@@ -1202,10 +1366,19 @@ namespace RPAWriter2.Services.AgentTools
             var sb = new StringBuilder();
             foreach (var command in commands)
             {
-                var result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct).ConfigureAwait(false);
+                var shouldFilter = _filterBuildTestOutput && BuildTestOutputFilter.IsSupported(command);
+                ShellCommandResult result;
+                if (shouldFilter)
+                    result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct, maxOutputChars: BuildTestMaxOutputChars, forceEnglishDotnet: true).ConfigureAwait(false);
+                else
+                    result = await _shell.RunAsync(command, _getSolutionDir() ?? "", ct).ConfigureAwait(false);
+
                 if (sb.Length > 0) sb.AppendLine();
                 sb.AppendLine("$ " + command);
-                sb.Append(result.Success ? result.Output : "Command failed (exit " + result.ExitCode + "):\n" + result.Output);
+                if (shouldFilter)
+                    sb.Append(BuildTestOutputFilter.Filter(command, result.ExitCode, result.Output));
+                else
+                    sb.Append(result.Success ? result.Output : "Command failed (exit " + result.ExitCode + "):\n" + result.Output);
             }
             return Truncate(sb.ToString(), 48000);
         }

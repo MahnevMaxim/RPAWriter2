@@ -100,6 +100,16 @@
 | `submit_and_exit` | Завершить беседу финальным ответом после проверки результата | Read files |
 | `analyze_logs` | Проанализировать лог-файлы по указанным путям | Read files |
 
+### Per-tool галочки (Settings → RPA)
+
+RPA-доменные инструменты (`read_robot_sources`, `generate_robot`, `create_robot`, `read_spec`,
+`analyze_spec`, `decompose_tasks`, `reconstruct_spec`, `map_task_to_solution`, `list_kb`,
+`find_similar`, `kb_import`, `kb_add`, `convert_uipath`, `list_pix_mwf_activities`,
+`map_pix_mwf_arguments`) можно включать/выключать по отдельности на вкладке Settings → RPA
+(секция **Agent tools**). Галочка — дополнительный фильтр поверх категории права и режима:
+инструмент активен, только если включены и его галочка, и его категория права (mutating —
+только в Act). Выключенный инструмент не показывается модели и не исполняется.
+
 ## Очередь сообщений
 
 Под полем ввода чата находится очередь сообщений (**Message queue**). Когда во время активной беседы

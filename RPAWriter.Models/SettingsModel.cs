@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
+using RPAWriter.Core.AgentTools;
 using RPAWriter.Core.Contracts;
 using RPAWriter.Core.Services;
 using RPAWriter.Mvvm;
@@ -78,6 +80,8 @@ namespace RPAWriter.Models
         private bool _speechAutoSend = false;
         private bool _autoCaptureRuntimeExceptions = true;
         private bool _checkpointsEnabled = true;
+        private bool _roslynSemanticsEnabled = true;
+        private bool _filterBuildTestOutput = true;
         private List<string> _robotNameHistory = new List<string>();
 
         private readonly IWorkspaceLogSettingsStore _workspaceLogStore;
@@ -92,6 +96,8 @@ namespace RPAWriter.Models
         private readonly Func<string> _chatLogFilePathResolver;
 
         private readonly ObservableCollection<string> _additionalReadPaths = new ObservableCollection<string>();
+        private readonly List<AgentToolToggleGroup> _agentToolGroups = new List<AgentToolToggleGroup>();
+        private readonly List<AgentToolToggleGroup> _nativeToolGroups = new List<AgentToolToggleGroup>();
         private string _selectedReadPath;
         private bool _denyServiceDirectories = true;
         private bool _denySensitiveFiles = true;
@@ -128,6 +134,8 @@ namespace RPAWriter.Models
             _fileOpener = fileOpener;
             _logFilePathResolver = logFilePathResolver;
             _chatLogFilePathResolver = chatLogFilePathResolver;
+
+            RebuildAgentToolGroups();
         }
 
         /// <summary>Loads persisted settings into the observable properties.</summary>
@@ -212,8 +220,11 @@ namespace RPAWriter.Models
                 SpeechAutoSend = _speechAutoSend,
                 AutoCaptureRuntimeExceptions = _autoCaptureRuntimeExceptions,
                 CheckpointsEnabled = _checkpointsEnabled,
+                RoslynSemanticsEnabled = _roslynSemanticsEnabled,
+                FilterBuildTestOutput = _filterBuildTestOutput,
                 RobotNameHistory = new List<string>(_robotNameHistory),
                 AdditionalReadPaths = new List<string>(_additionalReadPaths),
+                DisabledAgentTools = BuildDisabledAgentTools(),
                 DenyServiceDirectories = _denyServiceDirectories,
                 DenySensitiveFiles = _denySensitiveFiles
             };
@@ -358,6 +369,8 @@ namespace RPAWriter.Models
             SpeechAutoSend = data.SpeechAutoSend;
             AutoCaptureRuntimeExceptions = data.AutoCaptureRuntimeExceptions;
             CheckpointsEnabled = data.CheckpointsEnabled;
+            RoslynSemanticsEnabled = data.RoslynSemanticsEnabled;
+            FilterBuildTestOutput = data.FilterBuildTestOutput;
             _robotNameHistory = data.RobotNameHistory == null
                 ? new List<string>()
                 : new List<string>(data.RobotNameHistory);
@@ -374,7 +387,85 @@ namespace RPAWriter.Models
 
             DenyServiceDirectories = data.DenyServiceDirectories;
             DenySensitiveFiles = data.DenySensitiveFiles;
+
+            ApplyDisabledAgentTools(data.DisabledAgentTools);
         }
+
+        
+
+
+
+
+
+        #region Agent tool toggles
+
+        /// <summary>Groups of RPA-domain tools the user can enable/disable on the RPA settings tab.</summary>
+        public IReadOnlyList<AgentToolToggleGroup> AgentToolGroups => _agentToolGroups;
+
+        /// <summary>Groups of the remaining native tools the user can enable/disable on the Native tools settings tab.</summary>
+        public IReadOnlyList<AgentToolToggleGroup> NativeToolGroups => _nativeToolGroups;
+
+        private void RebuildAgentToolGroups()
+        {
+            _agentToolGroups.Clear();
+            _nativeToolGroups.Clear();
+            PopulateGroups(_agentToolGroups, RpaToolCatalog.All);
+            PopulateGroups(_nativeToolGroups, NativeToolCatalog.All);
+        }
+
+        private static void PopulateGroups(List<AgentToolToggleGroup> groups, IEnumerable<AgentToolCatalogEntry> entries)
+        {
+            foreach (var entry in entries)
+            {
+                var group = groups.FirstOrDefault(g => string.Equals(g.Name, entry.Group, StringComparison.Ordinal));
+                if (group == null)
+                {
+                    group = new AgentToolToggleGroup(entry.Group);
+                    groups.Add(group);
+                }
+
+                group.Items.Add(new AgentToolToggleItem(entry.Name, entry.Group, entry.Description, entry.Mutates, isEnabled: true));
+            }
+        }
+
+        private void ApplyDisabledAgentTools(IReadOnlyCollection<string> disabledNames)
+        {
+            ApplyDisabled(_agentToolGroups, disabledNames);
+            ApplyDisabled(_nativeToolGroups, disabledNames);
+        }
+
+        private static void ApplyDisabled(IEnumerable<AgentToolToggleGroup> groups, IReadOnlyCollection<string> disabledNames)
+        {
+            foreach (var group in groups)
+            {
+                foreach (var item in group.Items)
+                {
+                    item.IsEnabled = disabledNames == null || !disabledNames.Contains(item.Name);
+                }
+            }
+        }
+
+        private List<string> BuildDisabledAgentTools()
+        {
+            var disabled = new List<string>();
+            CollectDisabled(_agentToolGroups, disabled);
+            CollectDisabled(_nativeToolGroups, disabled);
+            return disabled;
+        }
+
+        private static void CollectDisabled(IEnumerable<AgentToolToggleGroup> groups, List<string> disabled)
+        {
+            foreach (var group in groups)
+            {
+                foreach (var item in group.Items)
+                {
+                    if (!item.IsEnabled)
+                        disabled.Add(item.Name);
+                }
+            }
+        }
+
+        #endregion Agent tool toggles
 
         #region Read scope commands
 
@@ -718,6 +809,12 @@ namespace RPAWriter.Models
         public bool AutoCaptureRuntimeExceptions { get => _autoCaptureRuntimeExceptions; set => SetProperty(ref _autoCaptureRuntimeExceptions, value); }
 
         public bool CheckpointsEnabled { get => _checkpointsEnabled; set => SetProperty(ref _checkpointsEnabled, value); }
+
+        /// <summary>Enable the Roslyn C# semantic navigation tools.</summary>
+        public bool RoslynSemanticsEnabled { get => _roslynSemanticsEnabled; set => SetProperty(ref _roslynSemanticsEnabled, value); }
+
+        /// <summary>Summarize dotnet build/test output in run_commands instead of returning raw console text.</summary>
+        public bool FilterBuildTestOutput { get => _filterBuildTestOutput; set => SetProperty(ref _filterBuildTestOutput, value); }
 
         /// <summary>Recently used production robot names (managed by the log analyzer, persisted on save).</summary>
         public IReadOnlyList<string> RobotNameHistory => _robotNameHistory;

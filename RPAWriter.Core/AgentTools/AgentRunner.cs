@@ -68,6 +68,14 @@ namespace RPAWriter.Core.AgentTools
 
         /// <summary>Zero-based iteration index the resumed run should continue from.</summary>
         public int NextIteration { get; set; }
+
+        /// <summary>
+        /// Tool environment the interrupted run started with. A resume uses it (when present) so the
+        /// prompt and the native tool definitions stay identical to the original run, keeping the
+        /// provider's tool_calls transcript in sync. Null for legacy snapshots; the runner then
+        /// falls back to its constructor-captured fields.
+        /// </summary>
+        public AgentToolEnvironment Environment { get; set; }
     }
 
     public sealed class AgentRunner
@@ -191,8 +199,48 @@ namespace RPAWriter.Core.AgentTools
             IProgress<AgentResumeSnapshot> resumeProgress = null,
             Func<string> steerSource = null)
         {
+            return await RunInternalAsync(history, userText, images, mode, budget, cancellationToken, null, progress, resumeProgress, steerSource).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Runs the agentic tool loop over a tool-environment snapshot captured at the start of this
+        /// dialogue turn. The system prompt, the native tool definitions and the execution gate all
+        /// derive from <paramref name="environment"/>, so the model never sees tools that are not
+        /// actually available at this moment.
+        /// </summary>
+        public async Task<AgentRunResult> RunAsync(
+            IReadOnlyList<ChatMessageData> history,
+            string userText,
+            IReadOnlyList<ChatImagePart> images,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            AgentToolEnvironment environment,
+            IProgress<ChatStreamDelta> progress = null,
+            IProgress<AgentResumeSnapshot> resumeProgress = null,
+            Func<string> steerSource = null)
+        {
+            if (environment == null) throw new ArgumentNullException(nameof(environment));
+            return await RunInternalAsync(history, userText, images, mode, budget, cancellationToken, environment, progress, resumeProgress, steerSource).ConfigureAwait(false);
+        }
+
+        private async Task<AgentRunResult> RunInternalAsync(
+            IReadOnlyList<ChatMessageData> history,
+            string userText,
+            IReadOnlyList<ChatImagePart> images,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            AgentToolEnvironment environment,
+            IProgress<ChatStreamDelta> progress,
+            IProgress<AgentResumeSnapshot> resumeProgress,
+            Func<string> steerSource)
+        {
             var effectiveBudget = budget ?? _budget;
-            var systemPrompt = _systemPromptFactory(mode);
+            var registry = environment?.Registry ?? _registry;
+            var allowedPermissions = environment?.AllowedPermissions ?? _allowedPermissions;
+            var toolCallingMode = environment?.ToolCallingMode ?? _toolCallingMode;
+            var systemPrompt = environment != null ? environment.BuildPrompt(mode) : _systemPromptFactory(mode);
 
             var messages = new List<ChatMessageData>();
             if (history != null)
@@ -204,9 +252,9 @@ namespace RPAWriter.Core.AgentTools
             messages.Add(userMessage);
 
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
-            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
+            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(registry, mode, allowedPermissions);
 
-            return await RunLoopAsync(messages, 0, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource).ConfigureAwait(false);
+            return await RunLoopAsync(messages, 0, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource, registry, allowedPermissions, toolCallingMode, environment).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -224,16 +272,53 @@ namespace RPAWriter.Core.AgentTools
             IProgress<AgentResumeSnapshot> resumeProgress = null,
             Func<string> steerSource = null)
         {
+            return await ResumeInternalAsync(snapshot, mode, budget, cancellationToken, null, progress, resumeProgress, steerSource).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Continues a cancelled run with an explicit tool-environment snapshot. When
+        /// <paramref name="environment"/> is provided it wins over the snapshot captured in
+        /// <paramref name="snapshot"/>; callers pass the original environment to keep the prompt and
+        /// native tool definitions identical to the interrupted run.
+        /// </summary>
+        public async Task<AgentRunResult> ResumeAsync(
+            AgentResumeSnapshot snapshot,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            AgentToolEnvironment environment,
+            IProgress<ChatStreamDelta> progress = null,
+            IProgress<AgentResumeSnapshot> resumeProgress = null,
+            Func<string> steerSource = null)
+        {
+            if (environment == null) throw new ArgumentNullException(nameof(environment));
+            return await ResumeInternalAsync(snapshot, mode, budget, cancellationToken, environment, progress, resumeProgress, steerSource).ConfigureAwait(false);
+        }
+
+        private async Task<AgentRunResult> ResumeInternalAsync(
+            AgentResumeSnapshot snapshot,
+            AgentMode mode,
+            ContextBudget budget,
+            CancellationToken cancellationToken,
+            AgentToolEnvironment environment,
+            IProgress<ChatStreamDelta> progress,
+            IProgress<AgentResumeSnapshot> resumeProgress,
+            Func<string> steerSource)
+        {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
 
             var effectiveBudget = budget ?? _budget;
-            var systemPrompt = _systemPromptFactory(mode);
+            var env = environment ?? snapshot.Environment;
+            var registry = env?.Registry ?? _registry;
+            var allowedPermissions = env?.AllowedPermissions ?? _allowedPermissions;
+            var toolCallingMode = env?.ToolCallingMode ?? _toolCallingMode;
+            var systemPrompt = env != null ? env.BuildPrompt(mode) : _systemPromptFactory(mode);
             var messages = new List<ChatMessageData>(snapshot.Messages ?? new List<ChatMessageData>());
             var maxIterations = effectiveBudget.MaxIterations > 0 ? effectiveBudget.MaxIterations : 8;
-            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(_registry, mode, _allowedPermissions);
+            var toolDefinitions = ToolSchemaConverter.BuildToolDefinitions(registry, mode, allowedPermissions);
 
-            return await RunLoopAsync(messages, snapshot.NextIteration, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource).ConfigureAwait(false);
+            return await RunLoopAsync(messages, snapshot.NextIteration, systemPrompt, toolDefinitions, maxIterations, mode, effectiveBudget, cancellationToken, progress, resumeProgress, steerSource, registry, allowedPermissions, toolCallingMode, env).ConfigureAwait(false);
         }
 
         /// <summary>Shared agentic tool loop; <paramref name="startIteration"/> resumes a saved snapshot mid-run.</summary>
@@ -248,7 +333,11 @@ namespace RPAWriter.Core.AgentTools
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress,
             IProgress<AgentResumeSnapshot> resumeProgress,
-            Func<string> steerSource)
+            Func<string> steerSource,
+            AgentToolRegistry registry,
+            AgentPermissions allowedPermissions,
+            ToolCallingMode toolCallingMode,
+            AgentToolEnvironment environment)
         {
             var protocolAttempts = 0;
             var detector = new ToolRepetitionDetector(effectiveBudget.MaxStagnantRepeats);
@@ -272,13 +361,14 @@ namespace RPAWriter.Core.AgentTools
                 resumeProgress?.Report(new AgentResumeSnapshot
                 {
                     Messages = new List<ChatMessageData>(messages),
-                    NextIteration = i
+                    NextIteration = i,
+                    Environment = environment
                 });
 
                 var prepared = await PrepareContextAsync(messages, systemPrompt, effectiveBudget, cancellationToken).ConfigureAwait(false);
                 var response = await CallWithRecoveryAsync(prepared, toolDefinitions, effectiveBudget, cancellationToken, progress).ConfigureAwait(false);
 
-                if (_toolCallingMode == ToolCallingMode.Native)
+                if (toolCallingMode == ToolCallingMode.Native)
                 {
                     var nativeCalls = response.ToolCalls;
                     if (nativeCalls == null || nativeCalls.Count == 0)
@@ -320,7 +410,7 @@ namespace RPAWriter.Core.AgentTools
                             }
                             break; // skip the rest of this turn and re-prompt the model
                         }
-                        var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                        var finalText = await ExecuteNativeToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken, registry, allowedPermissions).ConfigureAwait(false);
                         if (finalText != null)
                         {
                             // The assistant "tool_calls" block above may list further calls after the one that
@@ -373,7 +463,7 @@ namespace RPAWriter.Core.AgentTools
                     }
                     if (repetition == RepetitionAction.Nudge)
                         break; // skip the rest of this turn and re-prompt the model
-                    var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken).ConfigureAwait(false);
+                    var finalText = await ExecuteJsonToolCallAsync(messages, call, mode, effectiveBudget, cancellationToken, registry, allowedPermissions).ConfigureAwait(false);
                     if (finalText != null)
                         return Result(finalText, response.Reasoning, messages);
                 }
@@ -556,9 +646,11 @@ namespace RPAWriter.Core.AgentTools
             NativeToolCall call,
             AgentMode mode,
             ContextBudget budget,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            AgentToolRegistry registry,
+            AgentPermissions allowedPermissions)
         {
-            if (!_registry.TryGetExecutableTool(call.Name, mode, _allowedPermissions, out var tool, out var blockReason))
+            if (!registry.TryGetExecutableTool(call.Name, mode, allowedPermissions, out var tool, out var blockReason))
             {
                 if (tool == null)
                 {
@@ -651,9 +743,11 @@ namespace RPAWriter.Core.AgentTools
             AgentToolCallSpec call,
             AgentMode mode,
             ContextBudget budget,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            AgentToolRegistry registry,
+            AgentPermissions allowedPermissions)
         {
-            if (!_registry.TryGetExecutableTool(call.ToolName, mode, _allowedPermissions, out var tool, out var blockReason))
+            if (!registry.TryGetExecutableTool(call.ToolName, mode, allowedPermissions, out var tool, out var blockReason))
             {
                 if (tool == null)
                 {

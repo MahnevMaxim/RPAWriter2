@@ -171,6 +171,28 @@ namespace RPAWriter.Tests
         }
 
         [Test]
+        public void Normalize_InitializesAndCleansDisabledAgentTools()
+        {
+            var settings = new SettingsData { DisabledAgentTools = null };
+            SettingsData.Normalize(settings);
+            Assert.That(settings.DisabledAgentTools, Is.Not.Null);
+            Assert.That(settings.DisabledAgentTools, Is.Empty);
+
+            var withNoise = new SettingsData
+            {
+                DisabledAgentTools = new System.Collections.Generic.List<string>
+                {
+                    "  convert_uipath  ",
+                    "   ",
+                    null,
+                    "kb_add"
+                }
+            };
+            SettingsData.Normalize(withNoise);
+            Assert.That(withNoise.DisabledAgentTools, Is.EquivalentTo(new[] { "convert_uipath", "kb_add" }));
+        }
+
+        [Test]
         public void Normalize_PreservesValidValues()
         {
             var settings = new SettingsData

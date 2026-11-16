@@ -10,11 +10,23 @@ namespace RPAWriter.Core.AgentTools
     {
         private readonly Dictionary<string, IAgentTool> _tools =
             new Dictionary<string, IAgentTool>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _disabled =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public void Register(IAgentTool tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
             _tools[tool.Name] = tool;
+        }
+
+        /// <summary>
+        /// Marks a tool as disabled so it is hidden from the model and can never be invoked,
+        /// regardless of its permission category. Used for the per-tool toggles in Settings → RPA.
+        /// </summary>
+        public void Disable(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            _disabled.Add(name.Trim());
         }
 
         public IAgentTool Find(string name)
@@ -34,7 +46,7 @@ namespace RPAWriter.Core.AgentTools
         public IReadOnlyList<IAgentTool> ForMode(AgentMode mode, AgentPermissions allowed)
         {
             return _tools.Values
-                .Where(t => IsExecutable(t, mode, allowed))
+                .Where(t => !_disabled.Contains(t.Name) && IsExecutable(t, mode, allowed))
                 .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -51,6 +63,12 @@ namespace RPAWriter.Core.AgentTools
             if (tool == null)
             {
                 blockReason = "Unknown tool: \"" + (name ?? "") + "\". Use one of the tools listed in the system prompt.";
+                return false;
+            }
+
+            if (_disabled.Contains(tool.Name))
+            {
+                blockReason = "Blocked: tool \"" + tool.Name + "\" is disabled in Settings → RPA.";
                 return false;
             }
 

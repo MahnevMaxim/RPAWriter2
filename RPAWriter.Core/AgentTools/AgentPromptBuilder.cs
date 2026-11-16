@@ -36,6 +36,8 @@ namespace RPAWriter.Core.AgentTools
                 prompt = mode == AgentMode.Act
                     ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-system-native.txt", PromptDefaults.AgentActSystemPromptNative)
                     : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-system-native.txt", PromptDefaults.AgentPlanSystemPromptNative);
+
+                prompt = prompt.Replace("{tools}", FormatToolList(registry, mode, allowed, includeParameters: false));
             }
             else
             {
@@ -44,21 +46,14 @@ namespace RPAWriter.Core.AgentTools
                     ? PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-act-mode-instructions.txt", PromptDefaults.AgentActModeInstructions)
                     : PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "agent-plan-mode-instructions.txt", PromptDefaults.AgentPlanModeInstructions);
 
-                var sb = new StringBuilder();
-                foreach (var t in registry.ForMode(mode, allowed))
-                {
-                    sb.Append("- ").Append(t.Name).Append(": ").Append(t.Description);
-                    sb.Append(" Parameters: ").AppendLine(t.ParametersSchema);
-                }
-
-                var toolList = sb.ToString();
-                if (string.IsNullOrWhiteSpace(toolList))
-                    toolList = "(none)";
-
+                var toolList = FormatToolList(registry, mode, allowed, includeParameters: true);
                 prompt = basePrompt.Replace("{tools}", toolList).Replace("{mode_instructions}", modeInstructions);
             }
 
-            return prompt.Replace("{allowed_read_paths}", FormatAllowedReadPaths(allowedReadPaths));
+            var roslynNavigation = registry.Find("code_outline") != null ? PromptDefaults.RoslynNavigationHint : "";
+            return prompt
+                .Replace("{allowed_read_paths}", FormatAllowedReadPaths(allowedReadPaths))
+                .Replace("{roslyn_navigation}", roslynNavigation);
         }
 
         /// <summary>
@@ -86,6 +81,23 @@ namespace RPAWriter.Core.AgentTools
                 prompt = prompt + "\n\n" + PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.System, "memory-bank-convention.txt", PromptDefaults.MemoryBankConventionInstructions);
 
             return prompt;
+        }
+
+        /// <summary>Formats the tools available to the model for the given mode and permissions.</summary>
+        private static string FormatToolList(AgentToolRegistry registry, AgentMode mode, AgentPermissions allowed, bool includeParameters)
+        {
+            var sb = new StringBuilder();
+            foreach (var t in registry.ForMode(mode, allowed))
+            {
+                sb.Append("- ").Append(t.Name).Append(": ").Append(t.Description);
+                if (includeParameters)
+                    sb.Append(" Parameters: ").AppendLine(t.ParametersSchema);
+                else
+                    sb.AppendLine();
+            }
+
+            var toolList = sb.ToString();
+            return string.IsNullOrWhiteSpace(toolList) ? "(none)" : toolList;
         }
 
         /// <summary>Formats the allowed read paths into a bullet list for the prompt (empty list → "(none)").</summary>

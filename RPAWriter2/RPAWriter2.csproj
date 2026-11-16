@@ -45,6 +45,8 @@
     <!-- UI-free MVVM framework + product models. See documentation/13-model-layer.md. -->
     <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
     <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
+    <!-- Roslyn semantic analysis shared with the tests (pure, no VS dependency). -->
+    <ProjectReference Include="..\RPAWriter.Roslyn\RPAWriter.Roslyn.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it
@@ -103,6 +105,79 @@
   <Target Name="CopySqliteInteropToOutput" BeforeTargets="GetVsixSourceItems">
     <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x86" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x64" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="ResolveRoslynReferences" BeforeTargets="ResolveAssemblyReferences">
+    <!--
+      Reference the Roslyn assemblies shipped with the installed Visual Studio. Resolve from the oldest supported VS (2022 / 17.x / Roslyn 4.x), not "vswhere -latest", so one VSIX loads in both VS 2022 and VS 2026.
+      This guarantees the types match the in-proc VisualStudioWorkspace at runtime, and keeps the
+      VSIX from shipping its own Roslyn copies (VS already provides them). Override RoslynVsInstallRoot to
+      point at the Visual Studio installation root.
+    -->
+    <PropertyGroup>
+      <RoslynVsInstallRoot Condition="'$(RoslynVsInstallRoot)' == ''"></RoslynVsInstallRoot>
+    </PropertyGroup>
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath"
+          ConsoleToMsBuild="true"
+          Condition="'$(RoslynVsInstallRoot)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
+    </Exec>
+    <PropertyGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <VsRoslynDir>$(RoslynVsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices</VsRoslynDir>
+      <VsPublicAssembliesDir>$(RoslynVsInstallRoot)\Common7\IDE\PublicAssemblies</VsPublicAssembliesDir>
+    </PropertyGroup>
+    <Error Condition="'$(RoslynVsInstallRoot)' == ''"
+           Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
+    <ItemGroup Condition="'$(RoslynVsInstallRoot)' != ''">
+      <Reference Include="Microsoft.CodeAnalysis">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.Workspaces.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.CodeAnalysis.CSharp.Workspaces">
+        <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.CSharp.Workspaces.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="System.Collections.Immutable">
+        <HintPath>$(VsPublicAssembliesDir)\System.Collections.Immutable.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="Microsoft.VisualStudio.LanguageServices">
+        <HintPath>$(VsRoslynDir)\Microsoft.VisualStudio.LanguageServices.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <!-- Pure Roslyn analysis assembly built from source; shipped inside the VSIX. -->
+    <VSIXSourceItem Include="$(OutputPath)RPAWriter.Roslyn.dll" />
+  </ItemGroup>
+  <!--
+    CreatePkgDef (VSSDK 18.x) is compiled against System.Reflection.Metadata 10.x. The
+    System.Reflection.MetadataLoadContext 8.0 package drops 8.x copies of System.Reflection.Metadata,
+    System.Collections.Immutable and System.Reflection.MetadataLoadContext into the output, and those
+    copies end up in CreatePkgDef's referenced-assemblies list, shadowing the 10.x version and crashing
+    with "TypeLoadException ... GetGenericInstantiation". Keep the 8.x copies in the output for the VSIX
+    runtime, but exclude them from the CreatePkgDef reference set.
+  -->
+  <Target Name="ExcludeConflictingCreatePkgDefReferences" BeforeTargets="GeneratePkgDef">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
+      <ReferencePath Remove="@(ReferencePath)"
+                     Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
+    </ItemGroup>
   </Target>
   <Target Name="CopyWebView2LoaderToOutput" BeforeTargets="GetVsixSourceItems">
     <!-- The WebView2 NuGet package only drops the native loader under runtimes\ for this
