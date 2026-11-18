@@ -287,6 +287,7 @@ namespace RPAWriter2
             UpdateCreateRobotVisibility();
             UpdateWorkspaceIndicator();
             _chatModel.ChildModel = CreateLogAnalyzer();
+            _chatModel.Run();
             InitializeChatHistory();
         }
 
