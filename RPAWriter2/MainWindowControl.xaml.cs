@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -113,7 +113,6 @@ namespace RPAWriter2
         private readonly PackageCatalogService _packageCatalog = new PackageCatalogService();
         private readonly ObservableCollection<PackageListItem> _packages = new ObservableCollection<PackageListItem>();
         private ObservableCollection<ChatAttachment> _attachments => _chatModel.Attachments;
-        private readonly ObservableCollection<MessageSample> _messageSamples = new ObservableCollection<MessageSample>();
 
         private CancellationTokenSource? _chatCts;
 
@@ -127,7 +126,7 @@ namespace RPAWriter2
 
         // Single-slot steer state for the running turn. At most one steered message is in flight;
         // the message stays queued until the agent loop consumes it (TakeSteer), so a steer that
-        // arrives right before the turn ends is not lost вЂ” the drain loop runs it normally.
+        // arrives right before the turn ends is not lost — the drain loop runs it normally.
         private volatile SteerSlot _steerSlot;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
@@ -140,8 +139,20 @@ namespace RPAWriter2
         private TextBlock _workspaceIndicatorText = null!;
         private Button _resetWorkspaceButton = null!;
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _workspacePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+
+        // Domain tab bodies created in code (stage 5): the XAML shell only hosts the
+        // AgentTabControl; the toolkit owns Chat/Settings, the host registers the rest.
+        private readonly SpecTabControl SpecPanel = new SpecTabControl();
+        private readonly KnowledgeBaseControl KnowledgeBasePanel = new KnowledgeBaseControl();
+        private readonly PackagesControl PackagesPanel = new PackagesControl();
+        private readonly ControlsGalleryControl ControlsPanel = new ControlsGalleryControl();
+        private TabItem ControlsTab = null!;
+
+        // The toolkit AgentTabControl owns Chat/Settings; these aliases keep the existing
+        // WireChatPanel()/settings wiring code unchanged.
+        private ChatControl ChatPanel => MainTabs.ChatPanel;
+        private SettingsControl SettingsPanel => MainTabs.SettingsPanel;
 
         private static string CommitMessageSystemPrompt =>
             PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", RpaPromptDefaults.CommitMessageSystemPrompt);
@@ -179,8 +190,6 @@ namespace RPAWriter2
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
         private ChatMessage? _pinnedMessage => _chatModel.PinnedMessage;
-        private ICollectionView? _packagesView;
-        private ICollectionView? _svgView;
         private bool _pinnedExpanded;
         // Guards against Checked/Unchecked events firing while the permissions
         // overlay is being populated from settings (which would otherwise save
@@ -199,22 +208,35 @@ namespace RPAWriter2
                 new SqliteChatHistoryStore(),
                 new JsonUiStateStore(),
                 chatSink: new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
-                workspaceProvider: _workspaceProvider);
+                workspaceProvider: _workspaceProvider,
+                logger: new NLogAgentLogger());
             _contextUsageBinder = new ContextUsageBinder(_chatModel, SynchronizationContext.Current);
             // The geometry parser must be ready before InitializeComponent: the
             // ClearInputButton icon (MaterialIconKind.Broom) is resolved via a binding
             // during XAML load and would otherwise fall back to an empty geometry.
             MaterialIconDataProvider.InitializeGeometryParser(s => Geometry.Parse(s));
             this.InitializeComponent();
+
+            // Register the host-owned domain tabs (stage 5). Chat/Settings are built in by
+            // AgentTabControl from CoreTabs; the Controls tab starts hidden like before.
+            MainTabs.AddHostTab(new TabDefinition("Spec", "Spec", "Spec", "FileDocumentOutline", "FileDocument"), SpecPanel);
+            MainTabs.AddHostTab(new TabDefinition("KnowledgeBase", "Knowledge base", "Knowledge base", "DatabaseOutline", "Database"), KnowledgeBasePanel);
+            MainTabs.AddHostTab(new TabDefinition("Packages", "Packages", "Packages", "PackageOutline", "Package"), PackagesPanel);
+            ControlsTab = MainTabs.AddHostTab(new TabDefinition("Controls", "Controls", "Controls", "PaletteOutline", "Palette"), ControlsPanel);
+            ControlsTab.Visibility = Visibility.Collapsed;
+
             _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
-            _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
-            ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
-            SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
-            _packagesView = CollectionViewSource.GetDefaultView(_packages);
-            _packagesView.Filter = FilterPackages;
-            PackagesList.ItemsSource = _packagesView;
+            SpecPanel.SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
+            PackagesPanel.BindPackages(_packages);
+            PackagesPanel.RefreshRequested += OnRefreshPackages;
+            PackagesPanel.InstallRequested += OnInstallSelectedPackages;
+            PackagesPanel.UpdateRequested += OnUpdateSelectedPackages;
+            PackagesPanel.UninstallRequested += OnUninstallSelectedPackages;
+            PackagesPanel.RestoreRequested += OnRestorePackages;
+            WireSpecPanel();
+            WireControlsGallery();
             _settingsModel = new SettingsModel(
                 new JsonSettingsStore(),
                 new JsonWorkspaceLogSettingsStore(),
@@ -234,6 +256,7 @@ namespace RPAWriter2
             _settingsViewModel.RpaSettings = _rpaSettingsModel;
             MvvmFactory.Attach(_settingsModel, _settingsViewModel, SettingsPanel);
             _settings = _settingsModel.ToSettingsData();
+            _chatModel.CacheLossDropRatioPercent = _settings.CacheLossDropRatioPercent;
             SettingsPanel.ApiKeyBox.Password = _settings.ApiKey ?? "";
             SettingsPanel.ApiKeyBox.PasswordChanged += OnApiKeyChanged;
             WireSettingsHostChrome();
@@ -253,7 +276,7 @@ namespace RPAWriter2
                 () => _rpaSettings,
                 SynchronizationContext.Current);
             _specTabModel.Notify += OnSpecTabNotify;
-            MvvmFactory.Attach(_specTabModel, _specTabViewModel, SpecTab);
+            MvvmFactory.Attach(_specTabModel, _specTabViewModel, SpecPanel);
 
             _knowledgeBaseModel = new KnowledgeBaseModel(
                 () => _ai,
@@ -263,11 +286,11 @@ namespace RPAWriter2
                 SynchronizationContext.Current);
             _knowledgeBaseModel.Notify += OnKnowledgeBaseNotify;
             _knowledgeBaseModel.PropertyChanged += OnKnowledgeBaseModelPropertyChanged;
-            MvvmFactory.Attach(_knowledgeBaseModel, _knowledgeBaseViewModel, KnowledgeBaseTab);
+            MvvmFactory.Attach(_knowledgeBaseModel, _knowledgeBaseViewModel, KnowledgeBasePanel);
 
-            SpecMessages.Messages = _specTabModel.SpecMessages;
+            SpecPanel.SpecMessages.Messages = _specTabModel.SpecMessages;
 
-            PopulateControlsGallery();
+            ControlsPanel.PopulateGallery();
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
             _mic = new MicrophoneRecorder();
@@ -290,6 +313,31 @@ namespace RPAWriter2
             _chatModel.Run();
             InitializeChatHistory();
         }
+
+        private void WireSpecPanel()
+        {
+            SpecPanel.DeployRequested += OnDeploy;
+            SpecPanel.AnalyzeLogsRequested += OnAnalyzeLogs;
+            SpecPanel.CloseAnalyzeLogsRequested += OnCloseAnalyzeLogs;
+            SpecPanel.AnalyzeLogsFromOutputWindowRequested += OnAnalyzeLogsFromOutputWindow;
+            SpecPanel.AnalyzeLogsFromProdServersRequested += OnAnalyzeLogsFromProdServers;
+            SpecPanel.LoadProdTasksRequested += OnLoadProdTasks;
+            SpecPanel.AnalyzeProdLogsRequested += OnAnalyzeProdLogs;
+            SpecPanel.NotificationSendToChatRequested += OnNotificationSendToChat;
+            SpecPanel.DeployToastCloseRequested += OnDeployToastClose;
+            SpecPanel.RobotNameEnterPressed += OnRobotNameEnterPressed;
+            SpecPanel.TaskSelectionChanged += OnTaskSelected;
+            SpecPanel.MinLevelSelectionChanged += OnMinLevelChanged;
+            SpecPanel.DateRangeSelectionChanged += OnDateRangeChanged;
+        }
+
+        private void WireControlsGallery()
+        {
+            ControlsPanel.SendToInputRequested += (_, text) => AppendSelectionToInput(text);
+        }
+
+        private void OnRobotNameEnterPressed(object? sender, EventArgs e)
+            => _ = LoadProdTasksFromModelAsync();
 
         /// <summary>Re-renders the layout parts that depend on chat model state.</summary>
         private void RecreateAiProvider()
@@ -487,7 +535,7 @@ namespace RPAWriter2
         private void OnChatMessageCopyRequested(object? sender, ChatMessage message)
         {
             try { Clipboard.SetText(FormatMessageForCopy(message)); }
-            catch { /* clipboard busy вЂ” ignore */ }
+            catch { /* clipboard busy — ignore */ }
         }
 
         private void OnChatMessageQuestionAnswered(object? sender, ChatMessage message)
@@ -798,21 +846,6 @@ namespace RPAWriter2
             return service;
         }
 
-        private void OnCopyMessageSample(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrEmpty(sample.Text))
-            {
-                try { Clipboard.SetText(sample.Text); }
-                catch { /* clipboard busy вЂ” ignore */ }
-            }
-        }
-
-        private void OnSendMessageSample(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrWhiteSpace(sample.Text))
-                AppendSelectionToInput(sample.Text);
-        }
-
         /// <summary>
         /// Forwards the mouse wheel from the code block's horizontal-only ScrollViewer to its
         /// parent, so hovering over a code block still scrolls the chat/spec list vertically.
@@ -833,19 +866,6 @@ namespace RPAWriter2
                 RoutedEvent = MouseWheelEvent,
                 Source = parent
             });
-        }
-
-        private void OnCopySpecOutput(object sender, RoutedEventArgs e)
-        {
-            var sb = new StringBuilder();
-            foreach (var m in _specTabModel.SpecMessages)
-            {
-                if (sb.Length > 0) sb.AppendLine().AppendLine();
-                sb.Append(FormatMessageForCopy(m));
-            }
-            if (sb.Length == 0) return;
-            try { Clipboard.SetText(sb.ToString()); }
-            catch { /* clipboard busy вЂ” ignore */ }
         }
 
         private static string FormatMessageForCopy(ChatMessage message)
@@ -931,7 +951,7 @@ namespace RPAWriter2
         {
             if (string.IsNullOrEmpty(text) || text.Length <= PromptDumpContentMaxChars)
                 return text ?? string.Empty;
-            return text.Substring(0, PromptDumpContentMaxChars) + "\nвЂ¦(truncated)";
+            return text.Substring(0, PromptDumpContentMaxChars) + "\n…(truncated)";
         }
 
         private static string FormatPromptDump(PromptAssembledEventArgs e)
@@ -982,9 +1002,9 @@ namespace RPAWriter2
 
         private void ShowNotice(string message, NotificationKind kind = NotificationKind.Info)
         {
-            NoticeBar.Kind = kind;
-            NoticeBar.Message = message;
-            NoticeBar.Visibility = Visibility.Visible;
+            SpecPanel.NoticeBar.Kind = kind;
+            SpecPanel.NoticeBar.Message = message;
+            SpecPanel.NoticeBar.Visibility = Visibility.Visible;
         }
 
         private bool Confirm(string title, string message)
@@ -1018,18 +1038,8 @@ namespace RPAWriter2
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (_knowledgeBaseModel.AutoScroll)
-                    KbMessagesBox.ScrollToEnd();
+                    KnowledgeBasePanel.KbMessagesBox.ScrollToEnd();
             }));
-        }
-
-        private void HideNotice()
-        {
-            NoticeBar.Visibility = Visibility.Collapsed;
-        }
-
-        private void OnNoticeClose(object sender, RoutedEventArgs e)
-        {
-            HideNotice();
         }
 
         private void HookSolutionEvents()
@@ -1046,7 +1056,7 @@ namespace RPAWriter2
             }
             catch
             {
-                // Solution events unavailable вЂ” visibility will be refreshed on load / lazily.
+                // Solution events unavailable — visibility will be refreshed on load / lazily.
             }
         }
 
@@ -1068,7 +1078,7 @@ namespace RPAWriter2
             }
             var showRobotCreator = noWorkspace && (_rpaSettings?.ShowRobotCreator ?? true);
             ChatPanel.CreateRobotHost.Visibility = showRobotCreator ? Visibility.Visible : Visibility.Collapsed;
-            RestorePackagesPanel.Visibility = noWorkspace ? Visibility.Collapsed : Visibility.Visible;
+            PackagesPanel.RestorePackagesPanel.Visibility = noWorkspace ? Visibility.Collapsed : Visibility.Visible;
         }
 
         /// <summary>Returns the open solution's directory, or null when no solution is open.</summary>
@@ -1327,20 +1337,20 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// "Analyze logs" panel logo: layout only вЂ” visibility is view state
+        /// "Analyze logs" panel logo: layout only — visibility is view state
         /// (documentation/13-model-layer.md, rule 10).
         /// </summary>
         private void OnAnalyzeLogs(object sender, RoutedEventArgs e)
         {
-            AnalyzeLogsPanel.Visibility = AnalyzeLogsPanel.Visibility == Visibility.Visible
+            SpecPanel.AnalyzeLogsPanel.Visibility = SpecPanel.AnalyzeLogsPanel.Visibility == Visibility.Visible
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
 
         private void OnCloseAnalyzeLogs(object sender, RoutedEventArgs e)
         {
-            AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-            ProdLogsPanel.Visibility = Visibility.Collapsed;
+            SpecPanel.AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+            SpecPanel.ProdLogsPanel.Visibility = Visibility.Collapsed;
         }
 
         /// <summary>Child model of the panel; owned by <see cref="ChatModel"/>, may be absent in headless runs.</summary>
@@ -1370,20 +1380,20 @@ namespace RPAWriter2
         /// </summary>
         private void PushPanelInputsToModel(LogAnalyzer analyzer)
         {
-            analyzer.RobotName = (RobotNameBox?.Text ?? "").Trim();
+            analyzer.RobotName = (SpecPanel.RobotNameBox?.Text ?? "").Trim();
 
-            if (MinLevelCombo?.SelectedItem is LogLevelOption option)
+            if (SpecPanel.MinLevelCombo?.SelectedItem is LogLevelOption option)
                 analyzer.SelectedMinLevel = option;
 
-            analyzer.FromDate = FromDatePicker?.SelectedDate;
-            analyzer.ToDate = ToDatePicker?.SelectedDate;
-            analyzer.SelectedTask = TasksGrid?.SelectedItem as ProdTask;
+            analyzer.FromDate = SpecPanel.FromDatePicker?.SelectedDate;
+            analyzer.ToDate = SpecPanel.ToDatePicker?.SelectedDate;
+            analyzer.SelectedTask = SpecPanel.TasksGrid?.SelectedItem as ProdTask;
         }
 
         /// <summary>
         /// Delivers a log-analysis prompt into the chat without waiting for the agent to finish
         /// answering. The panel must close as soon as the prompt is committed to the chat, not after
-        /// the (potentially long) agent turn completes вЂ” that is what <see cref="SendChatTextAsync"/>
+        /// the (potentially long) agent turn completes — that is what <see cref="SendChatTextAsync"/>
         /// would wait for. The user message is appended synchronously inside
         /// <see cref="RunSingleTurnAsync"/> before its first await, so it is visible immediately.
         /// </summary>
@@ -1412,8 +1422,8 @@ namespace RPAWriter2
 
                 if (await analyzer.AnalyzeFromOutputWindowAsync())
                 {
-                    AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-                    ProdLogsPanel.Visibility = Visibility.Collapsed;
+                    SpecPanel.AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                    SpecPanel.ProdLogsPanel.Visibility = Visibility.Collapsed;
                 }
             }
             catch (Exception ex) { ShowError(ex); }
@@ -1423,7 +1433,7 @@ namespace RPAWriter2
         {
             try
             {
-                ProdLogsPanel.Visibility = Visibility.Visible;
+                SpecPanel.ProdLogsPanel.Visibility = Visibility.Visible;
 
                 // Discovery, the provider combo, the status text and the robot-name suggestions are
                 // model state; the bindings of ProdLogsPanel render them (rule 10: visibility is ours).
@@ -1435,13 +1445,6 @@ namespace RPAWriter2
         private async void OnLoadProdTasks(object sender, RoutedEventArgs e)
         {
             await LoadProdTasksFromModelAsync();
-        }
-
-        private void OnRobotNameKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Enter) return;
-            e.Handled = true;
-            _ = LoadProdTasksFromModelAsync();
         }
 
         /// <summary>
@@ -1476,7 +1479,7 @@ namespace RPAWriter2
         {
             // Visibility is layout state, so this guard stays in the view (rule 10); the business
             // guard ("a robot name is typed and a provider is selected") lives in the model.
-            if (ProdLogsPanel.Visibility != Visibility.Visible) return;
+            if (SpecPanel.ProdLogsPanel.Visibility != Visibility.Visible) return;
 
             var analyzer = LogAnalyzer;
             if (analyzer == null) return;
@@ -1516,8 +1519,8 @@ namespace RPAWriter2
 
                 if (await analyzer.AnalyzeFromProdLogsAsync())
                 {
-                    AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
-                    ProdLogsPanel.Visibility = Visibility.Collapsed;
+                    SpecPanel.AnalyzeLogsPanel.Visibility = Visibility.Collapsed;
+                    SpecPanel.ProdLogsPanel.Visibility = Visibility.Collapsed;
                 }
             }
             catch (Exception ex) { ShowError(ex); }
@@ -1698,7 +1701,7 @@ namespace RPAWriter2
             if (string.IsNullOrWhiteSpace(path))
             {
                 SetPackagesStatus("Packages directory is not configured. Set the path in the \"Settings\" tab.");
-                MainTabs.SelectedItem = SettingsTab;
+                MainTabs.TrySelectTab("Settings");
                 return null;
             }
             if (!Directory.Exists(path))
@@ -1733,20 +1736,8 @@ namespace RPAWriter2
 
         private void SetPackagesStatus(string text)
         {
-            PackagesStatusText.Text = text ?? "";
+            PackagesPanel.PackagesStatusText.Text = text ?? "";
         }
-
-        private bool FilterPackages(object item)
-        {
-            var filter = (PackageFilterBox?.Text ?? "").Trim();
-            if (filter.Length == 0)
-                return true;
-            return item is PackageListItem package &&
-                   package.Id.StartsWith(filter, StringComparison.Ordinal);
-        }
-
-        private void OnPackageFilterChanged(object sender, TextChangedEventArgs e)
-            => _packagesView?.Refresh();
 
         private void StartChatStatus()
         {
@@ -1902,7 +1893,7 @@ namespace RPAWriter2
         private async Task<string> SummarizeChangesAsync(string content, string systemPrompt)
         {
             if (content.Length > CommitDiffMaxChars)
-                content = content.Substring(0, CommitDiffMaxChars) + "\nвЂ¦ (diff truncated)";
+                content = content.Substring(0, CommitDiffMaxChars) + "\n… (diff truncated)";
             var messages = new List<ChatMessageData>
             {
                 new ChatMessageData { Role = "user", Content = content }
@@ -1924,7 +1915,7 @@ namespace RPAWriter2
             if (plan.Robots.Count == 0 && plan.Projects.Count == 0 && plan.OtherFiles.Count == 0)
                 return null;
 
-            // No robot or project at all вЂ” keep the existing generic fallback.
+            // No robot or project at all — keep the existing generic fallback.
             if (plan.Robots.Count == 0 && plan.Projects.Count == 0)
             {
                 var diff = await _git.GetDiffForMessageAsync(repoRoot);
@@ -2041,7 +2032,7 @@ namespace RPAWriter2
             // the panels are out of sync with the model's view mode).
             EnsureChatReadyToReceive();
 
-            // Agent busy вЂ” enqueue instead of dropping the message.
+            // Agent busy — enqueue instead of dropping the message.
             if (_chatCts != null)
             {
                 EnqueuePending(text, attachments);
@@ -2074,7 +2065,7 @@ namespace RPAWriter2
             if (item == null || _steerSlot != null)
                 return;
 
-            // v1: text-only steering вЂ” messages with attachments stay queued so their files are
+            // v1: text-only steering — messages with attachments stay queued so their files are
             // not silently dropped (the steer button is already disabled for them in the control).
             var text = (item.Text ?? "").Trim();
             if (string.IsNullOrWhiteSpace(text) || item.HasAttachments)
@@ -2171,7 +2162,7 @@ namespace RPAWriter2
 
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
 
-            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "ThinkingвЂ¦" };
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
             var budget = BuildContextBudget();
@@ -2233,7 +2224,7 @@ namespace RPAWriter2
 
                 reasoningTimer.Stop();
 
-                // Finalize the "ThinkingвЂ¦" placeholder in place: it keeps its streamed
+                // Finalize the "Thinking…" placeholder in place: it keeps its streamed
                 // reasoning (so the thoughts stay visible) and the final answer is appended
                 // as a NEW message after any tool calls.
                 thinking.Reasoning = reasoningBuffer.ToString();
@@ -2251,7 +2242,7 @@ namespace RPAWriter2
                 }
                 else
                 {
-                    // No reasoning to show вЂ” drop the empty placeholder.
+                    // No reasoning to show — drop the empty placeholder.
                     _messages.Remove(thinking);
                 }
 
@@ -2332,7 +2323,7 @@ namespace RPAWriter2
         private async Task RunResumeTurnAsync(AgentResumeSnapshot snapshot, AgentMode mode, ContextBudget budget)
         {
             var modeName = mode.ToString();
-            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "ThinkingвЂ¦" };
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
             AppendChatMessage(thinking);
 
             var environment = snapshot.Environment ?? BuildAgentToolEnvironment();
@@ -2348,7 +2339,7 @@ namespace RPAWriter2
                 _messages.Remove(notice);
         }
 
-        /// <summary>Removes the stale partial "ThinkingвЂ¦" placeholder left behind by a cancelled turn.</summary>
+        /// <summary>Removes the stale partial "Thinking…" placeholder left behind by a cancelled turn.</summary>
         private void RemoveStaleThinkingPlaceholder()
         {
             var stale = _messages.LastOrDefault(m => m.Kind == ChatMessageKind.AgentText && m.IsPartial);
@@ -2390,8 +2381,8 @@ namespace RPAWriter2
         /// is queued and processed after the current turn completes.
         /// <para>
         /// A closed chat (the close button of the conversation header) is reopened first, so every
-        /// external entry point вЂ” "Send errors", "Send to RPA Writer", "Send exception to RPA Writer",
-        /// notification banners вЂ” lands in a real conversation instead of disappearing.
+        /// external entry point — "Send errors", "Send to RPA Writer", "Send exception to RPA Writer",
+        /// notification banners — lands in a real conversation instead of disappearing.
         /// </para>
         /// </summary>
         public async Task SubmitErrorToChatAsync(string text)
@@ -2439,7 +2430,7 @@ namespace RPAWriter2
                         // Fallback reconstruction from persisted history (used only when no canonical
                         // provider transcript was persisted): the exact tool-call arguments are not
                         // stored, so both the request and the result are emitted in a flat, provider-safe
-                        // form. The live agent loop is unaffected вЂ” it uses the canonical transcript.
+                        // form. The live agent loop is unaffected — it uses the canonical transcript.
                         var payload = message.Payload as ToolCallPayload;
                         var toolName = payload?.ToolName ?? "";
                         transcript.Add(new ChatMessageData { Role = "assistant", Content = "Tool call: " + toolName });
@@ -2881,7 +2872,7 @@ namespace RPAWriter2
                 // assigns the mode without recording a "Mode: ..." transcript entry.
                 _chatModel.RestoreMode(state.AgentMode);
 
-                SelectTabByHeader(state.ActiveTab);
+                SelectTabByKey(state.ActiveTab);
 
                 if (state.ChatViewMode == ChatViewMode.History)
                 {
@@ -2915,12 +2906,12 @@ namespace RPAWriter2
             }
         }
 
-        private static string MainTabToHeader(MainTab tab)
+        private static string MainTabToKey(MainTab tab)
         {
             switch (tab)
             {
                 case MainTab.Spec: return "Spec";
-                case MainTab.KnowledgeBase: return "Knowledge base";
+                case MainTab.KnowledgeBase: return "KnowledgeBase";
                 case MainTab.Settings: return "Settings";
                 case MainTab.Packages: return "Packages";
                 case MainTab.Controls: return "Controls";
@@ -2928,38 +2919,33 @@ namespace RPAWriter2
             }
         }
 
-        private static MainTab HeaderToMainTab(string? header)
+        private static MainTab KeyToMainTab(string? key)
         {
-            if (string.IsNullOrWhiteSpace(header))
+            if (string.IsNullOrWhiteSpace(key))
                 return MainTab.Chat;
 
-            var value = header.Trim();
-            if (string.Equals(value, "Spec", StringComparison.OrdinalIgnoreCase)) return MainTab.Spec;
-            if (string.Equals(value, "Knowledge base", StringComparison.OrdinalIgnoreCase)) return MainTab.KnowledgeBase;
-            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return MainTab.Settings;
-            if (string.Equals(value, "Packages", StringComparison.OrdinalIgnoreCase)) return MainTab.Packages;
-            if (string.Equals(value, "Controls", StringComparison.OrdinalIgnoreCase)) return MainTab.Controls;
-            return MainTab.Chat;
+            switch (key.Trim())
+            {
+                case "Spec": return MainTab.Spec;
+                case "KnowledgeBase": return MainTab.KnowledgeBase;
+                case "Settings": return MainTab.Settings;
+                case "Packages": return MainTab.Packages;
+                case "Controls": return MainTab.Controls;
+                default: return MainTab.Chat;
+            }
         }
 
-        private void SelectTabByHeader(MainTab tab)
+        private void SelectTabByKey(MainTab tab)
         {
-            var header = MainTabToHeader(tab);
-
-            foreach (var item in MainTabs.Items)
-            {
-                if (item is TabItem tabItem &&
-                    tabItem.Visibility == Visibility.Visible &&
-                    string.Equals(tabItem.Header as string, header, StringComparison.OrdinalIgnoreCase))
-                {
-                    MainTabs.SelectedItem = tabItem;
-                    return;
-                }
-            }
+            var key = MainTabToKey(tab);
+            var tabItem = MainTabs.FindTab(key);
+            if (tabItem != null && tabItem.Visibility == Visibility.Visible)
+                MainTabs.TrySelectTab(key);
         }
 
         private void OnMainTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            UpdateControlsGalleryHostVisibility();
             if (_restoringUiState)
                 return;
             PersistUiState();
@@ -2971,7 +2957,7 @@ namespace RPAWriter2
             if (_restoringUiState)
                 return;
 
-            _chatModel.PersistUiState(HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Header as string));
+            _chatModel.PersistUiState(KeyToMainTab(MainTabs.SelectedTabKey));
         }
 
         private void OnWindowUnloaded(object sender, RoutedEventArgs e)
@@ -3249,9 +3235,9 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowDeployToast(text, success)));
                 return;
             }
-            DeployToast.Kind = success ? NotificationKind.Success : NotificationKind.Warning;
-            DeployToast.Message = text ?? "";
-            DeployToast.Visibility = Visibility.Visible;
+            SpecPanel.DeployToast.Kind = success ? NotificationKind.Success : NotificationKind.Warning;
+            SpecPanel.DeployToast.Message = text ?? "";
+            SpecPanel.DeployToast.Visibility = Visibility.Visible;
             _deployToastTimer.Stop();
             _deployToastTimer.Start();
             SlideDeployToast(0, DeployToastMaxHeight);
@@ -3265,8 +3251,8 @@ namespace RPAWriter2
                 return;
             }
             _deployToastTimer.Stop();
-            SlideDeployToast(DeployToast.ActualHeight, 0,
-                () => DeployToast.Visibility = Visibility.Collapsed);
+            SlideDeployToast(SpecPanel.DeployToast.ActualHeight, 0,
+                () => SpecPanel.DeployToast.Visibility = Visibility.Collapsed);
         }
 
         private void OnDeployToastTick(object? sender, EventArgs e)
@@ -3305,19 +3291,20 @@ namespace RPAWriter2
 
         private void SlideDeployToast(double from, double to, Action? onCompleted = null)
         {
-            DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+            SpecPanel.DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
             var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(180)))
             {
                 EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
             };
             if (onCompleted != null)
                 animation.Completed += (_, __) => onCompleted();
-            DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
+            SpecPanel.DeployToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
         }
 
         private void OnSettingsModelSaved(object? sender, EventArgs e)
         {
             _settings = _settingsModel.ToSettingsData();
+            _chatModel.CacheLossDropRatioPercent = _settings.CacheLossDropRatioPercent;
             _rpaSettingsModel.Save();
             SettingsPanel.ApiKeyBox.Password = _settings.ApiKey ?? "";
             (_chatModel.ChildModel as LogAnalyzer)?.InvalidateProviders();
@@ -3353,233 +3340,16 @@ namespace RPAWriter2
             ControlsTab.Visibility = (_settings != null && _settings.ShowControls)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            UpdateControlsGalleryHostVisibility();
         }
 
-        /// <summary>Fills the hidden "Controls" gallery tab with sample data for every chat message type and svg icon.</summary>
-        private void PopulateControlsGallery()
+        private void UpdateControlsGalleryHostVisibility()
         {
-            ControlsChatList.ItemsSource = CreateSampleChatMessages();
-            ControlsMessagesList.ItemsSource = _messageSamples;
-            RebuildMessageSamples(ParseNotificationAutoHideSeconds());
-
-            _svgView = CollectionViewSource.GetDefaultView(CreateSvgSamples());
-            _svgView.Filter = FilterSvgIcon;
-            ControlsSvgList.ItemsSource = _svgView;
-
-            var palettes = new ListCollectionView(CreatePaletteSamples());
-            palettes.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PaletteSample.Group)));
-            ControlsPaletteList.ItemsSource = palettes;
+            if (ControlsPanel != null)
+                ControlsPanel.IsHostTabVisible = ControlsTab.Visibility == Visibility.Visible
+                    && ReferenceEquals(MainTabs.SelectedItem, ControlsTab);
         }
 
-        /// <summary>Rebuilds the notification gallery samples with the given auto-hide duration and resets the countdown.</summary>
-        private void RebuildMessageSamples(int autoHideSeconds)
-        {
-            _notificationAutoHideTimer.Stop();
-            _messageSamples.Clear();
-            foreach (var sample in CreateMessageSamples(autoHideSeconds))
-                _messageSamples.Add(sample);
-        }
-
-        /// <summary>Restarts the gallery auto-hide demo; starts the timer only when at least one sample has a positive duration.</summary>
-        private void StartNotificationAutoHideDemo()
-        {
-            _notificationAutoHideTimer.Stop();
-            if (_messageSamples.Any(s => s.AutoHideSeconds > 0))
-                _notificationAutoHideTimer.Start();
-        }
-
-        private int ParseNotificationAutoHideSeconds()
-        {
-            if (int.TryParse((NotificationAutoHideBox?.Text ?? string.Empty).Trim(), out var value) && value >= 0)
-                return value;
-            return 5;
-        }
-
-        private void ReplayNotificationSamples()
-        {
-            RebuildMessageSamples(ParseNotificationAutoHideSeconds());
-            StartNotificationAutoHideDemo();
-        }
-
-        private void OnReplayNotifications(object sender, RoutedEventArgs e)
-        {
-            ReplayNotificationSamples();
-        }
-
-        private void OnNotificationAutoHideTick(object? sender, EventArgs e)
-        {
-            bool anyPending = false;
-            for (int i = _messageSamples.Count - 1; i >= 0; i--)
-            {
-                var sample = _messageSamples[i];
-                if (sample.AutoHideSeconds <= 0)
-                    continue;
-
-                sample.RemainingSeconds--;
-                if (sample.RemainingSeconds <= 0)
-                    _messageSamples.RemoveAt(i);
-                else
-                    anyPending = true;
-            }
-
-            if (!anyPending)
-                _notificationAutoHideTimer.Stop();
-        }
-
-        private void OnControlsInnerTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            // Only replay when the user is actually looking at the Controls -> Notifications
-            // gallery, so the countdown does not start while the tab is hidden at startup.
-            if (IsNotificationGalleryVisible())
-                ReplayNotificationSamples();
-        }
-
-        private bool IsNotificationGalleryVisible()
-        {
-            return ControlsTab != null
-                && ControlsTab.Visibility == Visibility.Visible
-                && MainTabs != null
-                && ReferenceEquals(MainTabs.SelectedItem, ControlsTab)
-                && ControlsInnerTabs != null
-                && NotificationsTab != null
-                && ReferenceEquals(ControlsInnerTabs.SelectedItem, NotificationsTab);
-        }
-
-        private static List<SvgIconSample> CreateSvgSamples()
-        {
-            var samples = new List<SvgIconSample>();
-            foreach (MaterialIconKind kind in Enum.GetValues(typeof(MaterialIconKind)))
-                samples.Add(new SvgIconSample { Kind = kind });
-            return samples;
-        }
-
-        private static List<PaletteSample> CreatePaletteSamples()
-        {
-            return new List<PaletteSample>
-            {
-                new PaletteSample { Group = "Mode", Name = "Plan", Hex = "#64B5F6", Brush = Rgb(0x64, 0xB5, 0xF6) },
-                new PaletteSample { Group = "Mode", Name = "Act", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
-                new PaletteSample { Group = "Mode", Name = "Help", Hex = "#F44336", Brush = Rgb(0xF4, 0x43, 0x36) },
-
-                new PaletteSample { Group = "Buttons", Name = "Button background", Hex = "#333337", Brush = Rgb(0x33, 0x33, 0x37) },
-                new PaletteSample { Group = "Buttons", Name = "Button border", Hex = "#3F3F46", Brush = Rgb(0x3F, 0x3F, 0x46) },
-                new PaletteSample { Group = "Buttons", Name = "Button hover", Hex = "#3E3E42", Brush = Rgb(0x3E, 0x3E, 0x42) },
-                new PaletteSample { Group = "Buttons", Name = "Button pressed", Hex = "#264F78", Brush = Rgb(0x26, 0x4F, 0x78) },
-                new PaletteSample { Group = "Buttons", Name = "Primary / accent", Hex = "#264F78", Brush = Rgb(0x26, 0x4F, 0x78) },
-                new PaletteSample { Group = "Buttons", Name = "Icon button", Hex = "Transparent", Brush = Brushes.Transparent },
-
-                new PaletteSample { Group = "Theme", Name = "Window", Hex = "#2D2D30", Brush = Rgb(0x2D, 0x2D, 0x30) },
-                new PaletteSample { Group = "Theme", Name = "Panel", Hex = "#252526", Brush = Rgb(0x25, 0x25, 0x26) },
-                new PaletteSample { Group = "Theme", Name = "Control", Hex = "#333337", Brush = Rgb(0x33, 0x33, 0x37) },
-                new PaletteSample { Group = "Theme", Name = "Border", Hex = "#3F3F46", Brush = Rgb(0x3F, 0x3F, 0x46) },
-                new PaletteSample { Group = "Theme", Name = "Text", Hex = "#F1F1F1", Brush = Rgb(0xF1, 0xF1, 0xF1) },
-                new PaletteSample { Group = "Theme", Name = "Error text", Hex = "#F48771", Brush = Rgb(0xF4, 0x87, 0x71) },
-
-                new PaletteSample { Group = "Chat", Name = "User border", Hex = "#CC64B5F6", Brush = Argb(0xCC, 0x64, 0xB5, 0xF6) },
-                new PaletteSample { Group = "Chat", Name = "User background", Hex = "#3364B5F6", Brush = Argb(0x33, 0x64, 0xB5, 0xF6) },
-                new PaletteSample { Group = "Chat", Name = "Last act border", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
-                new PaletteSample { Group = "Chat", Name = "Last act background", Hex = "#334CAF50", Brush = Argb(0x33, 0x4C, 0xAF, 0x50) },
-                new PaletteSample { Group = "Chat", Name = "Last plan border", Hex = "#FF8C00", Brush = Rgb(0xFF, 0x8C, 0x00) },
-                new PaletteSample { Group = "Chat", Name = "Last plan background", Hex = "#4DFF8C00", Brush = Argb(0x4D, 0xFF, 0x8C, 0x00) },
-
-                new PaletteSample { Group = "Notifications", Name = "Trace", Hex = "#FFFFFF", Brush = Brushes.White },
-                new PaletteSample { Group = "Notifications", Name = "Info", Hex = "#64B5F6", Brush = Rgb(0x64, 0xB5, 0xF6) },
-                new PaletteSample { Group = "Notifications", Name = "Success", Hex = "#4CAF50", Brush = Rgb(0x4C, 0xAF, 0x50) },
-                new PaletteSample { Group = "Notifications", Name = "Warning", Hex = "#FF8C00", Brush = Rgb(0xFF, 0x8C, 0x00) },
-                new PaletteSample { Group = "Notifications", Name = "Error", Hex = "#F44336", Brush = Rgb(0xF4, 0x43, 0x36) },
-            };
-        }
-
-        private bool FilterSvgIcon(object item)
-        {
-            var query = (SvgSearchBox?.Text ?? string.Empty).Trim();
-            if (query.Length == 0)
-                return true;
-
-            return item is SvgIconSample sample &&
-                   sample.Identifier.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private void OnSvgSearchTextChanged(object sender, TextChangedEventArgs e)
-        {
-            _svgView?.Refresh();
-        }
-
-        private void OnCopySvgIdentifier(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: SvgIconSample sample })
-            {
-                try { Clipboard.SetText(sample.Identifier); }
-                catch { /* clipboard busy вЂ” ignore */ }
-            }
-        }
-
-        private void OnSendSvgIdentifier(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: SvgIconSample sample })
-                AppendSelectionToInput(sample.Identifier);
-        }
-
-        private static List<ChatMessage> CreateSampleChatMessages()
-        {
-            return new List<ChatMessage>
-            {
-                new ChatMessage { Kind = ChatMessageKind.User, Text = "Import the spec and generate a robot for SAP transaction MM01." },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.AgentText,
-                    Text = "Plan:\n\n- Read the specification\n- Design the workflow\n- Generate the XAML and C# helpers\n\n```csharp\nvar robot = new Robot();\n```",
-                    Reasoning = "The user wants a robot generated from an imported spec. I will decompose it into workflow steps first."
-                },
-                new ChatMessage { Kind = ChatMessageKind.ToolCall, Payload = new ToolCallPayload { ToolName = "read_file", Result = "FILE: spec.docx (ok, 2340 chars)" } },
-                new ChatMessage { Kind = ChatMessageKind.ToolBlocked, Payload = new ToolCallPayload { ToolName = "generate_robot" } },
-                new ChatMessage { Kind = ChatMessageKind.Error, Text = "Failed to reach the AI provider: request timed out after 300 s." },
-                new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = "Knowledge base directory is not configured." },
-                new ChatMessage { Kind = ChatMessageKind.Compaction, Text = "Conversation compacted: 12 earlier messages summarized." },
-                new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Mode = "Act", Text = "Mode: Act" },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.Question,
-                    Payload = new QuestionPayload
-                    {
-                        Question = "Which robot template should I use?",
-                        Options = new List<string> { "SAP", "Web", "Excel" }
-                    }
-                },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.Subagent,
-                    Payload = new SubagentPayload
-                    {
-                        Item = new SubagentStatusItem
-                        {
-                            Prompt = "Parse the UiPath XAML and reconstruct the specification.",
-                            Status = "completed",
-                            ToolCalls = 3,
-                            LatestToolCall = "read_file",
-                            Result = "Reconstructed 5 tasks."
-                        }
-                    }
-                },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.ResultAnswerPlan,
-                    Mode = "Plan",
-                    Text = "## Plan\n\n- Read the specification\n- Design the workflow\n- Generate the XAML and C# helpers\n\n```csharp\nvar robot = new Robot();\n```"
-                },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.ResultAnswerAct,
-                    Mode = "Act",
-                    Text = "## Done\n\nCreated the robot project and generated the XAML files."
-                },
-                new ChatMessage
-                {
-                    Kind = ChatMessageKind.DiffEdit,
-                    Text = "--- a/Robot.xaml\n+++ b/Robot.xaml\n@@ -1,3 +1,3 @@\n- <Sequence>\n+ <Sequence DisplayName=\"Main\">"
-                }
-            };
-        }
 
         private void ShowPendingOptionsWarnings()
         {
@@ -3611,70 +3381,5 @@ namespace RPAWriter2
             HideOptionsWarning();
         }
 
-        private static List<MessageSample> CreateMessageSamples(int autoHideSeconds)
-        {
-            var blue = Rgb(0x64, 0xB5, 0xF6);
-            var green = Rgb(0x4C, 0xAF, 0x50);
-            var orange = Rgb(0xFF, 0x8C, 0x00);
-            var red = Rgb(0xF4, 0x43, 0x36);
-            var samples = new List<MessageSample>();
-            AddMessageSamples(samples, "trace", Brushes.White, Brushes.White, new Thickness(1), autoHideSeconds, showSend: false);
-            AddMessageSamples(samples, "info", blue, blue, new Thickness(1), autoHideSeconds, showSend: false);
-            AddMessageSamples(samples, "success", green, green, new Thickness(1), autoHideSeconds, showSend: false);
-            AddMessageSamples(samples, "warning", orange, orange, new Thickness(1), autoHideSeconds, showSend: true);
-            AddMessageSamples(samples, "error", red, red, new Thickness(1), autoHideSeconds, showSend: true);
-            return samples;
-        }
-
-        private static void AddMessageSamples(List<MessageSample> samples, string colorName, Brush accent, Brush foreground, Thickness borderThickness, int autoHideSeconds, bool showSend)
-        {
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowSend = showSend, ShowClose = true, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-copy", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = true, ShowSend = showSend, ShowClose = false, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
-            samples.Add(new MessageSample { Text = "notification-" + colorName + "-close", Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowSend = showSend, ShowClose = true, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
-            samples.Add(new MessageSample { Text = "notification-" + colorName, Accent = accent, Foreground = foreground, BorderThickness = borderThickness, ShowCopy = false, ShowSend = showSend, ShowClose = false, AutoHideSeconds = autoHideSeconds, RemainingSeconds = autoHideSeconds });
-        }
-        private static SolidColorBrush Rgb(byte r, byte g, byte b)
-        {
-            return new SolidColorBrush(Color.FromRgb(r, g, b));
-        }
-
-        private static SolidColorBrush Argb(byte a, byte r, byte g, byte b)
-        {
-            return new SolidColorBrush(Color.FromArgb(a, r, g, b));
-        }
-    }
-    /// <summary>Demo item for the Controls -> Notifications gallery.</summary>
-    public sealed class MessageSample
-    {
-        public string Text { get; set; }
-        public Brush Accent { get; set; }
-        public Brush Foreground { get; set; }
-        public Thickness BorderThickness { get; set; } = new Thickness(1);
-        public bool ShowClose { get; set; }
-        public bool ShowCopy { get; set; }
-        public bool ShowSend { get; set; }
-
-        /// <summary>Seconds after which the demo notification disappears; 0 means it never disappears.</summary>
-        public int AutoHideSeconds { get; set; }
-
-        /// <summary>Internal countdown for the auto-hide demo (not bound to UI).</summary>
-        public int RemainingSeconds { get; set; }
-    }
-
-    /// <summary>Demo item for the Controls -> svg gallery.</summary>
-    public sealed class SvgIconSample
-    {
-        public MaterialIconKind Kind { get; set; }
-
-        public string Identifier => Kind.ToString();
-    }
-
-    /// <summary>Demo item for the Controls -> palette gallery.</summary>
-    public sealed class PaletteSample
-    {
-        public string Group { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string Hex { get; set; } = "";
-        public Brush Brush { get; set; } = Brushes.Transparent;
     }
 }

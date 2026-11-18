@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using Agent.Core.Context;
 using Agent.Core.Models;
 using Agent.Toolkit.Wpf.Controls;
 using RPAWriter2.Controls;
@@ -24,6 +25,7 @@ namespace RPAWriter2
         private NotificationBanner _optionsWarningToast;
         private NotificationBanner _commitResultBar;
         private NotificationBanner _checkpointRestoreErrorToast;
+        private NotificationBanner _promptCacheLossToast;
 
         /// <summary>Wires the toolkit ChatControl to this host and injects the host slots.</summary>
         private void WireChatPanel()
@@ -61,6 +63,11 @@ namespace RPAWriter2
             _checkpointRestoreErrorToast.CloseRequested += OnCheckpointRestoreErrorClose;
             _checkpointRestoreErrorToast.SendToChatRequested += OnNotificationSendToChat;
             ChatPanel.CheckpointRestoreErrorToastHost.Content = _checkpointRestoreErrorToast;
+
+            _promptCacheLossToast = new NotificationBanner();
+            _promptCacheLossToast.CloseRequested += OnPromptCacheLossToastClose;
+            ChatPanel.PromptCacheLossToastHost.Content = _promptCacheLossToast;
+            ChatPanel.PromptCacheLost += OnPromptCacheLost;
 
             _commitEditor = new CommitEditorControl();
             _commitEditor.CommitRequested += (_, message) => CommitAsync(message);
@@ -413,6 +420,28 @@ namespace RPAWriter2
         }
 
         private void OnCloseCommitResult(object sender, RoutedEventArgs e) => HideCommitResult();
+
+        private void OnPromptCacheLost(object sender, PromptCacheLossInfo info)
+        {
+            if (info == null)
+                return;
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnPromptCacheLost(sender, info)));
+                return;
+            }
+            _promptCacheLossToast.Kind = NotificationKind.Warning;
+            _promptCacheLossToast.Message = info.Message;
+            _promptCacheLossToast.AutoHideSeconds = 10;
+            _promptCacheLossToast.ShowClose = true;
+            _promptCacheLossToast.Visibility = Visibility.Visible;
+        }
+
+        private void OnPromptCacheLossToastClose(object sender, RoutedEventArgs e)
+        {
+            _promptCacheLossToast.Visibility = Visibility.Collapsed;
+            _promptCacheLossToast.Message = "";
+        }
     }
 }
 
