@@ -1,17 +1,21 @@
 using NUnit.Framework;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Models;
+using Agent.Mvvm;
 using System;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Versioning;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
     /// <summary>
     /// Guards the boundary described in documentation/13-model-layer.md:
     /// <list type="bullet">
-    /// <item><c>RPAWriter.Models</c> and <c>RPAWriter.Mvvm</c> must be <c>netstandard2.0</c>.</item>
+    /// <item><c>Agent.Models</c> and <c>Agent.Mvvm</c> must be <c>netstandard2.0</c>.</item>
     /// <item>They must not reference WPF, WinForms, Material.Icons, SQLite, EnvDTE or the VSIX assembly.</item>
     /// <item>No public model type may live in a <c>System.Windows.*</c> namespace.</item>
     /// </list>
@@ -44,7 +48,10 @@ namespace RPAWriter.Tests
         private static Assembly MvvmAssembly => typeof(BaseModel).Assembly;
 
         /// <summary>The Core assembly hosts the UI-free domain types the models are built on.</summary>
-        private static Assembly CoreAssembly => typeof(RPAWriter.Core.Models.ChatMessage).Assembly;
+        private static Assembly CoreAssembly => typeof(Agent.Core.Models.ChatMessage).Assembly;
+
+        /// <summary>The RPA layer hosts the RPA-domain models and services (robot generation, spec analysis, log analysis).</summary>
+        private static Assembly RpaAssembly => typeof(Agent.Rpa.Models.SpecTabModel).Assembly;
 
         [Test]
         public void ModelsAssembly_TargetsNetStandard()
@@ -76,7 +83,7 @@ namespace RPAWriter.Tests
             var references = ModelsAssembly.GetReferencedAssemblies().Select(r => r.Name).ToArray();
 
             Assert.That(references, Does.Not.Contain("RPAWriter2"),
-                "RPAWriter.Models must never depend on the VSIX assembly: that would break headless tests.");
+                "Agent.Models must never depend on the VSIX assembly: that would break headless tests.");
         }
 
         [Test]
@@ -96,7 +103,7 @@ namespace RPAWriter.Tests
         {
             var references = ModelsAssembly.GetReferencedAssemblies().Select(r => r.Name).ToArray();
 
-            Assert.That(references, Does.Contain("RPAWriter.Mvvm"));
+            Assert.That(references, Does.Contain("Agent.Mvvm"));
         }
 
         [Test]
@@ -117,7 +124,7 @@ namespace RPAWriter.Tests
             var references = CoreAssembly.GetReferencedAssemblies().Select(r => r.Name).ToArray();
 
             Assert.That(references, Does.Not.Contain("RPAWriter2"),
-                "RPAWriter.Core must stay usable from headless tests; the VSIX assembly may only depend on it.");
+                "Agent.Core must stay usable from headless tests; the VSIX assembly may only depend on it.");
         }
 
         /// <summary>
@@ -129,24 +136,24 @@ namespace RPAWriter.Tests
         {
             var expected = new[]
             {
-                typeof(RPAWriter.Core.Models.ChatMessage),
-                typeof(RPAWriter.Core.Models.ChatPayload),
-                typeof(RPAWriter.Core.Models.TextPayload),
-                typeof(RPAWriter.Core.Models.ToolCallPayload),
-                typeof(RPAWriter.Core.Models.QuestionPayload),
-                typeof(RPAWriter.Core.Models.SubagentPayload),
-                typeof(RPAWriter.Core.Models.CheckpointPayload),
-                typeof(RPAWriter.Core.Models.ChatAttachment),
-                typeof(RPAWriter.Core.Models.ChatConversation),
-                typeof(RPAWriter.Core.Models.ChatHistoryMessage),
-                typeof(RPAWriter.Core.Models.PendingMessage),
-                typeof(RPAWriter.Core.Models.PendingDelivery),
-                typeof(RPAWriter.Core.Models.UiStateData),
-                typeof(RPAWriter.Core.Models.AgentPhase),
-                typeof(RPAWriter.Core.Services.ChatMessageMapper),
-                typeof(RPAWriter.Core.Models.ChatViewMode),
-                typeof(RPAWriter.Core.Contracts.IChatHistoryStore),
-                typeof(RPAWriter.Core.Contracts.IUiStateStore)
+                typeof(Agent.Core.Models.ChatMessage),
+                typeof(Agent.Core.Models.ChatPayload),
+                typeof(Agent.Core.Models.TextPayload),
+                typeof(Agent.Core.Models.ToolCallPayload),
+                typeof(Agent.Core.Models.QuestionPayload),
+                typeof(Agent.Core.Models.SubagentPayload),
+                typeof(Agent.Core.Models.CheckpointPayload),
+                typeof(Agent.Core.Models.ChatAttachment),
+                typeof(Agent.Core.Models.ChatConversation),
+                typeof(Agent.Core.Models.ChatHistoryMessage),
+                typeof(Agent.Core.Models.PendingMessage),
+                typeof(Agent.Core.Models.PendingDelivery),
+                typeof(Agent.Core.Models.UiStateData),
+                typeof(Agent.Core.Models.AgentPhase),
+                typeof(Agent.Core.Services.ChatMessageMapper),
+                typeof(Agent.Core.Models.ChatViewMode),
+                typeof(Agent.Core.Contracts.IChatHistoryStore),
+                typeof(Agent.Core.Contracts.IUiStateStore)
             };
 
             var wrongAssembly = expected
@@ -155,17 +162,17 @@ namespace RPAWriter.Tests
                 .ToArray();
 
             Assert.That(wrongAssembly, Is.Empty,
-                "Chat domain types must live in RPAWriter.Core: " + string.Join(", ", wrongAssembly));
+                "Chat domain types must live in Agent.Core: " + string.Join(", ", wrongAssembly));
         }
 
         /// <summary>
         /// Material.Icons is a view concern: the queue delivery icon is resolved by a converter in
-        /// the VSIX project, so <see cref="RPAWriter.Core.Models.PendingMessage"/> exposes no icon.
+        /// the VSIX project, so <see cref="Agent.Core.Models.PendingMessage"/> exposes no icon.
         /// </summary>
         [Test]
         public void PendingMessage_ExposesNoIconProperty()
         {
-            var iconProperties = typeof(RPAWriter.Core.Models.PendingMessage)
+            var iconProperties = typeof(Agent.Core.Models.PendingMessage)
                 .GetProperties()
                 .Where(p => p.Name.IndexOf("Icon", StringComparison.OrdinalIgnoreCase) >= 0)
                 .Select(p => p.Name)
@@ -177,7 +184,7 @@ namespace RPAWriter.Tests
 
         /// <summary>
         /// The chat model is the reference implementation of the model rules: it lives in
-        /// RPAWriter.Models, so it can be constructed and exercised from this net8.0 test project
+        /// Agent.Models, so it can be constructed and exercised from this net8.0 test project
         /// without Visual Studio.
         /// </summary>
         [Test]
@@ -208,16 +215,16 @@ namespace RPAWriter.Tests
         /// constructed and exercised from this net8.0 project without a view model or a view.
         /// </summary>
         [Test]
-        public void LogAnalyzer_LivesInModelsAssembly()
+        public void LogAnalyzer_LivesInRpaAssembly()
         {
-            Assert.That(typeof(RPAWriter.Models.LogAnalyzer).Assembly, Is.EqualTo(ModelsAssembly));
+            Assert.That(typeof(Agent.Rpa.Models.LogAnalyzer).Assembly, Is.EqualTo(RpaAssembly));
         }
 
         /// <summary>Layout state (panel visibility, focus) is view state: rule 10.</summary>
         [Test]
         public void LogAnalyzer_ExposesNoLayoutState()
         {
-            var violations = typeof(RPAWriter.Models.LogAnalyzer).GetProperties()
+            var violations = typeof(Agent.Rpa.Models.LogAnalyzer).GetProperties()
                 .Where(p => p.Name.IndexOf("Visib", StringComparison.OrdinalIgnoreCase) >= 0)
                 .Select(p => p.Name)
                 .ToArray();
@@ -231,28 +238,26 @@ namespace RPAWriter.Tests
         /// model stays testable and the VSIX project only supplies the host adapters.
         /// </summary>
         [Test]
-        public void LogAnalysisTypes_LiveInCore()
+        public void LogAnalysisTypes_LiveInRpa()
         {
             var expected = new[]
             {
-                typeof(RPAWriter.Core.Contracts.ILogProviderSource),
-                typeof(RPAWriter.Core.Contracts.IOutputWindowTextSource),
-                typeof(RPAWriter.Core.Contracts.IChatPromptSink),
-                typeof(RPAWriter.Core.Contracts.IUserMessageSink),
-                typeof(RPAWriter.Core.Contracts.ILogAnalysisSettings),
-                typeof(RPAWriter.Core.Models.LogLevelOption),
-                typeof(RPAWriter.Core.Services.ProdLogAnalysisService),
-                typeof(RPAWriter.Core.Services.ProdLogQueryBuilder),
-                typeof(RPAWriter.Core.Services.RobotNameHistory)
+                typeof(Agent.Rpa.Contracts.ILogProviderSource),
+                typeof(Agent.Rpa.Contracts.IOutputWindowTextSource),
+                typeof(Agent.Rpa.Contracts.ILogAnalysisSettings),
+                typeof(Agent.Rpa.Models.LogLevelOption),
+                typeof(Agent.Rpa.Services.ProdLogAnalysisService),
+                typeof(Agent.Rpa.Services.ProdLogQueryBuilder),
+                typeof(Agent.Rpa.Services.RobotNameHistory)
             };
 
             var wrongAssembly = expected
-                .Where(t => t.Assembly != CoreAssembly)
+                .Where(t => t.Assembly != RpaAssembly)
                 .Select(t => t.FullName)
                 .ToArray();
 
             Assert.That(wrongAssembly, Is.Empty,
-                "Log analysis types must live in RPAWriter.Core: " + string.Join(", ", wrongAssembly));
+                "Log analysis types must live in Agent.Rpa: " + string.Join(", ", wrongAssembly));
         }
 
         /// <summary>Workspace identity and scoping contracts are host-agnostic domain types in Core.</summary>
@@ -261,12 +266,12 @@ namespace RPAWriter.Tests
         {
             var expected = new[]
             {
-                typeof(RPAWriter.Core.Services.WorkspaceIdentity),
-                typeof(RPAWriter.Core.Services.WorkspaceInfo),
-                typeof(RPAWriter.Core.Services.WorkspaceLogSettings),
-                typeof(RPAWriter.Core.Contracts.IWorkspaceProvider),
-                typeof(RPAWriter.Core.Contracts.ISecretsStore),
-                typeof(RPAWriter.Core.Contracts.IWorkspaceLogSettingsStore)
+                typeof(Agent.Core.Services.WorkspaceIdentity),
+                typeof(Agent.Core.Services.WorkspaceInfo),
+                typeof(Agent.Core.Services.WorkspaceLogSettings),
+                typeof(Agent.Core.Contracts.IWorkspaceProvider),
+                typeof(Agent.Core.Contracts.ISecretsStore),
+                typeof(Agent.Core.Contracts.IWorkspaceLogSettingsStore)
             };
 
             var wrongAssembly = expected
@@ -275,21 +280,21 @@ namespace RPAWriter.Tests
                 .ToArray();
 
             Assert.That(wrongAssembly, Is.Empty,
-                "Workspace types must live in RPAWriter.Core: " + string.Join(", ", wrongAssembly));
+                "Workspace types must live in Agent.Core: " + string.Join(", ", wrongAssembly));
         }
 
         /// <summary>The Spec tab model lives in the models assembly, next to <see cref="ChatModel"/>.</summary>
         [Test]
-        public void SpecTabModel_LivesInModelsAssembly()
+        public void SpecTabModel_LivesInRpaAssembly()
         {
-            Assert.That(typeof(RPAWriter.Models.SpecTabModel).Assembly, Is.EqualTo(ModelsAssembly));
+            Assert.That(typeof(Agent.Rpa.Models.SpecTabModel).Assembly, Is.EqualTo(RpaAssembly));
         }
 
         /// <summary>The Knowledge base tab model lives in the models assembly, next to <see cref="ChatModel"/>.</summary>
         [Test]
-        public void KnowledgeBaseModel_LivesInModelsAssembly()
+        public void KnowledgeBaseModel_LivesInRpaAssembly()
         {
-            Assert.That(typeof(RPAWriter.Models.KnowledgeBaseModel).Assembly, Is.EqualTo(ModelsAssembly));
+            Assert.That(typeof(Agent.Rpa.Models.KnowledgeBaseModel).Assembly, Is.EqualTo(RpaAssembly));
         }
 
         /// <summary>Layout state (panel visibility, focus) is view state: rule 10.</summary>
@@ -298,8 +303,8 @@ namespace RPAWriter.Tests
         {
             var violations = new[]
             {
-                typeof(RPAWriter.Models.SpecTabModel),
-                typeof(RPAWriter.Models.KnowledgeBaseModel)
+                typeof(Agent.Rpa.Models.SpecTabModel),
+                typeof(Agent.Rpa.Models.KnowledgeBaseModel)
             }
             .SelectMany(t => t.GetProperties())
             .Where(p => p.Name.IndexOf("Visib", StringComparison.OrdinalIgnoreCase) >= 0)

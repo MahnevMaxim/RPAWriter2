@@ -5,11 +5,15 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Models;
+using Agent.Mvvm;
 using RPAWriter.Tests.Fakes;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -719,7 +723,7 @@ namespace RPAWriter.Tests
 
             chat.Run();
 
-            Assert.That(chat.LogAnalyzer, Is.SameAs(analyzer));
+            Assert.That(chat.ChildModel, Is.SameAs(analyzer));
             Assert.That(analyzer.IsSettingsLoaded, Is.True, "ChatModel.Run must start the child model");
             Assert.That(analyzer.CurrentRobotName, Is.EqualTo("RPA-999"));
         }
@@ -729,7 +733,7 @@ namespace RPAWriter.Tests
         {
             var chat = new ChatModel(new InMemoryChatHistoryStore());
 
-            Assert.That(chat.LogAnalyzer, Is.Null);
+            Assert.That(chat.ChildModel, Is.Null);
             Assert.DoesNotThrow(() => chat.Run());
         }
 

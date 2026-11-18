@@ -2,8 +2,12 @@ using System;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {

@@ -13,11 +13,15 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using RPAWriter2.Controls;
 using RPAWriter2.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2
 {
@@ -163,7 +167,7 @@ namespace RPAWriter2
             // the user cleared the boxes.
             if (string.IsNullOrWhiteSpace(PixRobotConversionPanel.PixFolder))
             {
-                var settings = SettingsStore.Load();
+                var settings = new RpaSettingsStore().Load();
                 var configured = (settings.RobotsRootPath ?? "").Trim();
                 PixRobotConversionPanel.PixFolder = !string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)
                     ? configured
@@ -578,7 +582,7 @@ namespace RPAWriter2
         private string? PickPixRobotsFolder()
         {
             var owner = GetHostWindowHandle();
-            var configured = (SettingsStore.Load().RobotsRootPath ?? "").Trim();
+            var configured = (new RpaSettingsStore().Load().RobotsRootPath ?? "").Trim();
             var initial = !string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)
                 ? configured
                 : string.Empty;

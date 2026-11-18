@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RPA-specific layer (robot generation, spec analysis, Pix/Mwf/UiPath converters,
+    production-log analysis) that belongs to RPAWriter2 only and is NOT shared with
+    VibeCoder / AI-RPA. Depends on the shared Agent.* packages.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>annotations</Nullable>
+    <RootNamespace>Agent.Rpa</RootNamespace>
+    <AssemblyName>Agent.Rpa</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AgentToolkit" Version="1.10.0" />
+  </ItemGroup>
+
+</Project>

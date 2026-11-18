@@ -9,6 +9,10 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using EnvDTE;
 using EnvDTE80;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {

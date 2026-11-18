@@ -13,12 +13,16 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Shell;
-using RPAWriter.Core.AgentTools;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using RPAWriter.Roslyn;
 using RPAWriter2.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services.AgentTools
 {
@@ -28,7 +32,7 @@ namespace RPAWriter2.Services.AgentTools
     /// </summary>
     public sealed class AgentToolFactory
     {
-        private readonly IAiProvider _ai;
+        private readonly IRpaAiProvider _ai;
         private readonly Func<SpecModel?> _getSpec;
         private readonly Func<string?> _getKbPath;
         private readonly Func<string?> _getRobotsRootPath;
@@ -55,7 +59,7 @@ namespace RPAWriter2.Services.AgentTools
         private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
-            IAiProvider ai,
+            IRpaAiProvider ai,
             Func<SpecModel?> getSpec,
             Func<string?> getKbPath,
             Func<string?> getRobotsRootPath,

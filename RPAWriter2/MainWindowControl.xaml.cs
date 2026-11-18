@@ -8,21 +8,22 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows.Data;
-using RPAWriter.Core.AgentTools;
-using RPAWriter.Core.Context;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
-using RPAWriter.Core.Mcp;
-using RPAWriter.Core.Checkpoints;
+using Agent.Core.AgentTools;
+using Agent.Core.Context;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Core.Mcp;
+using Agent.Core.Checkpoints;
 using RPAWriter2.Services;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Models;
+using Agent.Mvvm;
 using RPAWriter2.ViewModels;
 using RPAWriter2.Mvvm;
 using RPAWriter2.Services.AgentTools;
 using RPAWriter2.Services.Checkpoints;
 using RPAWriter2.Controls;
-using RPAWriter2.Markdown;
+using Agent.Toolkit.Wpf.Controls;
+using Agent.Toolkit.Wpf.Markdown;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.PlatformUI;
@@ -39,8 +40,12 @@ using System.IO;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Xml.Linq;
-using RPAWriter.Core.Models;
+using Agent.Core.Models;
 using Material.Icons;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2
 {
@@ -50,7 +55,11 @@ namespace RPAWriter2
     public partial class MainWindowControl : UserControl
     {
         private SettingsData _settings;
-        private IAiProvider _ai;
+        private RpaSettingsModel _rpaSettingsModel;
+        private IRpaAiProvider _ai;
+
+        /// <summary>Live snapshot of the RPA-domain settings, rebuilt on each access.</summary>
+        private RpaSettingsData _rpaSettings => _rpaSettingsModel.ToSettingsData();
         private IBuildFeedbackService _buildFeedback;
         private RobotTemplateService _robotTemplate;
         private RoslynWorkspaceService _roslyn;
@@ -87,7 +96,7 @@ namespace RPAWriter2
         private List<ChatMessageData> _providerTranscript = new List<ChatMessageData>();
         private AgentMode _resumableMode;
         private ContextBudget? _resumableBudget;
-        private ITokenUsageProvider? _tokenUsage;
+        private readonly ContextUsageBinder _contextUsageBinder;
         private int _compactionDepth;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
@@ -118,7 +127,7 @@ namespace RPAWriter2
 
         // Single-slot steer state for the running turn. At most one steered message is in flight;
         // the message stays queued until the agent loop consumes it (TakeSteer), so a steer that
-        // arrives right before the turn ends is not lost — the drain loop runs it normally.
+        // arrives right before the turn ends is not lost вЂ” the drain loop runs it normally.
         private volatile SteerSlot _steerSlot;
         private TaskCompletionSource<string>? _questionTcs;
         private ChatMessage? _activeQuestion;
@@ -127,18 +136,21 @@ namespace RPAWriter2
         private bool _approveAllInRun;
         private bool _denyAllInRun;
         private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        private NotificationBanner _settingsToast = null!;
+        private TextBlock _workspaceIndicatorText = null!;
+        private Button _resetWorkspaceButton = null!;
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         private readonly DispatcherTimer _notificationAutoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer _workspacePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
 
         private static string CommitMessageSystemPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", PromptDefaults.CommitMessageSystemPrompt);
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-message.txt", RpaPromptDefaults.CommitMessageSystemPrompt);
 
         private static string CommitRobotSummarySystemPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-robot-summary.txt", PromptDefaults.CommitRobotSummarySystemPrompt);
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-robot-summary.txt", RpaPromptDefaults.CommitRobotSummarySystemPrompt);
 
         private static string CommitOtherSummarySystemPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-other-summary.txt", PromptDefaults.CommitOtherSummarySystemPrompt);
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "commit-other-summary.txt", RpaPromptDefaults.CommitOtherSummarySystemPrompt);
 
         private const int CommitDiffMaxChars = 8000;
         private const int ErrorContextLines = 15;
@@ -188,6 +200,7 @@ namespace RPAWriter2
                 new JsonUiStateStore(),
                 chatSink: new ChatPromptSinkAdapter((prompt, _) => SendChatTextAsync(prompt)),
                 workspaceProvider: _workspaceProvider);
+            _contextUsageBinder = new ContextUsageBinder(_chatModel, SynchronizationContext.Current);
             // The geometry parser must be ready before InitializeComponent: the
             // ClearInputButton icon (MaterialIconKind.Broom) is resolved via a binding
             // during XAML load and would otherwise fall back to an empty geometry.
@@ -198,19 +211,7 @@ namespace RPAWriter2
             _notificationAutoHideTimer.Tick += OnNotificationAutoHideTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             ControlsInnerTabs.SelectionChanged += OnControlsInnerTabsSelectionChanged;
-            ChatMessages.Messages = _messages;
-            MessageQueue.Messages = _pendingMessages;
-            MessageQueue.SteerRequested += OnSteerRequested;
-            ChatMessages.Filter = message => !ReferenceEquals(message, _pinnedMessage);
-            ChatMessages.CopyMessageRequested += OnChatMessageCopyRequested;
-            ChatMessages.QuestionAnswered += OnChatMessageQuestionAnswered;
-            ChatMessages.QuestionSkipped += OnChatMessageQuestionSkipped;
-            ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
-            ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
-            ChatMessages.ApprovalDecided += OnChatMessageApprovalDecided;
-            AttachmentsList.ItemsSource = _attachments;
             SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
-            HistoryList.ItemsSource = _conversations;
             _packagesView = CollectionViewSource.GetDefaultView(_packages);
             _packagesView.Filter = FilterPackages;
             PackagesList.ItemsSource = _packagesView;
@@ -228,10 +229,14 @@ namespace RPAWriter2
                 () => LogService.CurrentChatLogFilePath);
             _settingsModel.SettingsSaved += OnSettingsModelSaved;
             _settingsModel.Notify += OnSettingsNotify;
-            MvvmFactory.Attach(_settingsModel, _settingsViewModel, SettingsTab);
+            _rpaSettingsModel = new RpaSettingsModel(new RpaSettingsStore());
+            _rpaSettingsModel.Run();
+            _settingsViewModel.RpaSettings = _rpaSettingsModel;
+            MvvmFactory.Attach(_settingsModel, _settingsViewModel, SettingsPanel);
             _settings = _settingsModel.ToSettingsData();
-            ApiKeyBox.Password = _settings.ApiKey ?? "";
-            ApiKeyBox.PasswordChanged += OnApiKeyChanged;
+            SettingsPanel.ApiKeyBox.Password = _settings.ApiKey ?? "";
+            SettingsPanel.ApiKeyBox.PasswordChanged += OnApiKeyChanged;
+            WireSettingsHostChrome();
 
             _specTabModel = new SpecTabModel(
                 () => _ai,
@@ -245,14 +250,14 @@ namespace RPAWriter2
                 new OpenXmlDocumentReader(),
                 new RobotGenerator(),
                 kbPath => new FileKnowledgeBase(kbPath),
-                () => _settings,
+                () => _rpaSettings,
                 SynchronizationContext.Current);
             _specTabModel.Notify += OnSpecTabNotify;
             MvvmFactory.Attach(_specTabModel, _specTabViewModel, SpecTab);
 
             _knowledgeBaseModel = new KnowledgeBaseModel(
                 () => _ai,
-                () => _settings,
+                () => _rpaSettings,
                 kbPath => new FileKnowledgeBase(kbPath),
                 new VsFileWriter(),
                 SynchronizationContext.Current);
@@ -266,13 +271,13 @@ namespace RPAWriter2
             ShowPendingOptionsWarnings();
             RecreateAiProvider();
             _mic = new MicrophoneRecorder();
-            _mic.LevelChanged += OnMicLevelChanged;
             _stt = SpeechToTextFactory.Create(_settings);
+            WireChatPanel();
             _buildFeedback = new BuildFeedbackService();
             _robotTemplate = new RobotTemplateService();
             _roslyn = new RoslynWorkspaceService();
             _outputWindow = new OutputWindowService();
-            RebuildAgentTools();
+            RebuildAgentToolsCore();
             RefreshMcpToolsAsync();
             HookSolutionEvents();
             _workspaceProvider.WorkspaceChanged += OnWorkspaceChanged;
@@ -281,37 +286,28 @@ namespace RPAWriter2
             _workspacePollTimer.Start();
             UpdateCreateRobotVisibility();
             UpdateWorkspaceIndicator();
-            _chatModel.LogAnalyzer = CreateLogAnalyzer();
-            MvvmFactory.Attach(_chatModel, _chatViewModel, this);
-            _chatModel.PropertyChanged += OnChatModelPropertyChanged;
+            _chatModel.ChildModel = CreateLogAnalyzer();
             InitializeChatHistory();
         }
 
         /// <summary>Re-renders the layout parts that depend on chat model state.</summary>
-        private void OnChatModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(ChatModel.PinnedMessage))
-                RefreshPinnedMessage();
-        }
-
         private void RecreateAiProvider()
         {
-            UnhookTokenUsage();
+            _contextUsageBinder.Detach();
             UnhookMessageNotifier();
             UnhookRetryNotifier();
             UnhookPromptNotifier();
-            _ai = AiProviderFactory.Create(_settings);
+            _ai = RpaAiProviderFactory.Create(_settings, _rpaSettings);
             LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
-            HookTokenUsage();
+            _contextUsageBinder.Attach(_ai as ITokenUsageProvider, BuildContextBudget());
             HookMessageNotifier();
             HookRetryNotifier();
             HookPromptNotifier();
-            PushContextWindow();
         }
 
         private string KbPath()
         {
-            return (_settings?.KnowledgeBasePath ?? "").Trim();
+            return (_rpaSettings?.KnowledgeBasePath ?? "").Trim();
         }
 
         private void AppendChat(string text)
@@ -490,14 +486,7 @@ namespace RPAWriter2
         private void OnChatMessageCopyRequested(object? sender, ChatMessage message)
         {
             try { Clipboard.SetText(FormatMessageForCopy(message)); }
-            catch { /* clipboard busy — ignore */ }
-        }
-
-        private void OnCopyPinnedMessage(object sender, RoutedEventArgs e)
-        {
-            if (_pinnedMessage == null) return;
-            try { Clipboard.SetText(FormatMessageForCopy(_pinnedMessage)); }
-            catch { /* clipboard busy — ignore */ }
+            catch { /* clipboard busy вЂ” ignore */ }
         }
 
         private void OnChatMessageQuestionAnswered(object? sender, ChatMessage message)
@@ -542,7 +531,7 @@ namespace RPAWriter2
             }
             // The chat control adds into the model-owned Messages collection; the model reacts by
             // updating the pinned message and the dirty flag.
-            ChatMessages.Append(message);
+            ChatPanel.AppendChatMessage(message);
             if (_chatModel.IsDirty)
                 ScheduleHistorySave();
         }
@@ -813,7 +802,7 @@ namespace RPAWriter2
             if (sender is FrameworkElement { DataContext: MessageSample sample } && !string.IsNullOrEmpty(sample.Text))
             {
                 try { Clipboard.SetText(sample.Text); }
-                catch { /* clipboard busy — ignore */ }
+                catch { /* clipboard busy вЂ” ignore */ }
             }
         }
 
@@ -845,19 +834,6 @@ namespace RPAWriter2
             });
         }
 
-        private void OnCopyConversation(object sender, RoutedEventArgs e)
-        {
-            var sb = new StringBuilder();
-            foreach (var m in _messages)
-            {
-                if (sb.Length > 0) sb.AppendLine().AppendLine();
-                sb.Append(FormatMessageForCopy(m));
-            }
-            if (sb.Length == 0) return;
-            try { Clipboard.SetText(sb.ToString()); }
-            catch { /* clipboard busy — ignore */ }
-        }
-
         private void OnCopySpecOutput(object sender, RoutedEventArgs e)
         {
             var sb = new StringBuilder();
@@ -868,7 +844,7 @@ namespace RPAWriter2
             }
             if (sb.Length == 0) return;
             try { Clipboard.SetText(sb.ToString()); }
-            catch { /* clipboard busy — ignore */ }
+            catch { /* clipboard busy вЂ” ignore */ }
         }
 
         private static string FormatMessageForCopy(ChatMessage message)
@@ -882,20 +858,6 @@ namespace RPAWriter2
                 sb.Append(message.Reasoning);
             }
             return sb.ToString();
-        }
-
-        private void HookTokenUsage()
-        {
-            _tokenUsage = _ai as ITokenUsageProvider;
-            if (_tokenUsage != null)
-                _tokenUsage.TokenUsageUpdated += OnTokenUsageUpdated;
-        }
-
-        private void UnhookTokenUsage()
-        {
-            if (_tokenUsage != null)
-                _tokenUsage.TokenUsageUpdated -= OnTokenUsageUpdated;
-            _tokenUsage = null;
         }
 
         private void HookMessageNotifier()
@@ -968,7 +930,7 @@ namespace RPAWriter2
         {
             if (string.IsNullOrEmpty(text) || text.Length <= PromptDumpContentMaxChars)
                 return text ?? string.Empty;
-            return text.Substring(0, PromptDumpContentMaxChars) + "\n…(truncated)";
+            return text.Substring(0, PromptDumpContentMaxChars) + "\nвЂ¦(truncated)";
         }
 
         private static string FormatPromptDump(PromptAssembledEventArgs e)
@@ -1010,26 +972,6 @@ namespace RPAWriter2
                 " elapsed=" + e.Elapsed +
                 " remaining=" + e.Remaining +
                 " body=" + (e.Body ?? "").Replace("\r", " ").Replace("\n", " "));
-        }
-
-        private void OnTokenUsageUpdated(object? sender, TokenUsage usage)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnTokenUsageUpdated(sender, usage)));
-                return;
-            }
-            _chatModel.RecordTokenUsage(usage);
-        }
-
-        private void PushContextWindow()
-        {
-            var provider = _tokenUsage;
-            var budget = BuildContextBudget();
-            _chatModel.SetContextWindow(
-                provider?.ContextWindowSize ?? 0,
-                provider != null ? budget.CompactThresholdTokens : 0,
-                provider != null ? budget.MaxInputTokens : 0);
         }
 
         private void ShowError(Exception ex)
@@ -1103,7 +1045,7 @@ namespace RPAWriter2
             }
             catch
             {
-                // Solution events unavailable — visibility will be refreshed on load / lazily.
+                // Solution events unavailable вЂ” visibility will be refreshed on load / lazily.
             }
         }
 
@@ -1123,8 +1065,8 @@ namespace RPAWriter2
             {
                 noWorkspace = true;
             }
-            var showRobotCreator = noWorkspace && (_settings?.ShowRobotCreator ?? true);
-            CreateRobotPanel.Visibility = showRobotCreator ? Visibility.Visible : Visibility.Collapsed;
+            var showRobotCreator = noWorkspace && (_rpaSettings?.ShowRobotCreator ?? true);
+            ChatPanel.CreateRobotHost.Visibility = showRobotCreator ? Visibility.Visible : Visibility.Collapsed;
             RestorePackagesPanel.Visibility = noWorkspace ? Visibility.Collapsed : Visibility.Visible;
         }
 
@@ -1225,21 +1167,69 @@ namespace RPAWriter2
             OnWorkspaceChanged(this, EventArgs.Empty);
         }
 
+        /// <summary>
+        /// Wires the host-specific settings chrome (toast banner, workspace indicator + reset) into the
+        /// shared <see cref="SettingsControl"/> slots and injects the RPA and VS sections.
+        /// </summary>
+        private void WireSettingsHostChrome()
+        {
+            _settingsToast = new NotificationBanner { Visibility = Visibility.Collapsed };
+            _settingsToast.CloseRequested += OnSettingsToastClose;
+            _settingsToast.SendToChatRequested += OnNotificationSendToChat;
+            SettingsPanel.HostBannerSlot.Content = _settingsToast;
+
+            var workspacePanel = new StackPanel { Orientation = Orientation.Horizontal };
+            _workspaceIndicatorText = new TextBlock
+            {
+                Text = "No workspace open",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 5, 8, 0),
+                Foreground = (Brush)FindResource("Dark.Text"),
+            };
+            _resetWorkspaceButton = new Button
+            {
+                Content = "Reset workspace",
+                Margin = new Thickness(0, 5, 8, 0),
+                ToolTip = "Clear workspace-scoped settings, chat history and UI state",
+            };
+            _resetWorkspaceButton.Click += OnResetWorkspace;
+            workspacePanel.Children.Add(_workspaceIndicatorText);
+            workspacePanel.Children.Add(_resetWorkspaceButton);
+            SettingsPanel.HostToolbarSlot.Content = workspacePanel;
+
+            var rpaSection = new RpaSettingsSection();
+            rpaSection.OpenConverterRequested += (_, __) => ConverterToolWindowCommand.Instance?.ShowWindow();
+            SettingsPanel.InsertHostSection(1, new SettingsControl.SettingsSection
+            {
+                Title = "RPA",
+                OutlineIcon = MaterialIconKind.RobotOutline,
+                FilledIcon = MaterialIconKind.Robot,
+                Content = rpaSection,
+            });
+            SettingsPanel.InsertHostSection(2, new SettingsControl.SettingsSection
+            {
+                Title = "VS",
+                OutlineIcon = MaterialIconKind.MicrosoftVisualStudio,
+                FilledIcon = MaterialIconKind.MicrosoftVisualStudio,
+                Content = new VsSettingsSection(),
+            });
+        }
+
         private void UpdateWorkspaceIndicator()
         {
-            if (WorkspaceIndicatorText == null)
+            if (_workspaceIndicatorText == null)
                 return;
 
             var workspace = _workspaceProvider.GetCurrentWorkspace();
             if (workspace == null)
             {
-                WorkspaceIndicatorText.Text = "No workspace open";
-                WorkspaceIndicatorText.ToolTip = null;
+                _workspaceIndicatorText.Text = "No workspace open";
+                _workspaceIndicatorText.ToolTip = null;
                 return;
             }
 
-            WorkspaceIndicatorText.Text = "Workspace: " + workspace.Name;
-            WorkspaceIndicatorText.ToolTip = workspace.Path;
+            _workspaceIndicatorText.Text = "Workspace: " + workspace.Name;
+            _workspaceIndicatorText.ToolTip = workspace.Path;
         }
 
         private void OnResetWorkspace(object sender, RoutedEventArgs e)
@@ -1280,271 +1270,6 @@ namespace RPAWriter2
             ShowNotice("Workspace state reset.", NotificationKind.Info);
         }
 
-#pragma warning disable VSTHRD100 // WPF event handlers are async void
-        private async void OnSend(object sender, RoutedEventArgs e)
-        {
-            await SendMessageAsync();
-        }
-
-        private async void OnInputKeyDown(object sender, KeyEventArgs e)
-        {
-            // Enter — send; Ctrl+Enter — newline (handled by the TextBox itself)
-            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
-            {
-                e.Handled = true;
-                await SendMessageAsync();
-            }
-        }
-
-        private void OnClearInput(object sender, RoutedEventArgs e)
-        {
-            InputBox.Clear();
-            InputBox.Focus();
-        }
-
-        private async void OnDoItClick(object sender, RoutedEventArgs e)
-        {
-            var text = InputBox.Text.Trim();
-            InputBox.Clear();
-            await _chatModel.DoItCommand(text);
-        }
-
-        private async void OnMicClick(object sender, RoutedEventArgs e)
-        {
-            if (_isTranscribing) return;
-
-            if (!_isRecording)
-            {
-                try
-                {
-                    _mic.Start();
-                }
-                catch (Exception ex)
-                {
-                    ShowVoiceError("Microphone unavailable: " + ex.Message);
-                    return;
-                }
-                _isRecording = true;
-                SetMicState(recording: true);
-            }
-            else
-            {
-                byte[] audio;
-                try
-                {
-                    audio = _mic.Stop();
-                }
-                catch (Exception ex)
-                {
-                    _isRecording = false;
-                    SetMicState(recording: false);
-                    ShowVoiceError("Failed to stop recording: " + ex.Message);
-                    return;
-                }
-
-                _isRecording = false;
-                SetMicState(recording: false);
-
-                if (audio == null || audio.Length == 0)
-                {
-                    AppendSystemMessage("No speech detected.");
-                    return;
-                }
-
-                _isTranscribing = true;
-                SetMicState(recording: false, transcribing: true);
-                try
-                {
-                    var language = (_settings.SpeechToTextLanguage ?? "ru").Trim();
-                    var text = await _stt.TranscribeAsync(audio, language, CancellationToken.None);
-
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        if (_settings.SpeechAutoSend && string.IsNullOrWhiteSpace(InputBox.Text))
-                        {
-                            InputBox.Text = text;
-                            await SendMessageAsync();
-                        }
-                        else
-                        {
-                            AppendSelectionToInput(text);
-                        }
-                    }
-                    else
-                    {
-                        AppendSystemMessage("No speech recognized.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ShowVoiceError("Speech recognition failed: " + ex.Message);
-                }
-                finally
-                {
-                    _isTranscribing = false;
-                    SetMicState(recording: false);
-                }
-            }
-        }
-
-        private void OnMicLevelChanged(object sender, double level)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnMicLevelChanged(sender, level)));
-                return;
-            }
-
-            if (_isRecording)
-                MicButton.Opacity = 0.6 + level * 0.4;
-            else
-                MicButton.Opacity = 1.0;
-        }
-
-        private void SetMicState(bool recording, bool transcribing = false)
-        {
-            MicButton.ToolTip = transcribing ? "Transcribing…" : (recording ? "Stop recording" : "Start voice input");
-            MicButton.Opacity = 1.0;
-            MicIcon.Fill = transcribing
-                ? Brushes.Orange
-                : recording
-                    ? Brushes.Red
-                    : (Brush)FindResource("Dark.Text");
-        }
-
-        private void OnAttach(object sender, RoutedEventArgs e)
-        {
-            var dlg = new OpenFileDialog
-            {
-                Title = "Attach image or text file",
-                Multiselect = true,
-                CheckFileExists = true
-            };
-            if (dlg.ShowDialog() != true)
-                return;
-
-            foreach (var fileName in dlg.FileNames)
-                TryAddAttachment(fileName);
-        }
-
-        private void TryAddAttachment(string fileName)
-        {
-            try
-            {
-                var extension = Path.GetExtension(fileName).ToLowerInvariant();
-                var bytes = File.ReadAllBytes(fileName);
-
-                if (IsImageExtension(extension))
-                {
-                    if (bytes.Length > 10 * 1024 * 1024)
-                    {
-                        AppendChat("Skipped " + Path.GetFileName(fileName) + ": image is larger than 10 MB.");
-                        return;
-                    }
-
-                    _attachments.Add(new ChatAttachment
-                    {
-                        FileName = Path.GetFileName(fileName),
-                        IsImage = true,
-                        MediaType = GetImageMediaType(extension),
-                        DataBase64 = Convert.ToBase64String(bytes)
-                    });
-                    return;
-                }
-
-                if (IsProbablyBinary(bytes))
-                {
-                    AppendChat("Skipped " + Path.GetFileName(fileName) + ": binary files cannot be attached as text.");
-                    return;
-                }
-
-                _attachments.Add(new ChatAttachment
-                {
-                    FileName = Path.GetFileName(fileName),
-                    IsImage = false,
-                    TextContent = DecodeText(bytes)
-                });
-            }
-            catch (Exception ex)
-            {
-                AppendChat("Could not attach " + fileName + ": " + ex.Message);
-            }
-            finally
-            {
-                UpdateAttachmentsVisibility();
-            }
-        }
-
-        private void OnRemoveAttachment(object sender, RoutedEventArgs e)
-        {
-            if (!(sender is Button { Tag: ChatAttachment attachment }))
-                return;
-            _attachments.Remove(attachment);
-            UpdateAttachmentsVisibility();
-        }
-
-        private void UpdateAttachmentsVisibility()
-        {
-            AttachmentsList.Visibility = _attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private static bool IsImageExtension(string extension)
-        {
-            switch (extension)
-            {
-                case ".png":
-                case ".jpg":
-                case ".jpeg":
-                case ".gif":
-                case ".bmp":
-                case ".webp":
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        private static string GetImageMediaType(string extension)
-        {
-            switch (extension)
-            {
-                case ".jpg":
-                case ".jpeg":
-                    return "image/jpeg";
-                case ".gif":
-                    return "image/gif";
-                case ".bmp":
-                    return "image/bmp";
-                case ".webp":
-                    return "image/webp";
-                default:
-                    return "image/png";
-            }
-        }
-
-        private static bool IsProbablyBinary(byte[] bytes)
-        {
-            var length = Math.Min(bytes.Length, 8000);
-            for (var i = 0; i < length; i++)
-            {
-                if (bytes[i] == 0)
-                    return true;
-            }
-            return false;
-        }
-
-        private static string DecodeText(byte[] bytes)
-        {
-            try
-            {
-                return new UTF8Encoding(false, true).GetString(bytes);
-            }
-            catch (DecoderFallbackException)
-            {
-                return Encoding.Default.GetString(bytes);
-            }
-        }
-
         private async void OnDeploy(object sender, RoutedEventArgs e)
         {
             try
@@ -1556,7 +1281,7 @@ namespace RPAWriter2
                     return;
                 }
 
-                var deployProjectName = (_settings?.DeployProjectName ?? "").Trim();
+                var deployProjectName = (_rpaSettings?.DeployProjectName ?? "").Trim();
 
                 if (string.IsNullOrEmpty(deployProjectName))
                 {
@@ -1572,7 +1297,7 @@ namespace RPAWriter2
                 if (!await _buildFeedback.HasSolutionConfigurationAsync("Publish"))
                 {
                     LogService.Warn("Deploy blocked: 'Publish' solution configuration is not configured.");
-                    ShowDeployToast("The 'Publish' solution configuration is not configured. Create it in Build → Configuration Manager and retry.", success: false);
+                    ShowDeployToast("The 'Publish' solution configuration is not configured. Create it in Build в†’ Configuration Manager and retry.", success: false);
                     return;
                 }
 
@@ -1601,7 +1326,7 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// "Analyze logs" panel logo: layout only — visibility is view state
+        /// "Analyze logs" panel logo: layout only вЂ” visibility is view state
         /// (documentation/13-model-layer.md, rule 10).
         /// </summary>
         private void OnAnalyzeLogs(object sender, RoutedEventArgs e)
@@ -1618,13 +1343,13 @@ namespace RPAWriter2
         }
 
         /// <summary>Child model of the panel; owned by <see cref="ChatModel"/>, may be absent in headless runs.</summary>
-        private LogAnalyzer? LogAnalyzer => _chatModel.LogAnalyzer;
+        private LogAnalyzer? LogAnalyzer => _chatModel.ChildModel as LogAnalyzer;
 
         /// <summary>Builds the log analysis model with its host adapters (discovery, Output window, chat, settings).</summary>
         private LogAnalyzer CreateLogAnalyzer()
         {
             return new LogAnalyzer(
-                new LogProviderSourceAdapter(() => _settings?.LogProvidersPath ?? ""),
+                new LogProviderSourceAdapter(() => _rpaSettings?.LogProvidersPath ?? ""),
                 new OutputWindowTextSourceAdapter(_ => _buildFeedback.GetOutputWindowTextAsync()),
                 new ChatPromptSinkAdapter((prompt, _) =>
                 {
@@ -1632,7 +1357,7 @@ namespace RPAWriter2
                     return Task.CompletedTask;
                 }),
                 new UserMessageSinkAdapter(AppendChat, AppendExtensionError),
-                new SettingsLogAnalysisAdapter(() => _settings));
+                new SettingsLogAnalysisAdapter(() => _rpaSettings));
         }
 
         /// <summary>
@@ -1657,7 +1382,7 @@ namespace RPAWriter2
         /// <summary>
         /// Delivers a log-analysis prompt into the chat without waiting for the agent to finish
         /// answering. The panel must close as soon as the prompt is committed to the chat, not after
-        /// the (potentially long) agent turn completes — that is what <see cref="SendChatTextAsync"/>
+        /// the (potentially long) agent turn completes вЂ” that is what <see cref="SendChatTextAsync"/>
         /// would wait for. The user message is appended synchronously inside
         /// <see cref="RunSingleTurnAsync"/> before its first await, so it is visible immediately.
         /// </summary>
@@ -1968,7 +1693,7 @@ namespace RPAWriter2
 
         private string? RequirePackagesPath()
         {
-            var path = (_settings?.PackagesPath ?? "").Trim();
+            var path = (_rpaSettings?.PackagesPath ?? "").Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
                 SetPackagesStatus("Packages directory is not configured. Set the path in the \"Settings\" tab.");
@@ -2021,40 +1746,6 @@ namespace RPAWriter2
 
         private void OnPackageFilterChanged(object sender, TextChangedEventArgs e)
             => _packagesView?.Refresh();
-
-        private async void OnCreateRobot(object sender, RoutedEventArgs e)
-        {
-            var number = (RobotNumberBox?.Text ?? "").Trim();
-            if (number.Length == 0 || !number.All(char.IsDigit))
-            {
-                AppendChat("Specify the robot number (digits only).");
-                return;
-            }
-
-            var solutionName = "RPA-" + number;
-            try
-            {
-                _outputWindow.Activate();
-                var result = await _robotTemplate.CreateRobotAsync(
-                    solutionName, _settings.RobotsRootPath, _settings.RobotTemplateName,
-                    progress: _outputWindow.CreateProgress());
-                if (result.Success)
-                    _outputWindow.WriteLine("Robot created: " + result.SolutionPath);
-                else
-                    _outputWindow.WriteLine("Warning: " + result.Message);
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex);
-            }
-        }
-
-        private void OnRobotNumberPreviewTextInput(object sender, TextCompositionEventArgs e)
-        {
-            e.Handled = e.Text.Any(c => !char.IsDigit(c));
-        }
-
-#pragma warning restore VSTHRD100
 
         private void StartChatStatus()
         {
@@ -2117,167 +1808,6 @@ namespace RPAWriter2
             _chatModel.ShowStatusError(message);
         }
 
-        private void OnCancelSend(object sender, RoutedEventArgs e)
-        {
-            // Manual Cancel: remember to offer "Resume task" once the run has stopped.
-            _chatModel.HasResumableRun = true;
-            _pendingMessages.Clear();
-            _chatCts?.Cancel();
-        }
-
-        #pragma warning disable VSTHRD100 // WPF event handlers are async void
-
-        private async void OnResumeTask(object sender, RoutedEventArgs e)
-        {
-            if (_agentRunner == null || _resumableSnapshot == null)
-                return;
-
-            var snapshot = _resumableSnapshot;
-            var mode = _resumableMode;
-            var budget = _resumableBudget ?? BuildContextBudget();
-
-            ResetResume();
-            RemoveCancelledNotice();
-            RemoveStaleThinkingPlaceholder();
-
-            await RunResumeTurnAsync(snapshot, mode, budget);
-        }
-
-        private async void OnCommit(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                CommitStatusText.Text = "";
-                HideCommitResult();
-                LogService.Info("Commit control requested.");
-                var solutionDir = GetOpenSolutionDirectory();
-                if (solutionDir == null)
-                {
-                    LogService.Warn("Commit control: no open solution.");
-                    ShowCommitWarning("No open solution. Open a solution and retry.");
-                    return;
-                }
-
-                LogService.Info("Commit control: solutionDir=" + solutionDir);
-                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
-                var branch = await _git.GetCurrentBranchAsync(repoRoot);
-                LogService.Info("Commit control: repoRoot=" + repoRoot + ", branch=" + branch);
-
-                ShowCommitEditor(branch);
-                CommitMessageBox.Focus();
-            }
-            catch (Exception ex)
-            {
-                LogService.Error(ex, "Commit control: failed to open.");
-                ShowCommitWarning("Could not open the commit control: " + ex.Message);
-            }
-        }
-
-        private async void OnCommitSend(object sender, RoutedEventArgs e)
-        {
-            var message = CommitMessageBox.Text.Trim();
-            if (message.Length == 0)
-            {
-                CommitStatusText.Text = "Commit message is required.";
-                CommitMessageBox.Focus();
-                return;
-            }
-
-            SetCommitBusy(true);
-            CommitStatusText.Text = "Committing…";
-            LogService.Info("Commit send requested; message=" + message.Length + " chars");
-            try
-            {
-                CommitStatusText.Text = "Saving documents…";
-                if (!await TrySaveAllDocumentsAsync())
-                {
-                    CommitStatusText.Text = "Some documents could not be saved. Save them manually and retry.";
-                    return;
-                }
-
-                var solutionDir = GetOpenSolutionDirectory();
-                if (solutionDir == null)
-                {
-                    ShowCommitWarning("No open solution. Open a solution and retry.");
-                    return;
-                }
-
-                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
-                var branch = await _git.GetCurrentBranchAsync(repoRoot);
-                LogService.Info("Commit send: repoRoot=" + repoRoot + ", branch=" + branch);
-
-                await _git.StageAllAsync(repoRoot);
-                await _git.CommitAsync(repoRoot, message);
-
-                CommitMessageBox.Clear();
-                CloseCommitControl();
-                LogService.Info("Commit send: success (" + branch + ").");
-                ShowCommitResult("Committed to " + branch + ": " + message, true);
-            }
-            catch (Exception ex)
-            {
-                LogService.Error(ex, "Commit send failed.");
-                ShowCommitResult(ex.Message, false);
-            }
-            finally
-            {
-                SetCommitBusy(false);
-            }
-        }
-
-        private async void OnCommitAutoGenerate(object sender, RoutedEventArgs e)
-        {
-            if (_ai == null)
-            {
-                CommitStatusText.Text = "AI provider is not available.";
-                return;
-            }
-
-            SetCommitBusy(true);
-            CommitStatusText.Text = "Generating commit message…";
-            LogService.Info("Commit auto-generate requested.");
-            try
-            {
-                CommitStatusText.Text = "Saving documents…";
-                if (!await TrySaveAllDocumentsAsync())
-                {
-                    CommitStatusText.Text = "Some documents could not be saved. Save them manually and retry.";
-                    return;
-                }
-
-                var solutionDir = GetOpenSolutionDirectory();
-                if (solutionDir == null)
-                {
-                    ShowCommitWarning("No open solution. Open a solution and retry.");
-                    return;
-                }
-
-                var repoRoot = await _git.GetRepositoryRootAsync(solutionDir);
-                LogService.Info("Commit auto-generate: repoRoot=" + repoRoot);
-
-                var message = await GenerateCommitMessageAsync(repoRoot);
-                if (string.IsNullOrWhiteSpace(message))
-                {
-                    CommitStatusText.Text = "No changes detected. If you have unsaved edits in Visual Studio, save them (Ctrl+Shift+S) and retry.";
-                    return;
-                }
-
-                LogService.Info("Commit auto-generate: AI response=" + message.Length + " chars");
-                CommitMessageBox.Text = message;
-                CommitStatusText.Text = "";
-            }
-            catch (Exception ex)
-            {
-                LogService.Error(ex, "Commit auto-generate failed.");
-                CommitStatusText.Text = ex.Message;
-            }
-            finally
-            {
-                SetCommitBusy(false);
-            }
-        }
-
-        #pragma warning restore VSTHRD100
 
         /// <summary>
         /// Saves every open document in Visual Studio so the on-disk files reflect the
@@ -2371,7 +1901,7 @@ namespace RPAWriter2
         private async Task<string> SummarizeChangesAsync(string content, string systemPrompt)
         {
             if (content.Length > CommitDiffMaxChars)
-                content = content.Substring(0, CommitDiffMaxChars) + "\n… (diff truncated)";
+                content = content.Substring(0, CommitDiffMaxChars) + "\nвЂ¦ (diff truncated)";
             var messages = new List<ChatMessageData>
             {
                 new ChatMessageData { Role = "user", Content = content }
@@ -2393,7 +1923,7 @@ namespace RPAWriter2
             if (plan.Robots.Count == 0 && plan.Projects.Count == 0 && plan.OtherFiles.Count == 0)
                 return null;
 
-            // No robot or project at all — keep the existing generic fallback.
+            // No robot or project at all вЂ” keep the existing generic fallback.
             if (plan.Robots.Count == 0 && plan.Projects.Count == 0)
             {
                 var diff = await _git.GetDiffForMessageAsync(repoRoot);
@@ -2425,137 +1955,10 @@ namespace RPAWriter2
             return CommitMessageBuilder.JoinLines(parts);
         }
 
-        private void OnCommitClose(object sender, RoutedEventArgs e)
-        {
-            CloseCommitControl();
-        }
-
-        private void ShowCommitWarning(string message)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => ShowCommitWarning(message)));
-                return;
-            }
-            CommitControlHost.Visibility = Visibility.Visible;
-            CommitWarningBar.Visibility = Visibility.Visible;
-            CommitEditorPanel.Visibility = Visibility.Collapsed;
-            CommitWarningBar.Kind = NotificationKind.Warning;
-            CommitWarningBar.Message = message;
-        }
-
-        private void ShowCommitEditor(string branch)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => ShowCommitEditor(branch)));
-                return;
-            }
-            CommitControlHost.Visibility = Visibility.Visible;
-            CommitWarningBar.Visibility = Visibility.Collapsed;
-            CommitEditorPanel.Visibility = Visibility.Visible;
-            CommitBranchLabel.Text = "branch: " + (string.IsNullOrWhiteSpace(branch) ? "(unknown)" : branch);
-            CommitMessageBox.Clear();
-            CommitStatusText.Text = "";
-        }
-
-        private void CloseCommitControl()
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(CloseCommitControl));
-                return;
-            }
-            CommitControlHost.Visibility = Visibility.Collapsed;
-            CommitWarningBar.Visibility = Visibility.Collapsed;
-            CommitEditorPanel.Visibility = Visibility.Collapsed;
-        }
-
-        private void SetCommitBusy(bool busy)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => SetCommitBusy(busy)));
-                return;
-            }
-            CommitSendButton.IsEnabled = !busy;
-            CommitAutoGenButton.IsEnabled = !busy;
-        }
-
-        private const int CommitResultAutoHideSeconds = 5;
-
-        /// <summary>
-        /// Shows the commit result as a colored bar under the toolbar buttons instead of
-        /// writing it into the chat: green on success, orange on failure.
-        /// </summary>
-        private void ShowCommitResult(string message, bool success)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => ShowCommitResult(message, success)));
-                return;
-            }
-            CommitResultBar.Kind = success ? NotificationKind.Success : NotificationKind.Error;
-            CommitResultBar.Message = message;
-            CommitResultBar.AutoHideSeconds = success ? CommitResultAutoHideSeconds : 0;
-            CommitResultBar.Visibility = Visibility.Visible;
-        }
-
-        private void HideCommitResult()
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(HideCommitResult));
-                return;
-            }
-            CommitResultBar.Visibility = Visibility.Collapsed;
-            CommitResultBar.Message = "";
-        }
-
-        private void OnCloseCommitResult(object sender, RoutedEventArgs e)
-        {
-            HideCommitResult();
-        }
-
         private async void OnNotificationSendToChat(object sender, RoutedEventArgs e)
         {
             if (sender is NotificationBanner banner && !string.IsNullOrWhiteSpace(banner.Message))
                 await SubmitErrorToChatAsync(banner.Message);
-        }
-
-        private async Task SendMessageAsync()
-        {
-            var text = InputBox.Text.Trim();
-            var attachments = _attachments.ToList();
-            if (text.Length == 0 && attachments.Count == 0) return;
-            InputBox.Clear();
-            _attachments.Clear();
-            UpdateAttachmentsVisibility();
-            await SendChatTextAsync(text, attachments);
-        }
-
-        private async void OnSendErrors(object sender, RoutedEventArgs e)
-        {
-            // "Send errors" is an external entry point: it needs a chat even when the report turns out to
-            // be the "nothing to send" notice.
-            EnsureChatReadyToReceive();
-
-            try
-            {
-                var errors = await _buildFeedback.GetCompilationErrorsAsync();
-                var text = await BuildCompilationErrorsContextAsync(errors);
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    AppendChat(await FormatNoCompilationErrorsAsync());
-                    return;
-                }
-
-                await SendChatTextAsync(text);
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex);
-            }
         }
 
         /// <summary>
@@ -2637,7 +2040,7 @@ namespace RPAWriter2
             // the panels are out of sync with the model's view mode).
             EnsureChatReadyToReceive();
 
-            // Agent busy — enqueue instead of dropping the message.
+            // Agent busy вЂ” enqueue instead of dropping the message.
             if (_chatCts != null)
             {
                 EnqueuePending(text, attachments);
@@ -2670,7 +2073,7 @@ namespace RPAWriter2
             if (item == null || _steerSlot != null)
                 return;
 
-            // v1: text-only steering — messages with attachments stay queued so their files are
+            // v1: text-only steering вЂ” messages with attachments stay queued so their files are
             // not silently dropped (the steer button is already disabled for them in the control).
             var text = (item.Text ?? "").Trim();
             if (string.IsNullOrWhiteSpace(text) || item.HasAttachments)
@@ -2767,7 +2170,7 @@ namespace RPAWriter2
 
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
 
-            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "ThinkingвЂ¦" };
             AppendChatMessage(thinking);
 
             var budget = BuildContextBudget();
@@ -2829,7 +2232,7 @@ namespace RPAWriter2
 
                 reasoningTimer.Stop();
 
-                // Finalize the "Thinking…" placeholder in place: it keeps its streamed
+                // Finalize the "ThinkingвЂ¦" placeholder in place: it keeps its streamed
                 // reasoning (so the thoughts stay visible) and the final answer is appended
                 // as a NEW message after any tool calls.
                 thinking.Reasoning = reasoningBuffer.ToString();
@@ -2847,7 +2250,7 @@ namespace RPAWriter2
                 }
                 else
                 {
-                    // No reasoning to show — drop the empty placeholder.
+                    // No reasoning to show вЂ” drop the empty placeholder.
                     _messages.Remove(thinking);
                 }
 
@@ -2928,7 +2331,7 @@ namespace RPAWriter2
         private async Task RunResumeTurnAsync(AgentResumeSnapshot snapshot, AgentMode mode, ContextBudget budget)
         {
             var modeName = mode.ToString();
-            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
+            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "ThinkingвЂ¦" };
             AppendChatMessage(thinking);
 
             var environment = snapshot.Environment ?? BuildAgentToolEnvironment();
@@ -2944,7 +2347,7 @@ namespace RPAWriter2
                 _messages.Remove(notice);
         }
 
-        /// <summary>Removes the stale partial "Thinking…" placeholder left behind by a cancelled turn.</summary>
+        /// <summary>Removes the stale partial "ThinkingвЂ¦" placeholder left behind by a cancelled turn.</summary>
         private void RemoveStaleThinkingPlaceholder()
         {
             var stale = _messages.LastOrDefault(m => m.Kind == ChatMessageKind.AgentText && m.IsPartial);
@@ -2977,13 +2380,7 @@ namespace RPAWriter2
             }
 
             ShowConversationView();
-
-            var existing = InputBox.Text;
-            InputBox.Text = string.IsNullOrWhiteSpace(existing)
-                ? text
-                : existing.TrimEnd() + Environment.NewLine + text;
-            InputBox.CaretIndex = InputBox.Text.Length;
-            InputBox.Focus();
+            ChatPanel.AppendInputText(text);
         }
 
         /// <summary>
@@ -2992,8 +2389,8 @@ namespace RPAWriter2
         /// is queued and processed after the current turn completes.
         /// <para>
         /// A closed chat (the close button of the conversation header) is reopened first, so every
-        /// external entry point — "Send errors", "Send to RPA Writer", "Send exception to RPA Writer",
-        /// notification banners — lands in a real conversation instead of disappearing.
+        /// external entry point вЂ” "Send errors", "Send to RPA Writer", "Send exception to RPA Writer",
+        /// notification banners вЂ” lands in a real conversation instead of disappearing.
         /// </para>
         /// </summary>
         public async Task SubmitErrorToChatAsync(string text)
@@ -3041,7 +2438,7 @@ namespace RPAWriter2
                         // Fallback reconstruction from persisted history (used only when no canonical
                         // provider transcript was persisted): the exact tool-call arguments are not
                         // stored, so both the request and the result are emitted in a flat, provider-safe
-                        // form. The live agent loop is unaffected — it uses the canonical transcript.
+                        // form. The live agent loop is unaffected вЂ” it uses the canonical transcript.
                         var payload = message.Payload as ToolCallPayload;
                         var toolName = payload?.ToolName ?? "";
                         transcript.Add(new ChatMessageData { Role = "assistant", Content = "Tool call: " + toolName });
@@ -3186,7 +2583,7 @@ namespace RPAWriter2
             };
         }
 
-        private void RebuildAgentTools()
+        private void RebuildAgentToolsCore()
         {
             var memoryBankMode = ParseMemoryBankMode();
             var registry = BuildToolRegistry(memoryBankMode);
@@ -3211,7 +2608,6 @@ namespace RPAWriter2
             _agentRunner.ToolRepetitionDetected += OnAgentToolRepetition;
             _agentRunner.CompactionStarted += OnAgentCompactionStarted;
             _agentRunner.CompactionFinished += OnAgentCompactionFinished;
-            UpdateMemoryBankUi();
         }
 
         /// <summary>
@@ -3248,7 +2644,7 @@ namespace RPAWriter2
                 foreach (var error in result.Errors)
                     LogService.Warn("MCP: " + error);
             }
-            RebuildAgentTools();
+            RebuildAgentToolsCore();
         }
 
         private void DisposeMcpClients()
@@ -3289,7 +2685,7 @@ namespace RPAWriter2
                 return;
             }
             _compactionDepth++;
-            SetCompactIndicator(true);
+            ChatPanel.SetCompactIndicator(true);
         }
 
         private void OnAgentCompactionFinished(object? sender, EventArgs e)
@@ -3301,130 +2697,11 @@ namespace RPAWriter2
             }
             if (_compactionDepth > 0)
                 _compactionDepth--;
-            SetCompactIndicator(_compactionDepth > 0);
+            ChatPanel.SetCompactIndicator(_compactionDepth > 0);
         }
 
         /// <summary>Shows or hides the blinking red dot on the "Compact now" button.</summary>
-        private void SetCompactIndicator(bool compacting)
-        {
-            if (CompactIndicator == null)
-                return;
-
-            if (compacting)
-            {
-                CompactIndicator.Visibility = Visibility.Visible;
-                var animation = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(500))
-                {
-                    AutoReverse = true,
-                    RepeatBehavior = RepeatBehavior.Forever
-                };
-                CompactIndicator.BeginAnimation(OpacityProperty, animation);
-            }
-            else
-            {
-                CompactIndicator.BeginAnimation(OpacityProperty, null);
-                CompactIndicator.Opacity = 1.0;
-                CompactIndicator.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private async void OnCompactNow(object sender, RoutedEventArgs e)
-        {
-            if (_agentRunner == null || _chatCts != null)
-                return;
-
-            var transcript = _providerTranscript.Count > 0 ? _providerTranscript : BuildTranscript();
-            if (transcript.Count == 0)
-            {
-                AppendChat("Nothing to compact yet.");
-                return;
-            }
-
-            try
-            {
-                var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
-
-                // Replace only the visible/working transcript (which is what the next turn is built
-                // from); the model keeps the append-only persisted history intact.
-                var compactedMessages = condensed.Select(m => new ChatMessage
-                {
-                    Kind = m.Role == "assistant" ? ChatMessageKind.AgentText
-                         : m.Role == "user" ? ChatMessageKind.User
-                         : ChatMessageKind.SystemNotice,
-                    Text = m.Content
-                }).ToList();
-                _chatModel.ApplyCompactedTranscript(compactedMessages);
-                _providerTranscript = (condensed ?? transcript).ToList();
-                PersistProviderTranscript();
-                AppendCompaction("Context compacted (summarized).");
-                ScheduleHistorySave();
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Compact failed: " + ex.Message);
-            }
-        }
-
-        private void OnUpdateMemory(object sender, RoutedEventArgs e)
-        {
-            InputBox.Text = ParseMemoryBankMode() == MemoryBankMode.Convention
-                ? "update memory bank: read memory-bank/*.md files with read_files, then update the relevant files with editor."
-                : "update memory bank: read the current memory bank with read_memory, then update the relevant files with update_memory.";
-            InputBox.Focus();
-        }
-
-        private void UpdateMemoryBankUi()
-        {
-            if (UpdateMemoryButton == null) return;
-            var mode = ParseMemoryBankMode();
-            UpdateMemoryButton.Visibility = mode == MemoryBankMode.Disabled ? Visibility.Collapsed : Visibility.Visible;
-            UpdateMemoryButton.ToolTip = mode == MemoryBankMode.Convention
-                ? "Ask the agent to update the project memory bank (convention)"
-                : "Ask the agent to update the project memory bank";
-        }
-
-        private void OnPermissionsClick(object sender, RoutedEventArgs e)
-        {
-            _suppressPermissionEvents = true;
-            try
-            {
-                AllowReadFilesCheckBox.IsChecked = _settings.AllowReadFiles;
-                AllowEditFilesCheckBox.IsChecked = _settings.AllowEditFiles;
-                AllowExecuteCommandCheckBox.IsChecked = _settings.AllowExecuteCommand;
-                AllowWebFetchCheckBox.IsChecked = _settings.AllowWebFetch;
-                AllowMcpCheckBox.IsChecked = _settings.AllowMcp;
-                AskBeforeEachToolCheckBox.IsChecked = _settings.AskBeforeEachTool;
-            }
-            finally
-            {
-                _suppressPermissionEvents = false;
-            }
-
-            PermissionsOverlay.Visibility = Visibility.Visible;
-        }
-
-        private void OnPermissionsClose(object sender, RoutedEventArgs e)
-        {
-            PermissionsOverlay.Visibility = Visibility.Collapsed;
-        }
-
-        private void OnDocsClick(object sender, RoutedEventArgs e)
-        {
-            ShowDocsIndex();
-            DocsOverlay.Visibility = Visibility.Visible;
-        }
-
-        private void OnDocsHome(object sender, RoutedEventArgs e)
-        {
-            ShowDocsIndex();
-        }
-
-        private void OnDocsClose(object sender, RoutedEventArgs e)
-        {
-            DocsOverlay.Visibility = Visibility.Collapsed;
-        }
-
-        private void ShowDocsIndex()
+        private void ShowDocsIndexCore()
         {
             RenderDocsFile(Path.Combine(HelpDocumentation.ResolveDocsDirectory(), "00-index.md"), "Documentation");
         }
@@ -3435,10 +2712,10 @@ namespace RPAWriter2
         /// </summary>
         private void RenderDocsFile(string path, string title)
         {
-            DocsTitleText.Text = title;
+            ChatPanel.DocsTitleTextControl.Text = title;
             if (!File.Exists(path))
             {
-                DocsContent.Content = new TextBlock
+                ChatPanel.DocsContentControl.Content = new TextBlock
                 {
                     Text = "Documentation file not found: " + path,
                     Foreground = (Brush)FindResource("Dark.Text"),
@@ -3450,7 +2727,7 @@ namespace RPAWriter2
             MarkdownRenderer.RelativeLinkNavigator = HandleDocsLink;
             try
             {
-                DocsContent.Content = MarkdownRenderer.Render(File.ReadAllText(path));
+                ChatPanel.DocsContentControl.Content = MarkdownRenderer.Render(File.ReadAllText(path));
             }
             finally
             {
@@ -3494,21 +2771,6 @@ namespace RPAWriter2
             return true;
         }
 
-        private void OnPermissionChanged(object sender, RoutedEventArgs e)
-        {
-            if (_suppressPermissionEvents)
-                return;
-
-            _settings.AllowReadFiles = AllowReadFilesCheckBox?.IsChecked ?? true;
-            _settings.AllowEditFiles = AllowEditFilesCheckBox?.IsChecked ?? true;
-            _settings.AllowExecuteCommand = AllowExecuteCommandCheckBox?.IsChecked ?? false;
-            _settings.AllowWebFetch = AllowWebFetchCheckBox?.IsChecked ?? false;
-            _settings.AllowMcp = AllowMcpCheckBox?.IsChecked ?? false;
-            _settings.AskBeforeEachTool = AskBeforeEachToolCheckBox?.IsChecked ?? false;
-            SettingsStore.Save(_settings);
-            RebuildAgentTools();
-        }
-
         private AgentPermissions BuildAllowedPermissions()
         {
             var allowed = (AgentPermissions)0;
@@ -3545,8 +2807,8 @@ namespace RPAWriter2
                 _ai,
                 () => _specTabModel.CurrentSpec,
                 KbPath,
-                () => (_settings?.RobotsRootPath ?? "").Trim(),
-                () => (_settings?.RobotTemplateName ?? "").Trim(),
+                () => (_rpaSettings?.RobotsRootPath ?? "").Trim(),
+                () => (_rpaSettings?.RobotTemplateName ?? "").Trim(),
                 GetOpenSolutionDirectory,
                 () => _dte ?? (Package.GetGlobalService(typeof(SDTE)) as DTE2),
                 _buildFeedback,
@@ -3629,7 +2891,7 @@ namespace RPAWriter2
                     var toOpen = _chatModel.ResolveConversationToOpen(state.LastConversationId);
                     if (toOpen != null)
                     {
-                        OpenConversation(toOpen.Id, markDirty: false);
+                        OpenConversationCore(toOpen.Id, markDirty: false);
                         ShowConversationView();
                     }
                     else if (string.IsNullOrWhiteSpace(state.LastConversationId) && _conversations.Count > 0)
@@ -3641,7 +2903,7 @@ namespace RPAWriter2
                     else
                     {
                         // The remembered chat was deleted in another session - start a fresh one.
-                        StartNewChat(markDirty: false);
+                        StartNewChatCore(markDirty: false);
                         ShowConversationView();
                     }
                 }
@@ -3738,7 +3000,7 @@ namespace RPAWriter2
             _chatModel.SaveHistoryNow();
         }
 
-        private void StartNewChat(bool markDirty = true)
+        private void StartNewChatCore(bool markDirty = true)
         {
             _chatCts?.Cancel();
             ResetResume();
@@ -3754,7 +3016,7 @@ namespace RPAWriter2
 
             ShowConversationView();
         }
-        private void OpenConversation(string id, bool markDirty = true)
+        private void OpenConversationCore(string id, bool markDirty = true)
         {
             if (string.IsNullOrWhiteSpace(id))
                 return;
@@ -3773,7 +3035,7 @@ namespace RPAWriter2
 
             // Checkpoint indicators and scrolling are view/agent concerns, not model state.
             RehydrateCheckpoints();
-            ChatMessages.ScrollToEnd();
+            ChatPanel.MessagesList.ScrollToEnd();
 
             // Restore the canonical provider transcript persisted with the conversation, so the exact
             // native tool_calls/tool_call_id structure survives a reopen and the provider's prompt cache
@@ -3802,121 +3064,14 @@ namespace RPAWriter2
 
         private void ShowConversationView()
         {
-            _chatModel.ShowConversationView();
-            ApplyChatViewMode();
+            ChatPanel.ShowConversationView();
             PersistUiState();
         }
 
         private void ShowHistoryView()
         {
-            _chatModel.ShowHistoryView();
-            ApplyChatViewMode();
+            ChatPanel.ShowHistoryView();
             PersistUiState();
-        }
-
-        private void ApplyChatViewMode()
-        {
-            var conversation = _chatViewMode == ChatViewMode.Conversation;
-            ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            MessagesHostPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            ChatInputPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            PinnedHeaderPanel.Visibility = conversation && _pinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
-            HistoryViewPanel.Visibility = conversation ? Visibility.Collapsed : Visibility.Visible;
-        }
-
-        /// <summary>
-        /// The close button of the conversation header: closes the chat. Closing means "no active
-        /// conversation" — the model saves the transcript, drops it from memory and sets
-        /// <see cref="ChatModel.ActiveChatConversation"/> to <c>null</c> - so nothing keeps landing in the
-        /// chat and the next start does not restore it.
-        /// <para>
-        /// This is not "History": browsing the saved chats (<see cref="OnShowHistory"/>) keeps the
-        /// conversation active.
-        /// </para>
-        /// </summary>
-        private void OnCloseChat(object sender, RoutedEventArgs e)
-        {
-            // A turn that is still streaming has no conversation to write into any more.
-            _chatCts?.Cancel();
-
-            _chatModel.CloseActiveChat();
-
-            // The model switched the view to History; the host only applies the layout and drops the
-            // agent state that belonged to the closed conversation.
-            ApplyChatViewMode();
-            ResetAgentStateAfterConversationRemoved();
-        }
-
-        /// <summary>
-        /// Browses the saved chats: the view switches to the history list while the active conversation
-        /// stays active. Messages produced by any entry point keep landing in it and bring the
-        /// conversation view back (<see cref="EnsureChatReadyToReceive"/>).
-        /// </summary>
-        private void OnShowHistory(object sender, RoutedEventArgs e)
-        {
-            SaveHistoryNow();
-            ShowHistoryView();
-        }
-
-        private void OnHistoryCardClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: ChatConversation conversation })
-            {
-                OpenConversation(conversation.Id);
-                ShowConversationView();
-            }
-        }
-
-        private void OnDeleteHistoryCard(object sender, RoutedEventArgs e)
-        {
-            if (!(sender is FrameworkElement { DataContext: ChatConversation conversation }))
-                return;
-
-            var result = MessageDialog.Show(
-                "Delete chat",
-                "Delete this chat?\n\n" + conversation.CardTitle,
-                MessageDialogCommandSet.YesNo);
-            if (result != MessageDialogCommand.Yes)
-                return;
-
-            var deletedActive = string.Equals(conversation.Id, _chatModel.ActiveConversationId, StringComparison.Ordinal);
-
-            if (!_chatModel.DeleteConversation(conversation.Id))
-            {
-                AppendExtensionError(_chatModel.LastError);
-                return;
-            }
-
-            if (deletedActive)
-                ResetAgentStateAfterConversationRemoved();
-        }
-
-        private void OnToggleImportant(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement { DataContext: ChatConversation conversation }
-                && !_chatModel.ToggleImportant(conversation.Id))
-            {
-                AppendExtensionError(_chatModel.LastError);
-            }
-        }
-
-        private void OnClearHistory(object sender, RoutedEventArgs e)
-        {
-            var result = MessageDialog.Show(
-                "Clear history",
-                "Delete all chats? This cannot be undone.",
-                MessageDialogCommandSet.YesNo);
-            if (result != MessageDialogCommand.Yes)
-                return;
-
-            if (!_chatModel.ClearHistory())
-            {
-                AppendExtensionError(_chatModel.LastError);
-                return;
-            }
-
-            ResetAgentStateAfterConversationRemoved();
         }
 
         /// <summary>
@@ -3934,39 +3089,6 @@ namespace RPAWriter2
             _iterationNumber = 0;
 
             PersistUiState();
-        }
-
-        private const double PinnedExpandedHeight = 240.0;
-
-        private void OnPinnedExpandToggle(object sender, RoutedEventArgs e)
-        {
-            _pinnedExpanded = !_pinnedExpanded;
-            UpdatePinnedExpandState();
-        }
-
-        private void UpdatePinnedExpandState()
-        {
-            PinnedSummaryText.Visibility = _pinnedExpanded ? Visibility.Collapsed : Visibility.Visible;
-            PinnedTextScroll.Visibility = _pinnedExpanded ? Visibility.Visible : Visibility.Collapsed;
-            PinnedTextScroll.MaxHeight = PinnedExpandedHeight;
-            PinnedTextScroll.VerticalScrollBarVisibility = _pinnedExpanded ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
-            PinnedExpandGlyph.Points = PointCollection.Parse(_pinnedExpanded ? "6,9 12,15 18,9" : "9,18 15,12 9,6");
-            ChatContextIndicator.ShowDetails = _pinnedExpanded;
-        }
-
-        private void RefreshPinnedMessage()
-        {
-            // The pinned message itself is computed by the model; the host only renders it.
-            PinnedHeaderPanel.DataContext = _pinnedMessage;
-            _pinnedExpanded = false;
-            UpdatePinnedExpandState();
-            ChatMessages.RefreshFilter();
-            ApplyChatViewMode();
-        }
-
-        private void OnNewChat(object sender, RoutedEventArgs e)
-        {
-            StartNewChat();
         }
 
         /// <summary>
@@ -4060,19 +3182,6 @@ namespace RPAWriter2
         /// Mode toggle handler. The two-way binding has already written <see cref="ChatModel.Mode"/>
         /// (whose setter records the transcript entry), so the host only persists the session.
         /// </summary>
-        private void OnModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (_restoringUiState)
-                return;
-
-            PersistUiState();
-        }
-
-        private void OnOpenConverterToolWindow(object sender, RoutedEventArgs e)
-        {
-            ConverterToolWindowCommand.Instance?.ShowWindow();
-        }
-
         private IntPtr GetOwner()
         {
             var window = System.Windows.Window.GetWindow(this);
@@ -4088,9 +3197,9 @@ namespace RPAWriter2
                 Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text, kind)));
                 return;
             }
-            SettingsToast.Kind = kind;
-            SettingsToast.Message = text ?? "";
-            SettingsToast.Visibility = Visibility.Visible;
+            _settingsToast.Kind = kind;
+            _settingsToast.Message = text ?? "";
+            _settingsToast.Visibility = Visibility.Visible;
             _settingsToastTimer.Stop();
             _settingsToastTimer.Start();
             SlideSettingsToast(0, SettingsToastMaxHeight);
@@ -4104,8 +3213,8 @@ namespace RPAWriter2
                 return;
             }
             _settingsToastTimer.Stop();
-            SlideSettingsToast(SettingsToast.ActualHeight, 0,
-                () => SettingsToast.Visibility = Visibility.Collapsed);
+            SlideSettingsToast(_settingsToast.ActualHeight, 0,
+                () => _settingsToast.Visibility = Visibility.Collapsed);
         }
 
         private void OnSettingsToastTick(object? sender, EventArgs e)
@@ -4120,14 +3229,14 @@ namespace RPAWriter2
 
         private void SlideSettingsToast(double from, double to, Action? onCompleted = null)
         {
-            SettingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+            _settingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
             var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(180)))
             {
                 EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
             };
             if (onCompleted != null)
                 animation.Completed += (_, __) => onCompleted();
-            SettingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
+            _settingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
         }
 
         private const double DeployToastMaxHeight = 120.0;
@@ -4169,23 +3278,9 @@ namespace RPAWriter2
             HideDeployToast();
         }
 
-        private void ShowVoiceError(string text)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => ShowVoiceError(text)));
-                return;
-            }
-
-            VoiceErrorToast.Kind = NotificationKind.Error;
-            VoiceErrorToast.Message = text ?? "";
-            VoiceErrorToast.Visibility = Visibility.Visible;
-            // No auto-hide: the error banner stays until the user closes it.
-        }
-
         private void OnVoiceErrorClose(object sender, RoutedEventArgs e)
         {
-            VoiceErrorToast.Visibility = Visibility.Collapsed;
+            _voiceErrorToast.Visibility = Visibility.Collapsed;
         }
 
         private void ShowCheckpointRestoreError(string text)
@@ -4196,15 +3291,15 @@ namespace RPAWriter2
                 return;
             }
 
-            CheckpointRestoreErrorToast.Kind = NotificationKind.Error;
-            CheckpointRestoreErrorToast.Message = text ?? "";
-            CheckpointRestoreErrorToast.Visibility = Visibility.Visible;
+            _checkpointRestoreErrorToast.Kind = NotificationKind.Error;
+            _checkpointRestoreErrorToast.Message = text ?? "";
+            _checkpointRestoreErrorToast.Visibility = Visibility.Visible;
             // No auto-hide: the error banner stays until the user closes it.
         }
 
         private void OnCheckpointRestoreErrorClose(object sender, RoutedEventArgs e)
         {
-            CheckpointRestoreErrorToast.Visibility = Visibility.Collapsed;
+            _checkpointRestoreErrorToast.Visibility = Visibility.Collapsed;
         }
 
         private void SlideDeployToast(double from, double to, Action? onCompleted = null)
@@ -4222,12 +3317,13 @@ namespace RPAWriter2
         private void OnSettingsModelSaved(object? sender, EventArgs e)
         {
             _settings = _settingsModel.ToSettingsData();
-            ApiKeyBox.Password = _settings.ApiKey ?? "";
-            _chatModel.LogAnalyzer?.InvalidateProviders();
+            _rpaSettingsModel.Save();
+            SettingsPanel.ApiKeyBox.Password = _settings.ApiKey ?? "";
+            (_chatModel.ChildModel as LogAnalyzer)?.InvalidateProviders();
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
             _stt = SpeechToTextFactory.Create(_settings);
-            RebuildAgentTools();
+            RebuildAgentToolsCore();
             RefreshMcpToolsAsync();
             ApplyControlsVisibility();
             UpdateCreateRobotVisibility();
@@ -4244,21 +3340,9 @@ namespace RPAWriter2
             ShowSettingsToast(notify.Message, (NotificationKind)notify.NotifyLevel);
         }
 
-        private void OnBrowseMcpRegistry(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                System.Diagnostics.Process.Start("https://registry.modelcontextprotocol.io");
-            }
-            catch (Exception ex)
-            {
-                LogService.Error("Failed to open MCP registry: " + ex.Message);
-            }
-        }
-
         private void OnApiKeyChanged(object sender, RoutedEventArgs e)
         {
-            _settingsModel.ApiKey = ApiKeyBox.Password ?? "";
+            _settingsModel.ApiKey = SettingsPanel.ApiKeyBox.Password ?? "";
         }
 
         private void ApplyControlsVisibility()
@@ -4425,7 +3509,7 @@ namespace RPAWriter2
             if (sender is FrameworkElement { DataContext: SvgIconSample sample })
             {
                 try { Clipboard.SetText(sample.Identifier); }
-                catch { /* clipboard busy — ignore */ }
+                catch { /* clipboard busy вЂ” ignore */ }
             }
         }
 
@@ -4507,18 +3591,18 @@ namespace RPAWriter2
 
         private void ShowOptionsWarning(string message)
         {
-            if (OptionsWarningToast == null)
+            if (_optionsWarningToast == null)
                 return;
 
-            OptionsWarningToast.Kind = NotificationKind.Warning;
-            OptionsWarningToast.Message = message ?? string.Empty;
-            OptionsWarningToast.Visibility = Visibility.Visible;
+            _optionsWarningToast.Kind = NotificationKind.Warning;
+            _optionsWarningToast.Message = message ?? string.Empty;
+            _optionsWarningToast.Visibility = Visibility.Visible;
         }
 
         private void HideOptionsWarning()
         {
-            if (OptionsWarningToast != null)
-                OptionsWarningToast.Visibility = Visibility.Collapsed;
+            if (_optionsWarningToast != null)
+                _optionsWarningToast.Visibility = Visibility.Collapsed;
         }
 
         private void OnOptionsWarningClose(object sender, RoutedEventArgs e)

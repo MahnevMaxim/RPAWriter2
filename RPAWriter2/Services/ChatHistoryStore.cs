@@ -3,9 +3,13 @@ using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using Newtonsoft.Json;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {

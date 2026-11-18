@@ -45,7 +45,7 @@
     <Compile Include="ExampleProdLogProvider.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
+    <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- Copy the built provider DLL into the extension's providers directory so it is

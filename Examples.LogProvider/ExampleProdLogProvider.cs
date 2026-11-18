@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
 
 namespace Examples.LogProvider
 {

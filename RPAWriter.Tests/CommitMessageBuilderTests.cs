@@ -2,7 +2,11 @@ using System;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -39,8 +43,8 @@ namespace RPAWriter.Tests
         public void FormatProjectLine_StripsTypePrefix()
         {
             Assert.That(
-                CommitMessageBuilder.FormatProjectLine("RPAWriter.Core", "fix: fix parser"),
-                Is.EqualTo("RPAWriter.Core: fix parser"));
+                CommitMessageBuilder.FormatProjectLine("Agent.Core", "fix: fix parser"),
+                Is.EqualTo("Agent.Core: fix parser"));
         }
 
         [Test]
@@ -130,18 +134,18 @@ namespace RPAWriter.Tests
             var root = CreateTempRoot();
             try
             {
-                Directory.CreateDirectory(Path.Combine(root, "RPAWriter.Core", "Services"));
+                Directory.CreateDirectory(Path.Combine(root, "Agent.Core", "Services"));
                 Directory.CreateDirectory(Path.Combine(root, "RPAWriter2"));
-                File.WriteAllText(Path.Combine(root, "RPAWriter.Core", "RPAWriter.Core.csproj"), "");
+                File.WriteAllText(Path.Combine(root, "Agent.Core", "Agent.Core.csproj"), "");
                 File.WriteAllText(Path.Combine(root, "RPAWriter2", "RPAWriter2.csproj"), "");
 
                 var plan = CommitMessageBuilder.GroupChangedFiles(root, new[]
                 {
-                    "RPAWriter.Core/Services/A.cs",
+                    "Agent.Core/Services/A.cs",
                     "RPAWriter2/B.cs",
                 });
 
-                Assert.That(plan.Projects.Select(p => p.Name), Is.EquivalentTo(new[] { "RPAWriter.Core", "RPAWriter2" }));
+                Assert.That(plan.Projects.Select(p => p.Name), Is.EquivalentTo(new[] { "Agent.Core", "RPAWriter2" }));
                 Assert.That(plan.Robots.Count, Is.EqualTo(0));
             }
             finally
@@ -196,7 +200,7 @@ namespace RPAWriter.Tests
             Assert.That(CommitMessageBuilder.IsRobotFolderName("RPA-1111"), Is.True);
             Assert.That(CommitMessageBuilder.IsRobotFolderName("rpa-1"), Is.True);
             Assert.That(CommitMessageBuilder.IsRobotFolderName("RPA-"), Is.False);
-            Assert.That(CommitMessageBuilder.IsRobotFolderName("RPAWriter.Core"), Is.False);
+            Assert.That(CommitMessageBuilder.IsRobotFolderName("Agent.Core"), Is.False);
         }
 
         // ---------- helpers ----------

@@ -8,7 +8,7 @@
 - **Per-workspace** — только **Log file path** и **Chat log file path** (хранятся в `%AppData%\RPAWriter2\<17|18>\workspaces\<id>\settings.json`, где `<id>` — хэш каталога открытого решения или открытой папки). Если не открыто ни решение, ни папка, пути логов берутся из global-настроек;
 - **API key** — хранится отдельно, зашифрованным через Windows DPAPI (текущий пользователь), и не попадает ни в JSON, ни в workspace-копии.
 
-Настройки сгруппированы по четырём подвкладкам: **API**, **RPA**, **General** и **Sound**.
+Настройки сгруппированы по шести подвкладкам: **API**, **RPA**, **VS**, **Native tools**, **General** и **Sound**.
 
 ## API
 
@@ -91,10 +91,8 @@
 | **KB directory** | Каталог базы знаний (JSON-индекс `index.json`) | пусто |
 | **Robot solutions directory** | Каталог решений/роботов | пусто |
 | **Robot template file name** | Имя файла шаблона робота (для создания нового робота) | пусто |
-| **Rules directory (md)** | Каталог правил платформ (по умолчанию — `Prompts/Rules` расширения) | `Prompts/Rules` |
 | **Packages directory (NuGet source)** | Каталог/источник пакетов | пусто |
 | **Log providers directory** | Каталог провайдеров логов | пусто |
-| **Skills directory** | Каталог навыков (каждый навык — подпапка с `SKILL.md`) | пусто |
 | **Security audit mode** | Режим аудита робота: **Full (all areas)** или **Passwords & logins only** | Full |
 | **Show robot creation control in chat** | Показывать контрол создания робота (номер робота + кнопка **Create robot**) в верхней части чата, когда решение не открыто | вкл. |
 | **Open RPA Writer Converter →** | Открыть отдельное окно конвертера UiPath → XAML/C# | — |
@@ -116,6 +114,17 @@
 По умолчанию все галочки включены. В подписи каждой галочки показывается реальное имя инструмента
 и его описание (например, `convert_uipath — Convert a UiPath XAML file to Workflow Foundation and write the artifacts.`).
 
+## VS
+
+Доменные настройки интеграции с Visual Studio (Roslyn-семантика, сборка/deploy, отладка).
+
+| Поле | Назначение | По умолчанию |
+|---|---|---|
+| **Roslyn semantics (C# code navigation)** | Включает семантические C#-инструменты: `code_outline`, `find_symbol_usages`, `get_inheritance`, `get_diagnostics` | вкл. |
+| **Auto-capture runtime exceptions** | Автоматически отправлять в чат исключения, на которых остановился отладчик (break mode по исключению) | вкл. |
+| **Deploy project name** | Имя проекта для deploy: сборка в конфигурации **Publish**; если пусто — авто-поиск RPA-проекта | пусто |
+| **Filter build/test output (compact summary)** | Возвращать только ошибки/предупреждения (код + путь) для `dotnet build` и краткую сводку passed/failed/skipped для `dotnet test` вместо сырого вывода консоли | вкл. |
+
 ## General
 
 Прочие настройки.
@@ -126,13 +135,12 @@
 | **Chat log file path** | Путь к файлу журнала чата (рядом кнопка **Open log**). **Per-workspace**: хранится отдельно для каждого открытого решения | пусто |
 | **User name** | Имя пользователя (для обращения по имени) | пусто |
 | **Address me by name** | Агент обращается к вам по имени | выкл. |
-| **Deploy project name** | Имя проекта для deploy: сборка в конфигурации **Publish**; если пусто — авто-поиск RPA-проекта | пусто |
 | **Show controls** | Показывать скрытую вкладку **Controls** | выкл. |
-| **Roslyn semantics (C# code navigation)** | Включает семантические C#-инструменты: `code_outline`, `find_symbol_usages`, `get_inheritance`, `get_diagnostics` | вкл. |
 | **Agent read scope (Plan mode)** | Дополнительные каталоги, доступные агенту для чтения в режиме Plan (список путей с добавлением/удалением) | пусто |
 | **Deny service/build directories** | Запретить агенту читать файлы внутри `bin`, `obj`, `.git`, `.vs`, `node_modules`, `packages`, `TestResults`, `.idea`, `.vscode`, `__pycache__` | вкл. |
 | **Deny sensitive/secret files** | Запретить агенту читать секретные файлы: `.env`, `web.config`, SSH-ключи, `*.pem`/`*.key`/`*.pfx`/`*.p12`/`*.snk`/`*.rdp`/`*.user`/`*.secret`, `appsettings*.json`, файлы с `credential` в имени | вкл. |
-| **Auto-capture runtime exceptions** | Автоматически отправлять в чат исключения, на которых остановился отладчик (break mode по исключению) | вкл. |
+| **Rules directory (md)** | Каталог правил платформ (по умолчанию — `Prompts/Rules` расширения) | `Prompts/Rules` |
+| **Skills directory** | Каталог навыков (каждый навык — подпапка с `SKILL.md`) | пусто |
 
 ## Sound
 

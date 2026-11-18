@@ -1,8 +1,12 @@
 using NUnit.Framework;
-using RPAWriter.Mvvm;
+using Agent.Mvvm;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {

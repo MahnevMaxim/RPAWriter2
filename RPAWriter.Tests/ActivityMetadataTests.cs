@@ -1,7 +1,11 @@
 using System;
 using System.Reflection;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -121,7 +125,7 @@ namespace RPAWriter.Tests
         private static object CallStatic(string methodName, params object[] args)
         {
             var type = typeof(ActivityLibraryPaths).Assembly
-                .GetType("RPAWriter.Core.Services.ActivityMetadata", throwOnError: true);
+                .GetType("Agent.Rpa.Services.ActivityMetadata", throwOnError: true);
             var method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
             Assert.That(method, Is.Not.Null, "Static method not found: " + methodName);
             return method.Invoke(null, args);

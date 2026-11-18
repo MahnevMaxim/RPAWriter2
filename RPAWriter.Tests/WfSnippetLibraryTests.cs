@@ -1,7 +1,11 @@
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {

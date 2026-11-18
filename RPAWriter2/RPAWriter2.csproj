@@ -16,6 +16,7 @@
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="MaterialDesignThemes" Version="5.4.0" />
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
     <PackageReference Include="Markdig" Version="1.4.2" />
@@ -41,16 +42,18 @@
     <Reference Include="System.Xaml" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
-    <!-- UI-free MVVM framework + product models. See documentation/13-model-layer.md. -->
-    <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
-    <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
+    <!-- Shared agent toolkit (generic core, MVVM primitives, product models and shared WPF
+         controls) — consumed as NuGet packages from the AgentShared feed. -->
+    <PackageReference Include="AgentToolkit" Version="1.10.0" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.10.0" />
+    <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
+    <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis shared with the tests (pure, no VS dependency). -->
     <ProjectReference Include="..\RPAWriter.Roslyn\RPAWriter.Roslyn.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it
-         because RPAWriter.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
+         because Agent.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
     <VSIXSourceItem Include="$(OutputPath)Newtonsoft.Json.dll" />
     <VSIXSourceItem Include="$(OutputPath)NLog.dll" />
     <VSIXSourceItem Include="$(OutputPath)Markdig.dll" />
@@ -116,22 +119,17 @@
     <PropertyGroup>
       <RoslynVsInstallRoot Condition="'$(RoslynVsInstallRoot)' == ''"></RoslynVsInstallRoot>
     </PropertyGroup>
-    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true"
-          ConsoleToMsBuild="true"
-          Condition="'$(RoslynVsInstallRoot)' == ''">
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true" ConsoleToMsBuild="true" Condition="'$(RoslynVsInstallRoot)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
     </Exec>
-    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath"
-          ConsoleToMsBuild="true"
-          Condition="'$(RoslynVsInstallRoot)' == ''">
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath" ConsoleToMsBuild="true" Condition="'$(RoslynVsInstallRoot)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
     </Exec>
     <PropertyGroup Condition="'$(RoslynVsInstallRoot)' != ''">
       <VsRoslynDir>$(RoslynVsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices</VsRoslynDir>
       <VsPublicAssembliesDir>$(RoslynVsInstallRoot)\Common7\IDE\PublicAssemblies</VsPublicAssembliesDir>
     </PropertyGroup>
-    <Error Condition="'$(RoslynVsInstallRoot)' == ''"
-           Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
+    <Error Condition="'$(RoslynVsInstallRoot)' == ''" Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
     <ItemGroup Condition="'$(RoslynVsInstallRoot)' != ''">
       <Reference Include="Microsoft.CodeAnalysis">
         <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>
@@ -173,10 +171,8 @@
   -->
   <Target Name="ExcludeConflictingCreatePkgDefReferences" BeforeTargets="GeneratePkgDef">
     <ItemGroup>
-      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
-                               Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
-      <ReferencePath Remove="@(ReferencePath)"
-                     Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)' == 'System.Reflection.Metadata' Or '%(Filename)' == 'System.Collections.Immutable' Or '%(Filename)' == 'System.Reflection.MetadataLoadContext'" />
     </ItemGroup>
   </Target>
   <Target Name="CopyWebView2LoaderToOutput" BeforeTargets="GetVsixSourceItems">
@@ -215,12 +211,6 @@
       <IncludeInVSIX>true</IncludeInVSIX>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Mermaid.js bundled as an embedded resource and read at runtime by MermaidDiagramControl. -->
-    <EmbeddedResource Include="Assets\mermaid.min.js">
-      <LogicalName>RPAWriter2.Assets.mermaid.min.js</LogicalName>
-    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <VSCTCompile Include="RPAWriter2Package.vsct">

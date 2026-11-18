@@ -2,8 +2,12 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {

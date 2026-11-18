@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Models;
+using Agent.Mvvm;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -19,6 +23,20 @@ namespace RPAWriter.Tests
             public SettingsData Load() => Stored;
 
             public void Save(SettingsData settings)
+            {
+                Stored = settings;
+                SaveCount++;
+            }
+        }
+
+        private sealed class InMemoryRpaSettingsStore : IRpaSettingsStore
+        {
+            public RpaSettingsData Stored { get; set; } = new RpaSettingsData();
+            public int SaveCount { get; private set; }
+
+            public RpaSettingsData Load() => Stored;
+
+            public void Save(RpaSettingsData settings)
             {
                 Stored = settings;
                 SaveCount++;
@@ -103,7 +121,6 @@ namespace RPAWriter.Tests
                     BaseUrl = "https://example.com/v1",
                     Model = "deepseek-chat",
                     Temperature = 0.7,
-                    KnowledgeBasePath = "C:\\kb",
                     ToolCallingMode = "Native"
                 }
             };
@@ -114,21 +131,20 @@ namespace RPAWriter.Tests
             Assert.That(model.BaseUrl, Is.EqualTo("https://example.com/v1"));
             Assert.That(model.Model, Is.EqualTo("deepseek-chat"));
             Assert.That(model.Temperature, Is.EqualTo(0.7));
-            Assert.That(model.KnowledgeBasePath, Is.EqualTo("C:\\kb"));
             Assert.That(model.ToolCallingMode, Is.EqualTo("Native"));
         }
 
         [Test]
         public void DeployProjectName_RoundTripsThroughSaveAndLoad()
         {
-            var store = new InMemorySettingsStore();
-            var model = new SettingsModel(store);
+            var store = new InMemoryRpaSettingsStore();
+            var model = new RpaSettingsModel(store);
             model.Run();
 
             model.DeployProjectName = "RPA-12345";
-            model.SaveSettingsCommand();
+            model.Save();
 
-            var reloaded = new SettingsModel(store);
+            var reloaded = new RpaSettingsModel(store);
             reloaded.Run();
 
             Assert.That(reloaded.DeployProjectName, Is.EqualTo("RPA-12345"));
@@ -254,14 +270,21 @@ namespace RPAWriter.Tests
             model.MemoryBankModeIndex = 2;
             Assert.That(model.MemoryBankMode, Is.EqualTo("Convention"));
 
-            model.SecurityAuditModeIndex = 1;
-            Assert.That(model.SecurityAuditMode, Is.EqualTo("CredentialsOnly"));
-
             model.ReasoningEffortIndex = 7;
             Assert.That(model.ReasoningEffort, Is.EqualTo("max"));
 
             model.SpeechToTextProviderIndex = 2;
             Assert.That(model.SpeechToTextProvider, Is.EqualTo("Vosk"));
+        }
+
+        [Test]
+        public void RpaSettingsModel_SecurityAuditModeIndex_RoundTrips()
+        {
+            var model = new RpaSettingsModel(new InMemoryRpaSettingsStore());
+            model.Run();
+
+            model.SecurityAuditModeIndex = 1;
+            Assert.That(model.SecurityAuditMode, Is.EqualTo("CredentialsOnly"));
         }
 
         [Test]
@@ -441,7 +464,7 @@ namespace RPAWriter.Tests
         [Test]
         public void AgentToolGroups_DefaultsAllEnabled()
         {
-            var model = new SettingsModel(new InMemorySettingsStore());
+            var model = new RpaSettingsModel(new InMemoryRpaSettingsStore());
             model.Run();
 
             Assert.That(model.AgentToolGroups, Has.Count.EqualTo(4));
@@ -466,17 +489,17 @@ namespace RPAWriter.Tests
         [Test]
         public void DisabledAgentTools_RoundTripsThroughSaveAndLoad()
         {
-            var store = new InMemorySettingsStore();
-            var model = new SettingsModel(store);
+            var store = new InMemoryRpaSettingsStore();
+            var model = new RpaSettingsModel(store);
             model.Run();
 
             var convert = FindTool(model, "convert_uipath");
             Assert.That(convert, Is.Not.Null);
             convert.IsEnabled = false;
 
-            model.SaveSettingsCommand();
+            model.Save();
 
-            var reloaded = new SettingsModel(store);
+            var reloaded = new RpaSettingsModel(store);
             reloaded.Run();
 
             var reloadedConvert = FindTool(reloaded, "convert_uipath");
@@ -537,7 +560,7 @@ namespace RPAWriter.Tests
             return null;
         }
 
-        private static AgentToolToggleItem FindTool(SettingsModel model, string name)
+        private static AgentToolToggleItem FindTool(RpaSettingsModel model, string name)
         {
             foreach (var group in model.AgentToolGroups)
             {

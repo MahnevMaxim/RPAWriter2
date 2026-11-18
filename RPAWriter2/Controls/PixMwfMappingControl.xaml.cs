@@ -14,10 +14,14 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
-using RPAWriter.Core.AgentTools;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Controls
 {
@@ -31,10 +35,10 @@ namespace RPAWriter2.Controls
         private const int MaxAiIterations = 60;
 
         private static string MappingSystemPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-mapping.txt", PromptDefaults.PixMappingSystemPrompt);
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-mapping.txt", RpaPromptDefaults.PixMappingSystemPrompt);
 
         private static string ArgumentMappingSystemPrompt =>
-            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-argument-mapping.txt", PromptDefaults.PixArgumentMappingSystemPrompt);
+            PromptLibrary.Load(PromptPaths.ResolvePromptsDirectory(), PromptLibrary.Categories.Tasks, "pix-argument-mapping.txt", RpaPromptDefaults.PixArgumentMappingSystemPrompt);
 
         private readonly PixMwfMappingStore _store;
         private readonly ObservableCollection<PixMwfMappingRow> _rows = new ObservableCollection<PixMwfMappingRow>();

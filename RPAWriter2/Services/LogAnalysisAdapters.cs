@@ -2,8 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {
@@ -87,9 +91,9 @@ namespace RPAWriter2.Services
     /// <summary>Settings slice of the log analysis model: provider folder and robot-name history.</summary>
     internal sealed class SettingsLogAnalysisAdapter : ILogAnalysisSettings
     {
-        private readonly Func<SettingsData?> _settings;
+        private readonly Func<RpaSettingsData?> _settings;
 
-        public SettingsLogAnalysisAdapter(Func<SettingsData?> settings)
+        public SettingsLogAnalysisAdapter(Func<RpaSettingsData?> settings)
         {
             _settings = settings;
         }
@@ -106,7 +110,7 @@ namespace RPAWriter2.Services
                 return;
 
             settings.RobotNameHistory = new List<string>(history);
-            SettingsStore.Save(settings);
+            new RpaSettingsStore().Save(settings);
         }
     }
 }

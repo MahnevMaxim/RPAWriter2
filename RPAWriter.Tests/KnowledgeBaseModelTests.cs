@@ -3,11 +3,15 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Models;
+using Agent.Mvvm;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -44,13 +48,13 @@ namespace RPAWriter.Tests
         #endregion
 
         private static KnowledgeBaseModel CreateModel(
-            SettingsData settings = null,
+            RpaSettingsData settings = null,
             IFileWriter fileWriter = null,
             InMemoryKnowledgeBase kb = null)
         {
             return new KnowledgeBaseModel(
-                () => new StubAiProvider(),
-                () => settings ?? new SettingsData { KnowledgeBasePath = "C:\\kb", RobotsRootPath = "C:\\robots" },
+                () => new StubRpaAiProvider(),
+                () => settings ?? new RpaSettingsData { KnowledgeBasePath = "C:\\kb", RobotsRootPath = "C:\\robots" },
                 path => kb ?? new InMemoryKnowledgeBase(),
                 fileWriter ?? new InMemoryFileWriter());
         }
@@ -70,7 +74,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task ImportFromRobotsAsync_WhenNoKbPath_SetsStatus()
         {
-            var model = CreateModel(settings: new SettingsData { KnowledgeBasePath = "", RobotsRootPath = "C:\\robots" });
+            var model = CreateModel(settings: new RpaSettingsData { KnowledgeBasePath = "", RobotsRootPath = "C:\\robots" });
 
             await model.ImportFromRobotsAsync();
 
@@ -80,7 +84,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task ImportFromRobotsAsync_WhenNoRobotsRoot_SetsStatus()
         {
-            var model = CreateModel(settings: new SettingsData { KnowledgeBasePath = "C:\\kb", RobotsRootPath = "" });
+            var model = CreateModel(settings: new RpaSettingsData { KnowledgeBasePath = "C:\\kb", RobotsRootPath = "" });
 
             await model.ImportFromRobotsAsync();
 
@@ -101,7 +105,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task RefreshAsync_WhenNoKbPath_SetsStatus()
         {
-            var model = CreateModel(settings: new SettingsData { KnowledgeBasePath = "", RobotsRootPath = "C:\\robots" });
+            var model = CreateModel(settings: new RpaSettingsData { KnowledgeBasePath = "", RobotsRootPath = "C:\\robots" });
 
             await model.RefreshAsync();
 

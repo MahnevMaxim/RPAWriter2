@@ -18,12 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RPAWriter.Core\RPAWriter.Core.csproj" />
-    <!-- Models and the MVVM framework are netstandard2.0 on purpose: they must be testable
-         from this net8.0 project without Visual Studio and without the VSIX assembly.
-         See documentation/13-model-layer.md. -->
-    <ProjectReference Include="..\RPAWriter.Mvvm\RPAWriter.Mvvm.csproj" />
-    <ProjectReference Include="..\RPAWriter.Models\RPAWriter.Models.csproj" />
+    <!-- Shared agent packages (generic core + MVVM + models) via local NuGet feed. -->
+    <PackageReference Include="AgentToolkit" Version="1.10.0" />
+    <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
+    <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis (pure, testable without Visual Studio). -->
     <ProjectReference Include="..\RPAWriter.Roslyn\RPAWriter.Roslyn.csproj" />
   </ItemGroup>
@@ -37,22 +35,17 @@
     <PropertyGroup>
       <RoslynVsInstallRoot Condition="'$(RoslynVsInstallRoot)' == ''"></RoslynVsInstallRoot>
     </PropertyGroup>
-    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true"
-          ConsoleToMsBuild="true"
-          Condition="'$(RoslynVsInstallRoot)' == ''">
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -version [17.0,18.0) -property installationPath" IgnoreExitCode="true" ConsoleToMsBuild="true" Condition="'$(RoslynVsInstallRoot)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
     </Exec>
-    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath"
-          ConsoleToMsBuild="true"
-          Condition="'$(RoslynVsInstallRoot)' == ''">
+    <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -property installationPath" ConsoleToMsBuild="true" Condition="'$(RoslynVsInstallRoot)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="RoslynVsInstallRoot" />
     </Exec>
     <PropertyGroup Condition="'$(RoslynVsInstallRoot)' != ''">
       <VsRoslynDir>$(RoslynVsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices</VsRoslynDir>
       <VsPublicAssembliesDir>$(RoslynVsInstallRoot)\Common7\IDE\PublicAssemblies</VsPublicAssembliesDir>
     </PropertyGroup>
-    <Error Condition="'$(RoslynVsInstallRoot)' == ''"
-           Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
+    <Error Condition="'$(RoslynVsInstallRoot)' == ''" Text="Could not locate the Visual Studio installation. Set the RoslynVsInstallRoot property explicitly." />
     <ItemGroup Condition="'$(RoslynVsInstallRoot)' != ''">
       <Reference Include="Microsoft.CodeAnalysis">
         <HintPath>$(VsRoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>

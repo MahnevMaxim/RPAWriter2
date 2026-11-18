@@ -3,7 +3,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -112,6 +116,10 @@ namespace Activities.Browser
                 WriteAll(Path.Combine(srcDir, "MyActivity.cs"), @"
 using System.Activities;
 using System.ComponentModel;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace Custom
 {

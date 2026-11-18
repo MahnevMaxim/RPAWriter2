@@ -1,0 +1,185 @@
+﻿<UserControl x:Class="RPAWriter2.Controls.RpaSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Agent.Toolkit.Wpf;component/Styles/AgentTheme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <Grid Margin="8"
+                                      VerticalAlignment="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0"
+                                               Grid.Column="0"
+                                               Text="KB directory"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,4" />
+                                    <TextBox Grid.Row="0"
+                                             Grid.Column="1"
+                                             x:Name="KbPathBox"
+                                             Margin="0,0,0,4"
+                                             Text="{Binding RpaSettings.KnowledgeBasePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <TextBlock Grid.Row="1"
+                                               Grid.Column="0"
+                                               Text="Robot solutions directory"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,4" />
+                                    <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             x:Name="RobotsRootPathBox"
+                                             Margin="0,0,0,4"
+                                             Text="{Binding RpaSettings.RobotsRootPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="0"
+                                               Text="Robot template file name"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,4" />
+                                    <TextBox Grid.Row="2"
+                                             Grid.Column="1"
+                                             x:Name="RobotTemplateNameBox"
+                                             Margin="0,0,0,4"
+                                             Text="{Binding RpaSettings.RobotTemplateName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <TextBlock Grid.Row="3"
+                                               Grid.Column="0"
+                                               Text="Packages directory (NuGet source)"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,4" />
+                                    <TextBox Grid.Row="3"
+                                             Grid.Column="1"
+                                             x:Name="PackagesPathBox"
+                                             Margin="0,0,0,4"
+                                             Text="{Binding RpaSettings.PackagesPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <TextBlock Grid.Row="4"
+                                               Grid.Column="0"
+                                               Text="Log providers directory"
+                                               VerticalAlignment="Center"
+                                               Margin="0,8,8,4" />
+                                    <TextBox Grid.Row="4"
+                                             Grid.Column="1"
+                                             x:Name="LogProvidersPathBox"
+                                             Margin="0,8,0,4"
+                                             Text="{Binding RpaSettings.LogProvidersPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <TextBlock Grid.Row="5"
+                                               Grid.Column="0"
+                                               Text="Security audit mode"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,4" />
+                                    <ComboBox Grid.Row="5"
+                                              Grid.Column="1"
+                                              x:Name="SecurityAuditModeCombo"
+                                              SelectedIndex="{Binding RpaSettings.SecurityAuditModeIndex, Mode=TwoWay}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,0,4">
+                                        <ComboBoxItem Content="Full (all areas)" />
+                                        <ComboBoxItem Content="Passwords &amp; logins only" />
+                                    </ComboBox>
+
+                                    <CheckBox Grid.Row="6"
+                                              Grid.Column="0"
+                                              Grid.ColumnSpan="2"
+                                              x:Name="ShowRobotCreatorCheckBox"
+                                              IsChecked="{Binding RpaSettings.ShowRobotCreator, Mode=TwoWay}"
+                                              Content="Show robot creation control in chat"
+                                              Margin="0,2,0,4"
+                                              Foreground="{StaticResource Dark.Text}" />
+
+                                    <Button Grid.Row="7"
+                                            Grid.Column="0"
+                                            Grid.ColumnSpan="2"
+                                            Content="Open RPA Writer Converter в†’"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,12,0,0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Foreground="#64B5F6"
+                                            Cursor="Hand"
+                                            Click="OnOpenConverterClick">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <TextBlock Text="{TemplateBinding Content}"
+                                                           TextDecorations="Underline"
+                                                           Foreground="{TemplateBinding Foreground}"
+                                                           Cursor="Hand" />
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <StackPanel Grid.Row="8"
+                                                Grid.Column="0"
+                                                Grid.ColumnSpan="2"
+                                                Margin="0,16,0,0">
+                                        <TextBlock Text="Agent tools"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,0,0,6"
+                                                   Foreground="{StaticResource Dark.Text}" />
+                                        <ItemsControl ItemsSource="{Binding Settings.AgentToolGroups}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="Bold"
+                                                                   Margin="0,0,0,2"
+                                                                   Foreground="{StaticResource Dark.Text}" />
+                                                        <ItemsControl ItemsSource="{Binding Items}"
+                                                                      Margin="12,0,0,0">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                                              Margin="0,1,0,1"
+                                                                              VerticalAlignment="Center"
+                                                                              Foreground="{StaticResource Dark.Text}">
+                                                                        <TextBlock TextWrapping="Wrap"
+                                                                                   MaxWidth="600">
+                                                                <Run Text="{Binding Name, Mode=OneWay}"
+                                                                            FontFamily="Consolas" />
+                                                                <Run Text=" вЂ” " />
+                                                                <Run Text="{Binding Description, Mode=OneWay}" />
+                                                                        </TextBlock>
+                                                                    </CheckBox>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                
+                                    <TextBlock Grid.Row="9"
+                                               Grid.Column="0"
+                                               Text="Rules directory (md)"
+                                               VerticalAlignment="Center"
+                                               Margin="0,12,8,4" />
+                                    <TextBox Grid.Row="9"
+                                             Grid.Column="1"
+                                             x:Name="RulesPathBox"
+                                             Margin="0,12,0,4"
+                                             Text="{Binding RpaSettings.RulesPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" /></Grid>
+                            </ScrollViewer>
+</UserControl>

@@ -1,6 +1,10 @@
 using System.IO;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -25,15 +29,22 @@ namespace RPAWriter.Tests
 
             Assert.That(set.SystemPrompt, Is.EqualTo(PromptDefaults.SystemPrompt));
             Assert.That(set.ChatSystemPrompt, Is.EqualTo(PromptDefaults.ChatSystemPrompt));
-            Assert.That(set.AnalyzeSpec, Is.EqualTo(PromptDefaults.AnalyzeSpec));
-            Assert.That(set.GenerateRobot, Is.EqualTo(PromptDefaults.GenerateRobot));
-            Assert.That(set.DecomposeTasks, Is.EqualTo(PromptDefaults.DecomposeTasks));
-            Assert.That(set.ReconstructSpec, Is.EqualTo(PromptDefaults.ReconstructSpec));
-            Assert.That(set.MapTaskToSolution, Is.EqualTo(PromptDefaults.MapTaskToSolution));
             Assert.That(set.AgentJsonBaseSystemPrompt, Is.EqualTo(PromptDefaults.AgentJsonBaseSystemPrompt));
             Assert.That(set.AgentCompactSystemPrompt, Is.EqualTo(PromptDefaults.AgentCompactSystemPrompt));
             Assert.That(set.AgentPlanSystemPromptNative, Is.EqualTo(PromptDefaults.AgentPlanSystemPromptNative));
             Assert.That(set.AgentActSystemPromptNative, Is.EqualTo(PromptDefaults.AgentActSystemPromptNative));
+        }
+
+        [Test]
+        public void RpaPromptSet_Load_MissingDirectory_ReturnsBuiltInDefaults()
+        {
+            var set = RpaPromptSet.Load(Path.Combine(_dir, "does-not-exist"));
+
+            Assert.That(set.AnalyzeSpec, Is.EqualTo(RpaPromptDefaults.AnalyzeSpec));
+            Assert.That(set.GenerateRobot, Is.EqualTo(RpaPromptDefaults.GenerateRobot));
+            Assert.That(set.DecomposeTasks, Is.EqualTo(RpaPromptDefaults.DecomposeTasks));
+            Assert.That(set.ReconstructSpec, Is.EqualTo(RpaPromptDefaults.ReconstructSpec));
+            Assert.That(set.MapTaskToSolution, Is.EqualTo(RpaPromptDefaults.MapTaskToSolution));
         }
 
         [Test]
@@ -54,16 +65,21 @@ namespace RPAWriter.Tests
         {
             Assert.That(PromptDefaults.SystemPrompt, Is.Not.Empty);
             Assert.That(PromptDefaults.ChatSystemPrompt, Is.Not.Empty);
-            Assert.That(PromptDefaults.AnalyzeSpec, Is.Not.Empty);
-            Assert.That(PromptDefaults.GenerateRobot, Is.Not.Empty);
-            Assert.That(PromptDefaults.DecomposeTasks, Is.Not.Empty);
-            Assert.That(PromptDefaults.ReconstructSpec, Is.Not.Empty);
-            Assert.That(PromptDefaults.MapTaskToSolution, Is.Not.Empty);
             Assert.That(PromptDefaults.AgentJsonBaseSystemPrompt, Is.Not.Empty);
             Assert.That(PromptDefaults.AgentCompactSystemPrompt, Is.Not.Empty);
             Assert.That(PromptDefaults.AgentPlanSystemPromptNative, Is.Not.Empty);
             Assert.That(PromptDefaults.AgentActSystemPromptNative, Is.Not.Empty);
             Assert.That(PromptDefaults.MemoryBankConventionInstructions, Is.Not.Empty);
+        }
+
+        [Test]
+        public void RpaPromptDefaults_AllTemplatesAreNonEmpty()
+        {
+            Assert.That(RpaPromptDefaults.AnalyzeSpec, Is.Not.Empty);
+            Assert.That(RpaPromptDefaults.GenerateRobot, Is.Not.Empty);
+            Assert.That(RpaPromptDefaults.DecomposeTasks, Is.Not.Empty);
+            Assert.That(RpaPromptDefaults.ReconstructSpec, Is.Not.Empty);
+            Assert.That(RpaPromptDefaults.MapTaskToSolution, Is.Not.Empty);
         }
     }
 }

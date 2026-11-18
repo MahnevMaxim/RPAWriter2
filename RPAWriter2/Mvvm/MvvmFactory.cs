@@ -1,12 +1,16 @@
-using RPAWriter.Mvvm;
+using Agent.Mvvm;
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Mvvm
 {
     /// <summary>
-    /// WPF adapter over the UI-free MVVM framework (<see cref="RPAWriter.Mvvm"/>).
+    /// WPF adapter over the UI-free MVVM framework (<see cref="Agent.Mvvm"/>).
     /// This is the only place that knows about <see cref="FrameworkElement"/>, <see cref="Window"/>
     /// and the attach order; models and the framework assembly stay UI-free.
     /// <para>Rules: <c>documentation/13-model-layer.md</c>.</para>

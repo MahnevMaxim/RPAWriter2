@@ -4,13 +4,17 @@ using System.ComponentModel;
 using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
     /// <summary>
-    /// Domain chat types moved from the VSIX project to RPAWriter.Core in phase B of the model
+    /// Domain chat types moved from the VSIX project to Agent.Core in phase B of the model
     /// layer refactor. They are pure data + formatting, so they are asserted here directly:
     /// no view model, no view, no Visual Studio (see documentation/13-model-layer.md).
     /// </summary>

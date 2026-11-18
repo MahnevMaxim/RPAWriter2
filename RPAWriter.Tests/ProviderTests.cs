@@ -9,9 +9,13 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -88,7 +92,7 @@ namespace RPAWriter.Tests
                 Responder = req => Completion(
                     "{\"summary\":\"s\",\"tasks\":[{\"action\":\"open\",\"target\":\"site\",\"activityType\":\"OpenBrowser\"}]}")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 BaseUrl = "https://example.com/v1",
                 ApiKey = "sk-test",
@@ -118,7 +122,7 @@ namespace RPAWriter.Tests
                     "{\"kind\":\"InvokeMethod\",\"className\":\"RpaActions\",\"methodName\":\"OpenBrowser\"}," +
                     "{\"kind\":\"Assign\",\"variable\":\"url\",\"expression\":\"http://x\"}]}")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var plan = await provider.GenerateRobotAsync(new SpecAnalysis());
 
@@ -131,7 +135,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task StubAiProvider_DecomposeTasks_CreatesTasks()
         {
-            var provider = new StubAiProvider();
+            var provider = new StubRpaAiProvider();
             var tasks = await provider.DecomposeTasksAsync("Open browser. Read table from file.");
 
             Assert.That(tasks.Count, Is.GreaterThanOrEqualTo(2));
@@ -140,7 +144,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task StubAiProvider_ChatAsync_ReturnsText()
         {
-            var reply = await new StubAiProvider().ChatAsync("hello");
+            var reply = await new StubRpaAiProvider().ChatAsync("hello");
             Assert.That(reply.Answer, Does.Contain("hello"));
             Assert.That(reply.Reasoning, Is.Empty);
         }
@@ -149,7 +153,7 @@ namespace RPAWriter.Tests
         public async Task OpenAiProvider_ChatAsync_ReturnsContent()
         {
             var handler = new FakeHttpHandler { Responder = req => Completion("Hello, I'm the agent!") };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var reply = await provider.ChatAsync("hello");
 
@@ -175,7 +179,7 @@ namespace RPAWriter.Tests
                 }
             };
             var handler = new FakeHttpHandler { Responder = req => JsonSerializer.Serialize(payload) };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var reply = await provider.ChatAsync("query");
 
@@ -187,7 +191,7 @@ namespace RPAWriter.Tests
         public void OpenAiProvider_ChatAsync_CancelsWhenTokenIsCancelled()
         {
             var handler = new BlockingHttpHandler();
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
             using var cts = new CancellationTokenSource();
 
             var pending = provider.ChatAsync("hello", cts.Token);
@@ -200,7 +204,7 @@ namespace RPAWriter.Tests
         public void OpenAiProvider_ChatAsync_ThrowsTimeoutWhenProviderHangs()
         {
             var handler = new BlockingHttpHandler();
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 TimeoutSeconds = 1,
                 RetryTimeout = TimeSpan.FromMilliseconds(200),
@@ -224,7 +228,7 @@ namespace RPAWriter.Tests
                 {
                     Responder = req => Completion("{\"summary\":\"s\",\"tasks\":[]}")
                 };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+                var provider = new RpaAiProvider(new OpenAiOptions
                 {
                     BaseUrl = "https://example.com/v1",
                     ApiKey = "sk-test",
@@ -251,7 +255,7 @@ namespace RPAWriter.Tests
             {
                 File.WriteAllText(Path.Combine(dir, "rules.md"), "Rule: one task — one action.");
                 var handler = new FakeHttpHandler { Responder = req => Completion("[{\"action\":\"open\"}]") };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions { RulesPath = dir }, new HttpClient(handler));
+                var provider = new RpaAiProvider(new OpenAiOptions { RulesPath = dir }, new HttpClient(handler));
 
                 await provider.DecomposeTasksAsync("Open browser");
 
@@ -272,7 +276,7 @@ namespace RPAWriter.Tests
                     "[{\"action\":\"настроить\",\"target\":\"VA01\",\"sapTransactionCode\":\"VA01\",\"sapActionKind\":\"setup\"}," +
                     "{\"action\":\"получить таблицу\",\"target\":\"SE16N\",\"sapTransactionCode\":\"SE16N\",\"sapActionKind\":\"gettable\"}]")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var tasks = await provider.DecomposeTasksAsync("SAP VA01");
 
@@ -293,7 +297,7 @@ namespace RPAWriter.Tests
                     "{\"action\":\"fill\",\"estimatedHours\":\"0.5\"}," +
                     "{\"action\":\"save\"}]")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var tasks = await provider.DecomposeTasksAsync("Open browser");
 
@@ -311,7 +315,7 @@ namespace RPAWriter.Tests
                 Responder = req => Completion(
                     "{\"summary\":\"s\",\"tasks\":[{\"action\":\"настроить\",\"target\":\"VA01\",\"sapTransactionCode\":\"VA01\",\"sapActionKind\":\"setup\"}]}")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var analysis = await provider.AnalyzeSpecAsync(new SpecModel { RawText = "SAP VA01" });
 
@@ -332,7 +336,7 @@ namespace RPAWriter.Tests
                 {
                     Responder = req => Completion("{\"name\":\"R\",\"description\":\"d\",\"steps\":[],\"inputs\":[],\"outputs\":[]}")
                 };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions { RulesPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
+                var provider = new RpaAiProvider(new OpenAiOptions { RulesPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
 
                 await provider.ReconstructSpecAsync("RPA-0001", Array.Empty<RobotSourceFile>(), platform: RobotPlatform.Mwf);
 
@@ -352,7 +356,7 @@ namespace RPAWriter.Tests
                 StatusCode = HttpStatusCode.BadRequest,
                 Responder = req => "{\"error\":{\"message\":\"context length exceeded\"}}"
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 RetryTimeout = TimeSpan.FromMilliseconds(200),
@@ -371,7 +375,7 @@ namespace RPAWriter.Tests
         public void OpenAiOptions_DefaultContextWindowIs409600()
         {
             Assert.That(new OpenAiOptions().ContextWindowSize, Is.EqualTo(409600));
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(new FakeHttpHandler()));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(new FakeHttpHandler()));
             Assert.That(provider.ContextWindowSize, Is.EqualTo(409600));
         }
 
@@ -384,7 +388,7 @@ namespace RPAWriter.Tests
                     ? new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("<html>502</html>") }
                     : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Completion("ok")) }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 RetryBaseDelay = TimeSpan.Zero,
@@ -407,7 +411,7 @@ namespace RPAWriter.Tests
                     Content = new StringContent("{\"error\":{\"message\":\"bad key\"}}")
                 }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 NoRetryOn4xx = false,
@@ -434,7 +438,7 @@ namespace RPAWriter.Tests
                     Content = new StringContent("{\"error\":{\"message\":\"bad request\"}}", Encoding.UTF8, "application/json")
                 }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 NoRetryOn4xx = true
@@ -460,7 +464,7 @@ namespace RPAWriter.Tests
                         Content = new StringContent("{}", Encoding.UTF8, "application/json")
                     }
                 };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+                var provider = new RpaAiProvider(new OpenAiOptions
                 {
                     ApiKey = "sk-test",
                     NoRetryOn4xx = true
@@ -483,7 +487,7 @@ namespace RPAWriter.Tests
                     Content = new StringContent("{\"error\":{\"message\":\"slow down\"}}", Encoding.UTF8, "application/json")
                 }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 NoRetryOn4xx = true,
@@ -508,7 +512,7 @@ namespace RPAWriter.Tests
                     ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("busy") }
                     : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Completion("done")) }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 RetryBaseDelay = TimeSpan.Zero,
@@ -534,7 +538,7 @@ namespace RPAWriter.Tests
             {
                 Responder = n => new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("down") }
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+            var provider = new RpaAiProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
                 RetryTimeout = TimeSpan.FromMinutes(30),
@@ -559,7 +563,7 @@ namespace RPAWriter.Tests
                 {
                     Responder = req => Completion("{\"summary\":\"s\",\"tasks\":[]}")
                 };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions
+                var provider = new RpaAiProvider(new OpenAiOptions
                 {
                     PromptsPath = dir,
                     ApiKey = "sk-test"
@@ -587,7 +591,7 @@ namespace RPAWriter.Tests
                 var chatFile = Path.Combine(dir, "System", "chat-system.txt");
                 File.WriteAllText(chatFile, "CHAT V1");
                 var handler = new FakeHttpHandler { Responder = req => Completion("ok") };
-                var provider = new OpenAiCompatibleProvider(new OpenAiOptions { PromptsPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
+                var provider = new RpaAiProvider(new OpenAiOptions { PromptsPath = dir, ApiKey = "sk-test" }, new HttpClient(handler));
 
                 await provider.ChatAsync("hi");
                 Assert.That(handler.LastBody, Does.Contain("CHAT V1"));
@@ -612,7 +616,7 @@ namespace RPAWriter.Tests
             // without escaping the backslash, which is invalid JSON.
             var content = "{\"xamlFragment\":\"<Activity/>\",\"csharpCode\":\"var p = Regex.Match(s, @\\\"\\s+\\\");\",\"solutionPaths\":[\"Main.xaml\"]}";
             var handler = new FakeHttpHandler { Responder = req => Completion(content) };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions(), new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions(), new HttpClient(handler));
 
             var record = await provider.MapTaskToSolutionAsync(
                 new TaskDescriptor { Action = "match", Description = "Match whitespace" },
@@ -633,7 +637,7 @@ namespace RPAWriter.Tests
                 "data: [DONE]\n\n";
 
             var handler = new FakeHttpHandler { Responder = req => sse };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var progress = new SyncProgress<ChatStreamDelta>();
 
@@ -660,7 +664,7 @@ namespace RPAWriter.Tests
             {
                 Responder = req => "{\"choices\":[{\"message\":{\"content\":\"hello\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var response = await provider.ChatAsync(
                 new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
@@ -679,7 +683,7 @@ namespace RPAWriter.Tests
             {
                 Responder = req => "{\"choices\":[{\"message\":{\"content\":\"hello\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             TokenUsage reported = null;
             provider.TokenUsageUpdated += (_, usage) => reported = usage;
@@ -704,7 +708,7 @@ namespace RPAWriter.Tests
                 "data: [DONE]\n\n";
 
             var handler = new FakeHttpHandler { Responder = req => sse };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var response = await provider.ChatStreamingAsync(
                 new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
@@ -724,7 +728,7 @@ namespace RPAWriter.Tests
                 "data: [DONE]\n\n";
 
             var handler = new FakeHttpHandler { Responder = req => Stream(100) };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             await provider.ChatStreamingAsync(
                 new List<ChatMessageData> { new ChatMessageData { Role = "user", Content = "hi" } },
@@ -751,7 +755,7 @@ namespace RPAWriter.Tests
                     "\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":4,\"total_tokens\":15," +
                     "\"prompt_cache_hit_tokens\":3,\"prompt_cache_miss_tokens\":8}}"
             };
-            var provider = new OpenAiCompatibleProvider(
+            var provider = new RpaAiProvider(
                 new OpenAiOptions
                 {
                     ApiKey = "sk-test",
@@ -785,7 +789,7 @@ namespace RPAWriter.Tests
                     "\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110," +
                     "\"prompt_tokens_details\":{\"cached_tokens\":90}}}"
             };
-            var provider = new OpenAiCompatibleProvider(
+            var provider = new RpaAiProvider(
                 new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" },
                 new HttpClient(handler));
 
@@ -806,7 +810,7 @@ namespace RPAWriter.Tests
                     "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]," +
                     "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}"
             };
-            var provider = new OpenAiCompatibleProvider(
+            var provider = new RpaAiProvider(
                 new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" },
                 new HttpClient(handler));
 
@@ -825,7 +829,7 @@ namespace RPAWriter.Tests
             {
                 Responder = req => Completion("ok")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             PromptAssembledEventArgs captured = null;
             provider.PromptAssembled += (s, e) => { captured = e; };
@@ -852,7 +856,7 @@ namespace RPAWriter.Tests
             {
                 Responder = req => Completion("ALGORITHM")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var result = await provider.GenerateAlgorithmDraftAsync("SPEC-MD");
 
@@ -867,7 +871,7 @@ namespace RPAWriter.Tests
             {
                 Responder = req => Completion("{\"algorithm\":\"ALG\",\"questions\":\"Q\"}")
             };
-            var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
+            var provider = new RpaAiProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var result = await provider.ConsolidateAlgorithmAsync("SPEC-MD", new[] { "draft-one", "draft-two" });
 
@@ -881,7 +885,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task StubAiProvider_GeneratesAlgorithmAndQuestions()
         {
-            var stub = new StubAiProvider();
+            var stub = new StubRpaAiProvider();
 
             var draft = await stub.GenerateAlgorithmDraftAsync("spec");
             Assert.That(draft, Does.Contain("mermaid"));

@@ -1,0 +1,52 @@
+<UserControl x:Class="RPAWriter2.Controls.CommitEditorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:RPAWriter2.Controls">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Agent.Toolkit.Wpf;component/Styles/AgentTheme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border x:Name="Root"
+            Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+            BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
+        <StackPanel>
+            <controls:NotificationBanner x:Name="CommitWarningBar" Visibility="Collapsed"
+                                          CloseRequested="OnWarningClose"
+                                          SendToChatRequested="OnWarningSendToChat"/>
+            <Grid x:Name="CommitEditorPanel" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="CommitBranchLabel" Grid.Row="0" Margin="0,0,0,4"
+                           Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Commit message:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
+                            VerticalAlignment="Top" ToolTip="Close" Click="OnCloseClick">
+                        <TextBlock Text="&#x2715;" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                    </Button>
+                </Grid>
+                <TextBox Grid.Row="2" x:Name="CommitMessageBox" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="96" VerticalScrollBarVisibility="Auto" Margin="0,4,0,6"/>
+                <StackPanel Grid.Row="3" Orientation="Horizontal">
+                    <Button x:Name="CommitSendButton" Content="Commit" Click="OnCommitClick" Padding="10,2"/>
+                    <Button x:Name="CommitAutoGenButton" Content="Auto-generate message" Click="OnAutoGenerateClick" Padding="10,2" Margin="8,0,0,0"/>
+                    <TextBlock x:Name="CommitStatusText" VerticalAlignment="Center" Margin="10,0,0,0"
+                               Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

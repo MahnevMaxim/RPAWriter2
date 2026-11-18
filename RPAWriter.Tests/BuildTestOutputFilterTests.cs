@@ -1,6 +1,10 @@
 using System;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -42,7 +46,7 @@ namespace RPAWriter.Tests
                 "",
                 "  Determining projects to restore...",
                 "  All projects are up-to-date for restore.",
-                "  RPAWriter.Core -> C:\\src\\RPAWriter.Core\\bin\\Debug\\netstandard2.0\\RPAWriter.Core.dll",
+                "  Agent.Core -> C:\\src\\Agent.Core\\bin\\Debug\\netstandard2.0\\Agent.Core.dll",
                 "Program.cs(12,5): error CS1002: ; expected",
                 "Program.cs(5,1): warning CS0168: The variable 'x' is declared but never used",
                 "error MSB3073: The command \"cmd.exe\" exited with code 1.",
@@ -70,7 +74,7 @@ namespace RPAWriter.Tests
         {
             var output = string.Join("\n",
                 "MSBuild version 17.11.9+abcdef",
-                "  RPAWriter.Core -> C:\\src\\RPAWriter.Core\\bin\\Debug\\netstandard2.0\\RPAWriter.Core.dll",
+                "  Agent.Core -> C:\\src\\Agent.Core\\bin\\Debug\\netstandard2.0\\Agent.Core.dll",
                 "    0 Warning(s)",
                 "    0 Error(s)",
                 "",

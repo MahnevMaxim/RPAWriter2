@@ -1,9 +1,24 @@
 # Active Context
 
 ## Current focus
-Завершена поддержка DeepSeek context caching: парсинг cache-hit/miss токенов и расчёт стоимости по настраиваемым ценам (как у Cline).
+Завершено выделение generic-UI чата и настроек из `MainWindowControl` в `Agent.Toolkit.Wpf`
+(`ChatControl`, `SettingsControl`): хост остаётся в RPAWriter2 через `IChatHost` + host-слоты,
+пакеты перепакованы (AgentToolkit/AgentToolkit.Wpf 1.10.0).
 
 ## Recent changes
+- **Выделение ChatControl/SettingsControl (Agent.Toolkit.Wpf 1.10.0)**: generic-UI чата
+  (`ChatControl`: toolbar, история, список сообщений, ввод с вложениями/миком, оверлеи
+  Permissions/Docs, pinned, Cancel/Resume, переключатель режима, очередь) и настроек
+  (`SettingsControl`) вынесены из `MainWindowControl` в `Agent.Toolkit.Wpf`. Хост реализует
+  `IChatHost` (`SendChatAsync`, `CancelAgentRun`, `ResumeAgentRunAsync`, `IsAgentRunning`,
+  `OpenCommitControl`, `SendBuildErrors`, `OpenCreateRobot`, `RebuildAgentTools`, `StartNewChat`,
+  `OpenConversation`, `OnConversationRemoved`, `ShowDocsIndex`, `CompactNowAsync`,
+  `RequestMemoryUpdate`) и инжектит host-chrome в 6 слотов (4 тоста + `CommitEditorControl` +
+  `CreateRobotControl`); `IMicrophoneRecorder`/`ISpeechToTextService` инжектятся через
+  `AttachServices`. В `RPAWriter2` остались agent-цикл, commit/robot, checkpoints,
+  workspace-scoping. Пакеты перепакованы: `AgentToolkit`/`AgentToolkit.Wpf` 1.10.0,
+  `RPAWriter2.csproj` возвращён на NuGet. Детали — `documentation/19-chatcontrol-extraction.md`.
+  Сборка VSIX ок; тесты RPAWriter.Tests 1058/1058, Agent.Tests 18/18.
 - **Кнопка «Do it!!!» читает поле ввода**: `DoItButton` переведён с `Command={Binding Cmd}` на `Click="OnDoItClick"` (как соседние `Compact now`/`Memory bank`/`Permissions`/`Docs`); обработчик в `MainWindowControl.xaml.cs` читает `InputBox.Text`, очищает поле и вызывает `ChatModel.DoItCommand(string)`. Модель переключает режим в Act и шлёт через `IChatPromptSink` промт `«<ввод>\nDo it!!!»` (пустой/пробельный ввод → просто `Do it!!!`). Сигнатура `DoItCommand()` → `public async Task DoItCommand(string)`; тесты `DoItCommand_*` обновлены + добавлены `DoItCommand_PrependsInputTextToTheCommand` и `DoItCommand_SendsBareCommandOnWhitespaceOnlyInput`.
 - **Закрытие чата ≠ просмотр истории (ChatModel, §17.7)**: `ActiveChatConversation` — единственное определение активности, «закрыт» = `null`. `ResetToFreshConversation` заменён на `ClearConversationState` (только очистка транскрипта/очереди), добавлены `EnsureActiveConversation()` (идемпотентно активирует беседу и чистит остатки закрытого чата) и `CloseActiveChat()` (save → очистка → `null` → `ViewMode = History`). Конструктор больше не создаёт беседу; `ResetConversation()` (delete/clear активной) оставляет `null`; `ResolveConversationToOpen("")` больше не угадывает — `null`. Хост: ✕ → `OnCloseChat` закрывает беседу, «History» → `OnShowHistory` оставляет её активной, все внешние отправки («Send errors», «Send to RPA Writer», «Send exception to RPA Writer», баннеры) идут через `EnsureChatReadyToReceive()`; восстановление сессии с закрытым чатом показывает историю.
 - **Футер чата на биндингах (фаза E)**: `Mode`/`Phase` больше не дублируются в хосте — `ModeToggle` связан двусторонне (`AgentModeToToggleValueConverter`), рамка `InputBox` следует `Chat.Mode` через `DataTrigger`, `Cancel`/`Do it!!!` — через `EnumMatchConverter` по `Chat.Phase`, `Resume task` — через проекцию `ChatModel.CanResume`. Запись «Mode: …» в транскрипт пишет модель (`ChatModel.SwitchMode`). Инварианты: имена режима — только `AgentModeNames` (Core); снимок возобновления остаётся в хосте, модель хранит лишь признак `HasResumableRun`.
@@ -17,10 +32,14 @@
 - Memory Bank: сервис `MemoryBankService`, инструменты `read_memory`/`update_memory`.
 
 ## Next steps
-- При необходимости — полировка и дополнительные тесты.
+- Визуальное сравнение вкладок Chat/Settings/Spec/KB/Packages с прежним VSIX.
 - Валидация в реальном VS с реальным провайдером.
 
 ## Important patterns
+- **Generic chat UI в toolkit**: вся generic-логика вида чата — в `Agent.Toolkit.Wpf.Controls.ChatControl`
+  (DataContext = `ChatModel`); RPA/VS/Git-специфика — в хосте через `IChatHost` + host-слоты
+  (`ContentControl`). Хост не лезет во внутренности ChatControl: аппенды/переключение видов/ввод —
+  только через public API (`AppendChat*`, `ShowConversationView`, `SetInputText` и т.п.).
 - Вся контекст-логика — в `RPAWriter.Core` (netstandard2.0), UI — в `RPAWriter2`.
 - Протокол инструментов: `Native` (нативные `tool_calls`) или `JsonChat` (JSON `{"action":"final"|"tool_call",...}`) — выбирается настройкой.
 - **Одна активная беседа**: активность определяется только `ChatModel.ActiveChatConversation` (активна, пока не `null`); `ActiveConversationId`, `HasActiveConversation`, `ChatConversation.IsActive` и `UiStateData.LastConversationId` — производные/подсказки, второй источник состояния заводить нельзя.

@@ -5,9 +5,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -167,9 +171,9 @@ namespace RPAWriter.Tests
             try
             {
                 var coreDll = typeof(IProdLogProvider).Assembly.Location;
-                File.Copy(coreDll, Path.Combine(dir, "RPAWriter.Core.dll"));
+                File.Copy(coreDll, Path.Combine(dir, "Agent.Core.dll"));
 
-                // A second copy of RPAWriter.Core must be ignored to avoid a type-identity mismatch.
+                // A second copy of Agent.Core must be ignored to avoid a type-identity mismatch.
                 Assert.That(LogProviderLoader.Discover(dir), Is.Empty);
             }
             finally

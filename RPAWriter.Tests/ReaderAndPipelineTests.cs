@@ -12,7 +12,11 @@ using Xdr = DocumentFormat.OpenXml.Drawing.Spreadsheet;
 using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -124,7 +128,7 @@ namespace RPAWriter.Tests
             var kb = new FileKnowledgeBase(_dir);
             var pipeline = new RpaPipelineService(
                 new OpenXmlDocumentReader(),
-                new StubAiProvider(),
+                new StubRpaAiProvider(),
                 kb,
                 new RobotGenerator());
 
@@ -142,7 +146,7 @@ namespace RPAWriter.Tests
             File.WriteAllText(docPath, "Open browser. Fill in the form.");
 
             var kb = new FileKnowledgeBase(_dir);
-            var service = new KnowledgeBaseFormationService(new OpenXmlDocumentReader(), new StubAiProvider(), kb);
+            var service = new KnowledgeBaseFormationService(new OpenXmlDocumentReader(), new StubRpaAiProvider(), kb);
 
             var added = await service.BuildFromRobotDocsAsync(new[] { docPath }, "// robot code");
 

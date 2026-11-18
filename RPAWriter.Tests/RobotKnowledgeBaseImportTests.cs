@@ -6,9 +6,13 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -42,7 +46,7 @@ namespace RPAWriter.Tests
             File.WriteAllText(Path.Combine(robotDir, "RpaActions.cs"),
                 "public static void OpenBrowser() { } public static void ReadTable() { }");
 
-            var service = new RobotKnowledgeBaseImportService(new StubAiProvider());
+            var service = new RobotKnowledgeBaseImportService(new StubRpaAiProvider());
             var result = await service.ImportFromRobotsAsync(_root, _kb);
 
             Assert.That(result.RobotsProcessed, Is.EqualTo(1));
@@ -68,7 +72,7 @@ namespace RPAWriter.Tests
         [Test]
         public async Task ImportFromRobots_MissingRoot_ReturnsZero()
         {
-            var service = new RobotKnowledgeBaseImportService(new StubAiProvider());
+            var service = new RobotKnowledgeBaseImportService(new StubRpaAiProvider());
             var result = await service.ImportFromRobotsAsync(Path.Combine(_root, "does-not-exist"), _kb);
 
             Assert.That(result.RobotsProcessed, Is.EqualTo(0));
@@ -324,7 +328,7 @@ namespace RPAWriter.Tests
                 "public static void OpenBrowser() { }");
         }
 
-        private sealed class RecordingAiProvider : IAiProvider
+        private sealed class RecordingAiProvider : IRpaAiProvider
         {
             public string LastRobotName { get; private set; }
             public RobotPlatform LastPlatform { get; private set; }
@@ -360,9 +364,9 @@ namespace RPAWriter.Tests
                 => Task.FromResult(new ChatResponse { Answer = "stub" });
         }
 
-        private sealed class ResumableTestAiProvider : IAiProvider
+        private sealed class ResumableTestAiProvider : IRpaAiProvider
         {
-            private readonly StubAiProvider _inner = new StubAiProvider();
+            private readonly StubRpaAiProvider _inner = new StubRpaAiProvider();
             public List<string> ReconstructedRobots { get; } = new List<string>();
             public string FailOnRobot { get; set; }
 
@@ -396,9 +400,9 @@ namespace RPAWriter.Tests
                 => _inner.ChatAsync(messages, systemPrompt, tools, cancellationToken);
         }
 
-        private sealed class FlakySolutionAiProvider : IAiProvider
+        private sealed class FlakySolutionAiProvider : IRpaAiProvider
         {
-            private readonly StubAiProvider _inner = new StubAiProvider();
+            private readonly StubRpaAiProvider _inner = new StubRpaAiProvider();
             public int MappingCalls { get; private set; }
             public int FailuresBeforeSuccess { get; set; }
             public bool AlwaysFail { get; set; }

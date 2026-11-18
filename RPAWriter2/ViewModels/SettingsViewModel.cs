@@ -1,5 +1,9 @@
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Models;
+using Agent.Mvvm;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.ViewModels
 {
@@ -12,5 +16,8 @@ namespace RPAWriter2.ViewModels
     {
         /// <summary>The settings model this view model adapts.</summary>
         public SettingsModel Settings => Model as SettingsModel;
+
+        /// <summary>The RPA-domain settings model this view model adapts (assigned by the host before attach).</summary>
+        public RpaSettingsModel RpaSettings { get; set; }
     }
 }

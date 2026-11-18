@@ -1,6 +1,10 @@
 using System;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests.Fakes
 {

@@ -5,6 +5,19 @@
 - **Провайдер**: `OpenAiCompatibleProvider` (POST /chat/completions), совместим с OpenAI/Azure/Ollama/LM Studio/vLLM; `StubAiProvider` — офлайн-заглушка.
 - **Агент**: `AgentRunner` (агентный цикл) + `AgentToolRegistry` (per-mode gating: Plan = только чтение) + `AgentPromptBuilder`.
 
+## Shared toolkit (`Agent.Toolkit.Wpf`)
+- **ChatControl (generic chat UI)**: весь вид чата + его generic-логика (ввод, вложения, история,
+  Permissions/Docs-оверлеи, pinned, очередь, мик, переключатель режима). Контракт с хостом —
+  `IChatHost` (agent-цикл, commit, build errors, robot creation, workspace-scoping) + инжект
+  host-chrome через `ContentControl`-слоты (`VoiceErrorToastHost`, `OptionsWarningToastHost`,
+  `CommitResultBarHost`, `CheckpointRestoreErrorToastHost`, `CommitEditorHost`, `CreateRobotHost`).
+  `ChatControl` не ссылается на DTE/Git/Roslyn/robot-сервисы.
+- **SettingsControl (generic settings UI)**: generic-настройки + `InsertHostSection(index, SettingsSection)`
+  и `HostBannerSlot`/`HostToolbarSlot` для host-специфичных секций (`RpaSettingsSection`,
+  `VsSettingsSection`).
+- **Публикация**: `Agent.Toolkit.Wpf` → отдельный пакет `AgentToolkit.Wpf` (net472); UI-free сборки
+  (`Agent.Mvvm`/`Agent.Core`/`Agent.Models`) → `AgentToolkit` (netstandard2.0).
+
 ## Key decisions
 - **Tool calling — 2 режима** (`ToolCallingMode`):
   - `JsonChat` — модель возвращает `{"action":"final"|"tool_call", ...}` (работает без нативного function calling; дефолт для Ollama/LM Studio/vLLM).

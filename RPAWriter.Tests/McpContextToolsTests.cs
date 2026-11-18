@@ -5,10 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
-using RPAWriter.Core.AgentTools;
-using RPAWriter.Core.Mcp;
-using RPAWriter.Core.Models;
+using Agent.Core.AgentTools;
+using Agent.Core.Mcp;
+using Agent.Core.Models;
 using RPAWriter.Tests.Fakes;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {

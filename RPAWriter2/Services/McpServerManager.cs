@@ -2,8 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using RPAWriter.Core.AgentTools;
-using RPAWriter.Core.Mcp;
+using Agent.Core.AgentTools;
+using Agent.Core.Mcp;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Services
 {

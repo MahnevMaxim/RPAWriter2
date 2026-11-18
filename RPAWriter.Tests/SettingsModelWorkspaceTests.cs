@@ -1,8 +1,12 @@
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Services;
-using RPAWriter.Models;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
+using Agent.Models;
 using RPAWriter.Tests.Fakes;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {

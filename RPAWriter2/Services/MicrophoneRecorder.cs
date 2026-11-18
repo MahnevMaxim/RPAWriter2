@@ -2,13 +2,18 @@ using System;
 using System.IO;
 using System.Threading;
 using NAudio.Wave;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
+using Agent.Toolkit.Wpf.Controls;
 
 namespace RPAWriter2.Services
 {
     /// <summary>
     /// Captures microphone audio as 16 kHz, 16-bit, mono PCM via NAudio (WaveInEvent).
     /// </summary>
-    public sealed class MicrophoneRecorder : IDisposable
+    public sealed class MicrophoneRecorder : IDisposable, IMicrophoneRecorder
     {
         private readonly object _lock = new object();
         private WaveInEvent _waveIn;

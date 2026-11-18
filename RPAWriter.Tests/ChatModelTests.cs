@@ -5,10 +5,14 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Models;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Core.Models;
+using Agent.Models;
+using Agent.Mvvm;
 using RPAWriter.Tests.Fakes;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -185,10 +189,10 @@ namespace RPAWriter.Tests
             ((INotifyPropertyChanged)model).PropertyChanged += (sender, e) => changed.Add(e.PropertyName);
             var analyzer = CreateLogAnalyzer();
 
-            model.LogAnalyzer = analyzer;
+            model.ChildModel = analyzer;
 
-            Assert.That(model.LogAnalyzer, Is.SameAs(analyzer));
-            Assert.That(changed, Does.Contain(nameof(ChatModel.LogAnalyzer)),
+            Assert.That(model.ChildModel, Is.SameAs(analyzer));
+            Assert.That(changed, Does.Contain(nameof(ChatModel.ChildModel)),
                 "the panel binds to Chat.LogAnalyzer, so the property must notify");
             Assert.That(analyzer.IsSettingsLoaded, Is.True, "a child assigned after Run is started too");
         }

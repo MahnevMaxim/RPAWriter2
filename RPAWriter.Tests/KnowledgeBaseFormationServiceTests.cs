@@ -3,9 +3,13 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -19,7 +23,7 @@ namespace RPAWriter.Tests
             public SpecModel Read(string path, string mediaOutputDir = null) => OnRead?.Invoke(path) ?? new SpecModel { RawText = path };
         }
 
-        private sealed class FakeAiProvider : IAiProvider
+        private sealed class FakeAiProvider : IRpaAiProvider
         {
             public Func<string, IReadOnlyList<TaskDescriptor>> OnDecompose { get; set; }
             public Func<TaskDescriptor, IReadOnlyList<RobotSourceFile>, SolutionRecord> OnMap { get; set; }

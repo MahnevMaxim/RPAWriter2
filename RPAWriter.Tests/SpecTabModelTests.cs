@@ -4,11 +4,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using RPAWriter.Core.Contracts;
-using RPAWriter.Core.Models;
-using RPAWriter.Core.Services;
-using RPAWriter.Models;
-using RPAWriter.Mvvm;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
+using Agent.Models;
+using Agent.Mvvm;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -99,7 +103,7 @@ namespace RPAWriter.Tests
         #endregion
 
         private static SpecTabModel CreateModel(
-            Func<IAiProvider> aiProvider = null,
+            Func<IRpaAiProvider> aiProvider = null,
             FakeSolutionPathProvider solution = null,
             FakeFilePicker filePicker = null,
             InMemoryFileWriter fileWriter = null,
@@ -107,7 +111,7 @@ namespace RPAWriter.Tests
             InMemoryKnowledgeBase kb = null)
         {
             return new SpecTabModel(
-                aiProvider ?? (() => new StubAiProvider()),
+                aiProvider ?? (() => new StubRpaAiProvider()),
                 solution ?? new FakeSolutionPathProvider { Directory = "C:\\sln" },
                 filePicker ?? new FakeFilePicker { NextFile = "C:\\sln\\spec.docx" },
                 new FakeFolderPicker(),
@@ -118,7 +122,7 @@ namespace RPAWriter.Tests
                 documentReader ?? new FakeDocumentReader { Spec = new SpecModel { Name = "RPA-1", RawText = "Open browser.", MarkdownText = "# Spec" } },
                 new FakeRobotGenerator(),
                 path => kb ?? new InMemoryKnowledgeBase(),
-                () => new SettingsData { KnowledgeBasePath = "C:\\kb" });
+                () => new RpaSettingsData { KnowledgeBasePath = "C:\\kb" });
         }
 
         [Test]

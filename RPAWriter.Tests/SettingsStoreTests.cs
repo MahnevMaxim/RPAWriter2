@@ -1,5 +1,9 @@
 using NUnit.Framework;
-using RPAWriter.Core.Services;
+using Agent.Core.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
@@ -15,9 +19,9 @@ namespace RPAWriter.Tests
         [Test]
         public void Normalize_FillsEmptyRulesPath()
         {
-            var settings = new SettingsData { RulesPath = "   " };
+            var settings = new RpaSettingsData { RulesPath = "   " };
 
-            SettingsData.Normalize(settings);
+            RpaSettingsData.Normalize(settings);
 
             Assert.That(settings.RulesPath, Is.EqualTo(PromptPaths.ResolveRulesDirectory()));
         }
@@ -114,7 +118,6 @@ namespace RPAWriter.Tests
             {
                 ToolCallingMode = "Bogus",
                 MemoryBankMode = "Bogus",
-                SecurityAuditMode = "Bogus",
                 SpeechToTextProvider = "Bogus"
             };
 
@@ -122,8 +125,19 @@ namespace RPAWriter.Tests
 
             Assert.That(settings.ToolCallingMode, Is.EqualTo("JsonChat"));
             Assert.That(settings.MemoryBankMode, Is.EqualTo("Disabled"));
-            Assert.That(settings.SecurityAuditMode, Is.EqualTo("Full"));
             Assert.That(settings.SpeechToTextProvider, Is.EqualTo("Auto"));
+        }
+
+        [Test]
+        public void RpaSettingsData_Normalize_ResetsInvalidSecurityAuditMode()
+        {
+            var settings = new RpaSettingsData { SecurityAuditMode = "Bogus" };
+            RpaSettingsData.Normalize(settings);
+            Assert.That(settings.SecurityAuditMode, Is.EqualTo("Full"));
+
+            var valid = new RpaSettingsData { SecurityAuditMode = "CredentialsOnly" };
+            RpaSettingsData.Normalize(valid);
+            Assert.That(valid.SecurityAuditMode, Is.EqualTo("CredentialsOnly"));
         }
 
         [Test]
@@ -140,9 +154,9 @@ namespace RPAWriter.Tests
         [Test]
         public void Normalize_InitializesNullRobotNameHistory()
         {
-            var settings = new SettingsData { RobotNameHistory = null };
+            var settings = new RpaSettingsData { RobotNameHistory = null };
 
-            SettingsData.Normalize(settings);
+            RpaSettingsData.Normalize(settings);
 
             Assert.That(settings.RobotNameHistory, Is.Not.Null);
             Assert.That(settings.RobotNameHistory, Is.Empty);
@@ -203,7 +217,6 @@ namespace RPAWriter.Tests
                 KeepRecentMessages = 10,
                 ToolCallingMode = "Native",
                 MemoryBankMode = "Tool",
-                SecurityAuditMode = "CredentialsOnly",
                 SpeechToTextProvider = "Vosk"
             };
 
@@ -215,15 +228,14 @@ namespace RPAWriter.Tests
             Assert.That(settings.KeepRecentMessages, Is.EqualTo(10));
             Assert.That(settings.ToolCallingMode, Is.EqualTo("Native"));
             Assert.That(settings.MemoryBankMode, Is.EqualTo("Tool"));
-            Assert.That(settings.SecurityAuditMode, Is.EqualTo("CredentialsOnly"));
             Assert.That(settings.SpeechToTextProvider, Is.EqualTo("Vosk"));
         }
 
         [Test]
         public void Normalize_PreservesDeployProjectName()
         {
-            var settings = new SettingsData { DeployProjectName = "RPA-12345" };
-            SettingsData.Normalize(settings);
+            var settings = new RpaSettingsData { DeployProjectName = "RPA-12345" };
+            RpaSettingsData.Normalize(settings);
             Assert.That(settings.DeployProjectName, Is.EqualTo("RPA-12345"));
         }
 

@@ -2,6 +2,10 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using RPAWriter2.Services;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter2.Controls
 {

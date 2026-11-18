@@ -1,0 +1,74 @@
+﻿<UserControl x:Class="RPAWriter2.Controls.VsSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Agent.Toolkit.Wpf;component/Styles/AgentTheme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <Grid Margin="8"
+                                      VerticalAlignment="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <CheckBox Grid.Row="0"
+                                              Grid.Column="0"
+                                              Grid.ColumnSpan="2"
+                                              x:Name="RoslynSemanticsCheckBox"
+                                              IsChecked="{Binding Settings.RoslynSemanticsEnabled, Mode=TwoWay}"
+                                              Content="Roslyn semantics (C# code navigation)"
+                                              Margin="0,0,0,4"
+                                              Foreground="{StaticResource Dark.Text}"
+                                              ToolTip="Р’РєР»СЋС‡РёС‚СЊ СЃРµРјР°РЅС‚РёС‡РµСЃРєРёРµ C#-РёРЅСЃС‚СЂСѓРјРµРЅС‚С‹: code_outline, find_symbol_usages, get_inheritance, get_diagnostics" />
+
+                                    <CheckBox Grid.Row="1"
+                                              Grid.Column="0"
+                                              Grid.ColumnSpan="2"
+                                              x:Name="AutoCaptureRuntimeExceptionsCheckBox"
+                                              IsChecked="{Binding Settings.AutoCaptureRuntimeExceptions, Mode=TwoWay}"
+                                              Content="Auto-capture runtime exceptions"
+                                              Margin="0,12,0,4"
+                                              Foreground="{StaticResource Dark.Text}" />
+
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="0"
+                                               Text="Deploy project name"
+                                               VerticalAlignment="Top"
+                                               Margin="0,12,8,4" />
+                                    <StackPanel Grid.Row="2"
+                                                Grid.Column="1"
+                                                Margin="0,12,0,4">
+                                        <TextBox x:Name="DeployProjectNameBox"
+                                                 Text="{Binding RpaSettings.DeployProjectName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Enter the project name without the .csproj extension"
+                                                   FontSize="11"
+                                                   Foreground="#C8C8C8"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <CheckBox Grid.Row="3"
+                                              Grid.Column="0"
+                                              Grid.ColumnSpan="2"
+                                              x:Name="FilterBuildTestOutputCheckBox"
+                                              IsChecked="{Binding Settings.FilterBuildTestOutput, Mode=TwoWay}"
+                                              Content="Filter build/test output (compact summary)"
+                                              Margin="0,12,0,0"
+                                              Foreground="{StaticResource Dark.Text}"
+                                              ToolTip="Return only errors/warnings (code + path) for dotnet build and a passed/failed/skipped summary for dotnet test instead of raw console output" />
+
+                                </Grid>
+                            </ScrollViewer>
+</UserControl>

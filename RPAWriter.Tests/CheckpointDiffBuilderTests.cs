@@ -1,6 +1,10 @@
 using System.Collections.Generic;
 using NUnit.Framework;
-using RPAWriter.Core.Checkpoints;
+using Agent.Core.Checkpoints;
+using Agent.Rpa.AgentTools;
+using Agent.Rpa.Contracts;
+using Agent.Rpa.Models;
+using Agent.Rpa.Services;
 
 namespace RPAWriter.Tests
 {
