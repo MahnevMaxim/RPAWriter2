@@ -158,7 +158,7 @@
                                                                                    MaxWidth="600">
                                                                 <Run Text="{Binding Name, Mode=OneWay}"
                                                                             FontFamily="Consolas" />
-                                                                <Run Text=" вЂ” " />
+                                                                <Run Text=" — " />
                                                                 <Run Text="{Binding Description, Mode=OneWay}" />
                                                                         </TextBlock>
                                                                     </CheckBox>

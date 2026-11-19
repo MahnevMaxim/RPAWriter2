@@ -1,0 +1,63 @@
+<UserControl x:Class="RPAWriter2.Controls.KnowledgeBaseControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/HostResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="1*" MinHeight="64"/>
+        </Grid.RowDefinitions>
+
+        <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+            <ComboBox x:Name="KbModeCombo" SelectedIndex="{Binding KnowledgeBase.ImportModeIndex, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,5,8,0">
+                <ComboBoxItem Content="Override (start over)"/>
+                <ComboBoxItem Content="Continue (resume)"/>
+            </ComboBox>
+            <Button x:Name="KbImportButton" Content="Import from robots" Command="{Binding Cmd}" CommandParameter="ImportFromRobotsCommand" IsEnabled="{Binding KnowledgeBase.CanImport, Mode=OneWay}" Margin="0,5,8,0"/>
+            <Button x:Name="KbPauseButton" Content="{Binding KnowledgeBase.PauseButtonText, Mode=OneWay}" Command="{Binding Cmd}" CommandParameter="PauseCommand" IsEnabled="{Binding KnowledgeBase.IsImporting, Mode=OneWay}" Margin="0,5,8,0"/>
+            <Button x:Name="KbStopButton" Content="Stop" Command="{Binding Cmd}" CommandParameter="StopCommand" IsEnabled="{Binding KnowledgeBase.IsImporting, Mode=OneWay}" Margin="0,5,8,0"/>
+            <Button Content="Refresh" Command="{Binding Cmd}" CommandParameter="RefreshCommand" Margin="0,5,8,0"/>
+        </WrapPanel>
+
+        <Grid Grid.Row="1" Margin="0,0,0,4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBox Grid.Row="0" x:Name="KbStatusText" IsReadOnly="True"
+                     Height="80" MaxLines="3"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     Foreground="#C8C8C8"
+                     Text="{Binding KnowledgeBase.StatusText, Mode=OneWay}"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+            <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
+                         Minimum="0" Maximum="100" Value="{Binding KnowledgeBase.Progress, Mode=OneWay}"
+                         Foreground="{StaticResource Dark.Accent}" Visibility="{Binding KnowledgeBase.IsImporting, Converter={StaticResource BoolToVis}}"/>
+
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,4,0,6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                <TextBlock Text="Messages:" VerticalAlignment="Center" Foreground="#C8C8C8"/>
+                <CheckBox x:Name="KbAutoScrollCheckBox" Content="Auto-scroll" IsChecked="{Binding KnowledgeBase.AutoScroll, Mode=TwoWay}"
+                          VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#C8C8C8"/>
+            </StackPanel>
+            <TextBox Grid.Row="1" x:Name="KbMessagesBoxControl" IsReadOnly="True"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     Text="{Binding KnowledgeBase.MessagesText, Mode=OneWay}"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+        </Grid>
+
+    </Grid>
+</UserControl>

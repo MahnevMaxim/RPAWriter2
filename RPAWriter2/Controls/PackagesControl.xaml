@@ -1,0 +1,64 @@
+<UserControl x:Class="RPAWriter2.Controls.PackagesControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/RPAWriter2;component/Styles/HostResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+            <Button Content="Refresh" Click="OnRefreshPackages" Margin="0,5,8,0"/>
+            <Button Content="Install selected" Click="OnInstallSelectedPackages" Margin="0,5,8,0"/>
+            <Button Content="Update selected" Click="OnUpdateSelectedPackages" Margin="0,5,8,0"/>
+            <Button Content="Uninstall selected" Click="OnUninstallSelectedPackages" Margin="0,5,8,0"/>
+            <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="16,5,6,0"/>
+            <TextBox x:Name="PackageFilterBox" Text="Activities." Width="180"
+                     TextChanged="OnPackageFilterChanged" VerticalContentAlignment="Center"
+                     ToolTip="Show packages whose name starts with this value" Margin="0,5,0,0"/>
+        </WrapPanel>
+
+        <TextBlock Grid.Row="1" x:Name="PackagesStatusTextControl" Foreground="#C8C8C8"
+                   TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+        <ListView Grid.Row="2" x:Name="PackagesListControl" BorderThickness="0" Background="Transparent"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="0,2,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Id}" FontWeight="Bold" Margin="8,0,0,0"
+                                       Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding Versions}"
+                                      SelectedItem="{Binding SelectedVersion, Mode=TwoWay}"
+                                      Width="120" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding InstalledBadge}" Margin="8,0,0,0" Foreground="#7AC88F" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Description}" Margin="24,2,0,0" Foreground="#C8C8C8" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <Border x:Name="RestorePackagesPanelControl" Grid.Row="3"
+                Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+                BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,8,0,0" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Restore packages" Click="OnRestorePackages" VerticalAlignment="Center"/>
+                <TextBlock Text="Update-Package -Reinstall for the current solution" VerticalAlignment="Center"
+                           Margin="8,0,0,0" Foreground="#C8C8C8"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
