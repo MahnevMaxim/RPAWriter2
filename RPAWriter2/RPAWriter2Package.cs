@@ -71,6 +71,10 @@ namespace RPAWriter2
 
             VsOptionsService.ApplyRequiredDocumentOptions(dte);
 
+            // Visual Studio owns the AgentToolkit theme: forward the current VS theme and keep it
+            // in sync on every VS theme change (see Services/AgentThemeBridge.cs).
+            AgentThemeBridge.Initialize();
+
             await MainWindowCommand.InitializeAsync(this);
             await ConverterToolWindowCommand.InitializeAsync(this);
             await DiffToolWindowCommand.InitializeAsync(this);

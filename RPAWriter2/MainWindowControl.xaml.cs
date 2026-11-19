@@ -134,8 +134,6 @@ namespace RPAWriter2
         private ChatMessage? _activeApproval;
         private bool _approveAllInRun;
         private bool _denyAllInRun;
-        private readonly DispatcherTimer _settingsToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        private NotificationBanner _settingsToast = null!;
         private TextBlock _workspaceIndicatorText = null!;
         private Button _resetWorkspaceButton = null!;
         private readonly DispatcherTimer _deployToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -225,7 +223,6 @@ namespace RPAWriter2
             ControlsTab = MainTabs.AddHostTab(new TabDefinition("Controls", "Controls", "Controls", "PaletteOutline", "Palette"), ControlsPanel);
             ControlsTab.Visibility = Visibility.Collapsed;
 
-            _settingsToastTimer.Tick += OnSettingsToastTick;
             _deployToastTimer.Tick += OnDeployToastTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
             SpecPanel.SpecMessages.CopyMessageRequested += OnChatMessageCopyRequested;
@@ -250,7 +247,9 @@ namespace RPAWriter2
                 () => LogService.CurrentLogFilePath,
                 () => LogService.CurrentChatLogFilePath);
             _settingsModel.SettingsSaved += OnSettingsModelSaved;
-            _settingsModel.Notify += OnSettingsNotify;
+            // Visual Studio owns the AgentToolkit theme (Auto mode), so the SettingsControl
+            // "Theme" combo only reflects it and never overrides the host bridge below.
+            _settingsModel.ThemeMode = "Auto";
             _rpaSettingsModel = new RpaSettingsModel(new RpaSettingsStore());
             _rpaSettingsModel.Run();
             _settingsViewModel.RpaSettings = _rpaSettingsModel;
@@ -1179,16 +1178,12 @@ namespace RPAWriter2
         }
 
         /// <summary>
-        /// Wires the host-specific settings chrome (toast banner, workspace indicator + reset) into the
+        /// Wires the host-specific settings chrome (workspace indicator + reset) into the
         /// shared <see cref="SettingsControl"/> slots and injects the RPA and VS sections.
+        /// The save/notify toast is owned by the shared <see cref="SettingsControl"/> itself.
         /// </summary>
         private void WireSettingsHostChrome()
         {
-            _settingsToast = new NotificationBanner { Visibility = Visibility.Collapsed };
-            _settingsToast.CloseRequested += OnSettingsToastClose;
-            _settingsToast.SendToChatRequested += OnNotificationSendToChat;
-            SettingsPanel.HostBannerSlot.Content = _settingsToast;
-
             var workspacePanel = new StackPanel { Orientation = Orientation.Horizontal };
             _workspaceIndicatorText = new TextBlock
             {
@@ -3175,57 +3170,6 @@ namespace RPAWriter2
             return window == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(window).Handle;
         }
 
-        private const double SettingsToastMaxHeight = 160.0;
-
-        private void ShowSettingsToast(string text, NotificationKind kind = NotificationKind.Success)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => ShowSettingsToast(text, kind)));
-                return;
-            }
-            _settingsToast.Kind = kind;
-            _settingsToast.Message = text ?? "";
-            _settingsToast.Visibility = Visibility.Visible;
-            _settingsToastTimer.Stop();
-            _settingsToastTimer.Start();
-            SlideSettingsToast(0, SettingsToastMaxHeight);
-        }
-
-        private void HideSettingsToast()
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(HideSettingsToast));
-                return;
-            }
-            _settingsToastTimer.Stop();
-            SlideSettingsToast(_settingsToast.ActualHeight, 0,
-                () => _settingsToast.Visibility = Visibility.Collapsed);
-        }
-
-        private void OnSettingsToastTick(object? sender, EventArgs e)
-        {
-            HideSettingsToast();
-        }
-
-        private void OnSettingsToastClose(object sender, RoutedEventArgs e)
-        {
-            HideSettingsToast();
-        }
-
-        private void SlideSettingsToast(double from, double to, Action? onCompleted = null)
-        {
-            _settingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
-            var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(180)))
-            {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
-            if (onCompleted != null)
-                animation.Completed += (_, __) => onCompleted();
-            _settingsToast.BeginAnimation(FrameworkElement.MaxHeightProperty, animation);
-        }
-
         private const double DeployToastMaxHeight = 120.0;
 
         private void ShowDeployToast(string text, bool success)
@@ -3315,17 +3259,6 @@ namespace RPAWriter2
             RefreshMcpToolsAsync();
             ApplyControlsVisibility();
             UpdateCreateRobotVisibility();
-            ShowSettingsToast("Settings saved. Provider: " + (_ai is StubAiProvider ? "stub (offline)" : "OpenAI-compatible"));
-        }
-
-        private void OnSettingsNotify(object? sender, Notify notify)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnSettingsNotify(sender, notify)));
-                return;
-            }
-            ShowSettingsToast(notify.Message, (NotificationKind)notify.NotifyLevel);
         }
 
         private void OnApiKeyChanged(object sender, RoutedEventArgs e)
