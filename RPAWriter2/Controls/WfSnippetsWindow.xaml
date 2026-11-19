@@ -21,16 +21,16 @@
         <SolidColorBrush x:Key="Dark.Accent" Color="#264F78"/>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Panel}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CaretBrush" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="SelectionBrush" Value="{StaticResource Dark.Accent}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Theme.Accent}"/>
         </Style>
         </ResourceDictionary>
     </Window.Resources>
@@ -51,8 +51,8 @@
             </Grid.ColumnDefinitions>
 
             <ListBox x:Name="SnippetList" Grid.Column="0" Margin="0,0,8,0"
-                     Background="{StaticResource Dark.Panel}"
-                     BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                     Background="{DynamicResource Theme.Panel}"
+                     BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1"
                      Padding="4"
                      SelectionChanged="OnSelectionChanged"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"/>
@@ -61,9 +61,9 @@
                      IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas" FontSize="12"
-                     Background="{StaticResource Dark.Panel}"
-                     Foreground="{StaticResource Dark.Text}"
-                     BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                     Background="{DynamicResource Theme.Panel}"
+                     Foreground="{DynamicResource Theme.Text}"
+                     BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1"
                      Padding="6"/>
         </Grid>
     </Grid>

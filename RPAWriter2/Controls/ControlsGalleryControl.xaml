@@ -9,7 +9,7 @@
             </ResourceDictionary.MergedDictionaries>
             <Style TargetType="TabControl">
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabControl">
@@ -30,9 +30,9 @@
             </Style>
 
             <Style TargetType="TabItem">
-                <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-                <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-                <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+                <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+                <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                 <Setter Property="VerticalContentAlignment" Value="Stretch"/>
                 <Setter Property="Template">
@@ -45,11 +45,11 @@
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.Panel}"/>
-                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Dark.Accent}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.Panel}"/>
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Theme.Accent}"/>
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -107,7 +107,7 @@
         </TabItem>
         <TabItem Header="Chat">
             <ListBox x:Name="ControlsChatList"
-                     Background="{StaticResource Dark.Panel}"
+                     Background="{DynamicResource Theme.Panel}"
                      BorderThickness="0"
                      Margin="8"
                      ScrollViewer.CanContentScroll="True"
@@ -136,7 +136,7 @@
                          TextChanged="OnSvgSearchTextChanged"
                          ToolTip="Search icons by identifier"/>
                 <ListBox x:Name="ControlsSvgList"
-                         Background="{StaticResource Dark.Panel}"
+                         Background="{DynamicResource Theme.Panel}"
                          BorderThickness="0"
                          ScrollViewer.CanContentScroll="True"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -161,28 +161,28 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="104" Background="{StaticResource Dark.Control}"
-                                    BorderBrush="{StaticResource Dark.Border}" BorderThickness="1"
+                            <Border Width="104" Background="{DynamicResource Theme.Control}"
+                                    BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1"
                                     CornerRadius="2" Padding="8">
                                 <StackPanel>
                                     <Path Width="32" Height="32" Stretch="Uniform" HorizontalAlignment="Center"
-                                          Fill="{StaticResource Dark.Text}"
+                                          Fill="{DynamicResource Theme.Text}"
                                           Data="{Binding Kind, Converter={StaticResource MaterialIconToGeometry}}"/>
                                     <TextBlock Text="{Binding Identifier}" Margin="0,6,0,0" TextAlignment="Center"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding Identifier}"
-                                               FontSize="10" Foreground="{StaticResource Dark.Text}"/>
+                                               FontSize="10" Foreground="{DynamicResource Theme.Text}"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
                                         <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
                                                 Margin="0,0,4,0" ToolTip="Copy identifier"
                                                 Click="OnCopySvgIdentifier">
                                             <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                                  Fill="{DynamicResource Theme.Text}" Stretch="Uniform" Width="14" Height="14"/>
                                         </Button>
                                         <Button Style="{StaticResource IconButtonStyle}" Width="22" Height="22"
                                                 Margin="4,0,0,0" ToolTip="Add to chat input"
                                                 Click="OnSendSvgIdentifier">
                                             <Path Data="M 2,21 L 23,12 L 2,3 L 2,10 L 17,12 L 2,14 L 2,21 Z"
-                                                  Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="14" Height="14"/>
+                                                  Fill="{DynamicResource Theme.Text}" Stretch="Uniform" Width="14" Height="14"/>
                                         </Button>
                                     </StackPanel>
                                 </StackPanel>
@@ -213,9 +213,9 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Grid.Column="0" Width="48" Height="22" Background="{Binding Brush}"
-                                        BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"/>
+                                        BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1" CornerRadius="2"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" Margin="10,0,0,0"
-                                           Foreground="{StaticResource Dark.Text}"/>
+                                           Foreground="{DynamicResource Theme.Text}"/>
                                 <TextBlock Grid.Column="2" Text="{Binding Hex}" VerticalAlignment="Center" Margin="10,0,0,0"
                                            FontFamily="Consolas" Foreground="#C8C8C8"/>
                             </Grid>

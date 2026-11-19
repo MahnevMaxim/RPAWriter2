@@ -39,7 +39,7 @@
                         <StackPanel Orientation="Horizontal">
                             <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding Id}" FontWeight="Bold" Margin="8,0,0,0"
-                                       Foreground="{StaticResource Dark.Text}" VerticalAlignment="Center"/>
+                                       Foreground="{DynamicResource Theme.Text}" VerticalAlignment="Center"/>
                             <ComboBox ItemsSource="{Binding Versions}"
                                       SelectedItem="{Binding SelectedVersion, Mode=TwoWay}"
                                       Width="120" Margin="8,0,0,0" VerticalAlignment="Center"/>
@@ -52,7 +52,7 @@
         </ListView>
 
         <Border x:Name="RestorePackagesPanelControl" Grid.Row="3"
-                Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+                Background="{DynamicResource Theme.Panel}" BorderBrush="{DynamicResource Theme.Border}"
                 BorderThickness="1" CornerRadius="2" Padding="8,6" Margin="0,8,0,0" Visibility="Collapsed">
             <StackPanel Orientation="Horizontal">
                 <Button Content="Restore packages" Click="OnRestorePackages" VerticalAlignment="Center"/>

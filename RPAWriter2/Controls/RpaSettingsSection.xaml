@@ -107,7 +107,7 @@
                                               IsChecked="{Binding RpaSettings.ShowRobotCreator, Mode=TwoWay}"
                                               Content="Show robot creation control in chat"
                                               Margin="0,2,0,4"
-                                              Foreground="{StaticResource Dark.Text}" />
+                                              Foreground="{DynamicResource Theme.Text}" />
 
                                     <Button Grid.Row="7"
                                             Grid.Column="0"
@@ -137,7 +137,7 @@
                                         <TextBlock Text="Agent tools"
                                                    FontWeight="SemiBold"
                                                    Margin="0,0,0,6"
-                                                   Foreground="{StaticResource Dark.Text}" />
+                                                   Foreground="{DynamicResource Theme.Text}" />
                                         <ItemsControl ItemsSource="{Binding Settings.AgentToolGroups}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
@@ -145,7 +145,7 @@
                                                         <TextBlock Text="{Binding Name}"
                                                                    FontWeight="Bold"
                                                                    Margin="0,0,0,2"
-                                                                   Foreground="{StaticResource Dark.Text}" />
+                                                                   Foreground="{DynamicResource Theme.Text}" />
                                                         <ItemsControl ItemsSource="{Binding Items}"
                                                                       Margin="12,0,0,0">
                                                             <ItemsControl.ItemTemplate>
@@ -153,7 +153,7 @@
                                                                     <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}"
                                                                               Margin="0,1,0,1"
                                                                               VerticalAlignment="Center"
-                                                                              Foreground="{StaticResource Dark.Text}">
+                                                                              Foreground="{DynamicResource Theme.Text}">
                                                                         <TextBlock TextWrapping="Wrap"
                                                                                    MaxWidth="600">
                                                                 <Run Text="{Binding Name, Mode=OneWay}"

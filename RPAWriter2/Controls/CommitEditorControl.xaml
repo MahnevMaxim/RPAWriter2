@@ -11,7 +11,7 @@
     </UserControl.Resources>
 
     <Border x:Name="Root"
-            Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+            Background="{DynamicResource Theme.Panel}" BorderBrush="{DynamicResource Theme.Border}"
             BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
         <StackPanel>
             <controls:NotificationBanner x:Name="CommitWarningBar" Visibility="Collapsed"
@@ -35,7 +35,7 @@
                     <TextBlock Grid.Column="0" Text="Commit message:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
                             VerticalAlignment="Top" ToolTip="Close" Click="OnCloseClick">
-                        <TextBlock Text="&#x2715;" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                        <TextBlock Text="&#x2715;" FontSize="11" Foreground="{DynamicResource Theme.Text}"/>
                     </Button>
                 </Grid>
                 <TextBox Grid.Row="2" x:Name="CommitMessageBox" AcceptsReturn="True" TextWrapping="Wrap"

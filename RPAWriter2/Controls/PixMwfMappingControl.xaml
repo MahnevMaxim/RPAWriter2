@@ -19,14 +19,14 @@
         <SolidColorBrush x:Key="Dark.ErrorText" Color="#F48771"/>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -40,10 +40,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlPressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
@@ -55,17 +55,17 @@
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CaretBrush" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="SelectionBrush" Value="{StaticResource Dark.Accent}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Theme.Accent}"/>
             <Setter Property="Padding" Value="4,2"/>
         </Style>
 
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="6,3"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -79,10 +79,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlPressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="#6F6F6F"/>
@@ -96,24 +96,24 @@
         <ControlTemplate x:Key="ComboBoxToggleButton" TargetType="ToggleButton">
             <Border x:Name="Bd" Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
-                <Path x:Name="Arrow" Fill="{StaticResource Dark.Text}"
+                <Path x:Name="Arrow" Fill="{DynamicResource Theme.Text}"
                       HorizontalAlignment="Right" VerticalAlignment="Center"
                       Margin="0,0,6,0" Data="M 0 0 L 3.5 4 L 7 0 Z"/>
             </Border>
             <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                 </Trigger>
                 <Trigger Property="IsChecked" Value="True">
-                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlPressed}"/>
                 </Trigger>
             </ControlTemplate.Triggers>
         </ControlTemplate>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,3"/>
             <Setter Property="MinHeight" Value="24"/>
@@ -144,8 +144,8 @@
                                       MinWidth="{TemplateBinding ActualWidth}"
                                       MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                     <Border x:Name="DropDownBorder"
-                                            Background="{StaticResource Dark.Panel}"
-                                            BorderBrush="{StaticResource Dark.Border}"
+                                            Background="{DynamicResource Theme.Panel}"
+                                            BorderBrush="{DynamicResource Theme.Border}"
                                             BorderThickness="1"/>
                                     <ScrollViewer Margin="2" SnapsToDevicePixels="True">
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
@@ -159,49 +159,49 @@
         </Style>
 
         <Style TargetType="DataGrid">
-            <Setter Property="Background" Value="{StaticResource Dark.Panel}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Panel}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="RowBackground" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="AlternatingRowBackground" Value="{StaticResource Dark.Panel}"/>
+            <Setter Property="RowBackground" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="AlternatingRowBackground" Value="{DynamicResource Theme.Panel}"/>
             <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
-            <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource Theme.Border}"/>
+            <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="HeadersVisibility" Value="Column"/>
         </Style>
 
         <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="0,0,1,1"/>
             <Setter Property="Padding" Value="6,4"/>
         </Style>
 
         <Style TargetType="DataGridRow">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Dark.Accent}"/>
+                    <Setter Property="Background" Value="{DynamicResource Theme.Accent}"/>
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                    <Setter Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
         <Style TargetType="DataGridCell">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="6,3"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="Transparent"/>
-                    <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -226,7 +226,7 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <DockPanel Background="{StaticResource Dark.Window}">
+    <DockPanel Background="{DynamicResource Theme.Window}">
         <Border DockPanel.Dock="Top" Margin="0,0,0,6">
             <StackPanel>
                 <DockPanel>
@@ -270,7 +270,7 @@
         </Border>
 
         <Border DockPanel.Dock="Bottom" Margin="0,6,0,0">
-            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="{StaticResource Dark.Text}"/>
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="{DynamicResource Theme.Text}"/>
         </Border>
 
         <Grid>
@@ -311,7 +311,7 @@
                                                    Visibility="Collapsed"/>
                                         <TextBlock Grid.Column="1" Text="{Binding PixDescriptionToggleGlyph}"
                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
-                                                   Foreground="{StaticResource Dark.Text}"
+                                                   Foreground="{DynamicResource Theme.Text}"
                                                    Visibility="{Binding PixDescriptionToggleVisibility}"/>
                                     </Grid>
                                 </Border>
@@ -358,7 +358,7 @@
                 </DataGrid.Columns>
                 <DataGrid.RowDetailsTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}" BorderThickness="0,1,0,1" Padding="12,8">
+                        <Border Background="{DynamicResource Theme.Panel}" BorderBrush="{DynamicResource Theme.Border}" BorderThickness="0,1,0,1" Padding="12,8">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -417,7 +417,7 @@
                 </DataGrid.RowDetailsTemplate>
             </DataGrid>
             <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="{StaticResource Dark.Text}" Visibility="Collapsed"
+                       Foreground="{DynamicResource Theme.Text}" Visibility="Collapsed"
                        Text="No PIX activities loaded. Click Reload after importing the PIX/MWF libraries."/>
         </Grid>
     </DockPanel>

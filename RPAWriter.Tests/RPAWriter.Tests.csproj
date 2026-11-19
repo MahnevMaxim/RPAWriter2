@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <!-- Shared agent packages (generic core + MVVM + models) via local NuGet feed. -->
-    <PackageReference Include="AgentToolkit" Version="1.15.0" />
+    <PackageReference Include="AgentToolkit" Version="1.18.0" />
     <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
     <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis (pure, testable without Visual Studio). -->

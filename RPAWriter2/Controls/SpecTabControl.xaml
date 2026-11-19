@@ -27,14 +27,14 @@
         <toolkit:NotificationBanner x:Name="DeployToastControl" DockPanel.Dock="Top" Margin="0,0,0,8" Visibility="Collapsed"
                                       CloseRequested="OnDeployToastClose"
                                       SendToChatRequested="OnNotificationSendToChat"/>
-        <Border x:Name="ImportProgressPanel" DockPanel.Dock="Top" Background="{StaticResource Dark.Panel}"
-                BorderBrush="{StaticResource Dark.Border}" BorderThickness="1" CornerRadius="2"
+        <Border x:Name="ImportProgressPanel" DockPanel.Dock="Top" Background="{DynamicResource Theme.Panel}"
+                BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1" CornerRadius="2"
                 Padding="10,6" Margin="0,0,0,8" Visibility="{Binding Spec.IsImporting, Converter={StaticResource BoolToVis}}">
             <StackPanel>
-                <TextBlock x:Name="ImportStatusText" Foreground="{StaticResource Dark.Text}" TextWrapping="Wrap"
+                <TextBlock x:Name="ImportStatusText" Foreground="{DynamicResource Theme.Text}" TextWrapping="Wrap"
                            Text="{Binding Spec.ImportStatus, Mode=OneWay}"/>
                 <ProgressBar x:Name="ImportProgress" Height="6" Margin="0,6,0,0" IsIndeterminate="True"
-                             Foreground="{StaticResource Dark.Accent}"/>
+                             Foreground="{DynamicResource Theme.Accent}"/>
             </StackPanel>
         </Border>
         <Grid Margin="0,0,0,4">
@@ -47,13 +47,13 @@
                     Style="{StaticResource IconButtonStyle}" Width="26" Height="26"
                     ToolTip="Copy all" Click="OnCopySpecOutput" Visibility="{Binding Spec.HasOutput, Converter={StaticResource BoolToVis}}">
                 <Path Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                      Fill="{StaticResource Dark.Text}" Stretch="Uniform" Width="18" Height="18"/>
+                      Fill="{DynamicResource Theme.Text}" Stretch="Uniform" Width="18" Height="18"/>
             </Button>
             <toolkit:ChatMessagesControl x:Name="SpecMessagesControl" Grid.Row="1"/>
             <Grid x:Name="AnalyzeLogsPanelControl" Grid.Row="0" Grid.RowSpan="2"
-                  Background="{StaticResource Dark.Window}" Visibility="Collapsed">
+                  Background="{DynamicResource Theme.Window}" Visibility="Collapsed">
                 <Border Margin="8"
-                        Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+                        Background="{DynamicResource Theme.Panel}" BorderBrush="{DynamicResource Theme.Border}"
                         BorderThickness="1" CornerRadius="2" Padding="8,6">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -70,7 +70,7 @@
                                 <TextBlock Grid.Column="0" Text="Log source:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="20" Height="20"
                                         VerticalAlignment="Top" ToolTip="Close" Click="OnCloseAnalyzeLogs">
-                                    <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource Dark.Text}"/>
+                                    <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Theme.Text}"/>
                                 </Button>
                             </Grid>
                             <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
@@ -125,7 +125,7 @@
 
                                 <GridSplitter Grid.Row="5" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                               ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                              Background="{StaticResource Dark.Border}"/>
+                                              Background="{DynamicResource Theme.Border}"/>
                                 <TextBlock Grid.Row="6" Text="Logs:" Foreground="#C8C8C8" Margin="0,0,0,2"/>
                                 <DataGrid Grid.Row="7" x:Name="LogsGrid" AutoGenerateColumns="False" IsReadOnly="True" ItemsSource="{Binding Logs}"
                                           SelectionMode="Single" CanUserAddRows="False">
@@ -139,13 +139,13 @@
                                                 <DataTemplate>
                                                     <StackPanel>
                                                         <TextBlock x:Name="SingleParameterText" TextWrapping="Wrap" VerticalAlignment="Center"
-                                                                   Foreground="{StaticResource Dark.Text}"
+                                                                   Foreground="{DynamicResource Theme.Text}"
                                                                    Visibility="Collapsed">
                                                             <Run Text="{Binding Parameters[0].Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Parameters[0].Value, Mode=OneWay}"/>
                                                         </TextBlock>
                                                         <ToggleButton x:Name="ParametersToggle" Focusable="False" HorizontalAlignment="Left"
                                                                       Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
-                                                                      Foreground="{StaticResource Dark.Text}">
+                                                                      Foreground="{DynamicResource Theme.Text}">
                                                             <ToggleButton.Template>
                                                                 <ControlTemplate TargetType="ToggleButton">
                                                                     <Border Background="Transparent">
@@ -156,11 +156,11 @@
                                                             <StackPanel Orientation="Horizontal">
                                                                 <Viewbox Width="12" Height="12" Margin="0,0,6,0">
                                                                     <Polyline x:Name="Chevron" Points="6,9 12,15 18,9"
-                                                                              Stroke="{StaticResource Dark.Text}" StrokeThickness="2"
+                                                                              Stroke="{DynamicResource Theme.Text}" StrokeThickness="2"
                                                                               StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                                                               Fill="Transparent"/>
                                                                 </Viewbox>
-                                                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource Dark.Text}">
+                                                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Theme.Text}">
                                                                     <Run Text="{Binding Parameters[0].Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Parameters[0].Value, Mode=OneWay}"/>
                                                                 </TextBlock>
                                                             </StackPanel>
@@ -169,7 +169,7 @@
                                                                       Visibility="Collapsed">
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
-                                                                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" Foreground="{StaticResource Dark.Text}">
+                                                                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" Foreground="{DynamicResource Theme.Text}">
                                                                         <Run Text="{Binding Key, Mode=OneWay}"/><Run Text=" = "/><Run Text="{Binding Value, Mode=OneWay}"/>
                                                                     </TextBlock>
                                                                 </DataTemplate>

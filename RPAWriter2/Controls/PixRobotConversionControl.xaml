@@ -18,14 +18,14 @@
         <SolidColorBrush x:Key="Dark.Accent" Color="#264F78"/>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -39,10 +39,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlHover}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlHover}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Dark.ControlPressed}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Theme.ControlPressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
@@ -54,18 +54,18 @@
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource Dark.Control}"/>
-            <Setter Property="Foreground" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Dark.Border}"/>
+            <Setter Property="Background" Value="{DynamicResource Theme.Control}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CaretBrush" Value="{StaticResource Dark.Text}"/>
-            <Setter Property="SelectionBrush" Value="{StaticResource Dark.Accent}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Theme.Text}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Theme.Accent}"/>
             <Setter Property="Padding" Value="4,3"/>
         </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <DockPanel Background="{StaticResource Dark.Window}">
+    <DockPanel Background="{DynamicResource Theme.Window}">
         <Border DockPanel.Dock="Top" Margin="0,0,0,8">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Close" Click="OnClose" Margin="8,0,0,0"/>

@@ -39,7 +39,7 @@
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
             <ProgressBar Grid.Row="1" x:Name="KbProgressBar" Height="6" Margin="0,4,0,0"
                          Minimum="0" Maximum="100" Value="{Binding KnowledgeBase.Progress, Mode=OneWay}"
-                         Foreground="{StaticResource Dark.Accent}" Visibility="{Binding KnowledgeBase.IsImporting, Converter={StaticResource BoolToVis}}"/>
+                         Foreground="{DynamicResource Theme.Accent}" Visibility="{Binding KnowledgeBase.IsImporting, Converter={StaticResource BoolToVis}}"/>
 
         </Grid>
 

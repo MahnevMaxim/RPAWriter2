@@ -10,7 +10,7 @@
     </UserControl.Resources>
 
     <Border x:Name="Root"
-            Background="{StaticResource Dark.Panel}" BorderBrush="{StaticResource Dark.Border}"
+            Background="{DynamicResource Theme.Panel}" BorderBrush="{DynamicResource Theme.Border}"
             BorderThickness="1" CornerRadius="2" Padding="8,6" Visibility="Collapsed">
         <StackPanel Orientation="Horizontal">
             <TextBlock Text="Robot number:" VerticalAlignment="Center" Margin="0,0,6,0"/>

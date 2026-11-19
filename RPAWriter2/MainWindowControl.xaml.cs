@@ -1195,7 +1195,7 @@ namespace RPAWriter2
                 Text = "No workspace open",
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 5, 8, 0),
-                Foreground = (Brush)FindResource("Dark.Text"),
+                Foreground = (Brush)FindResource("Theme.Text"),
             };
             _resetWorkspaceButton = new Button
             {
@@ -2710,7 +2710,7 @@ namespace RPAWriter2
                 ChatPanel.DocsContentControl.Content = new TextBlock
                 {
                     Text = "Documentation file not found: " + path,
-                    Foreground = (Brush)FindResource("Dark.Text"),
+                    Foreground = (Brush)FindResource("Theme.Text"),
                     TextWrapping = TextWrapping.Wrap
                 };
                 return;
