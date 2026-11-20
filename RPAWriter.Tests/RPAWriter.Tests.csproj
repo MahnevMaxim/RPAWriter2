@@ -23,7 +23,6 @@
     <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
     <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis (pure, testable without Visual Studio). -->
-    <ProjectReference Include="..\RPAWriter.Roslyn\RPAWriter.Roslyn.csproj" />
   </ItemGroup>
 
   <Target Name="ResolveVsRoslynReferences" BeforeTargets="ResolveAssemblyReferences">
