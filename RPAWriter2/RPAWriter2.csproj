@@ -44,8 +44,8 @@
   <ItemGroup>
     <!-- Shared agent toolkit (generic core, MVVM primitives, product models and shared WPF
          controls) — consumed as NuGet packages from the AgentShared feed. -->
-    <PackageReference Include="AgentToolkit" Version="1.20.0.1" />
-    <PackageReference Include="AgentToolkit.Wpf" Version="1.20.0.1" />
+    <PackageReference Include="AgentToolkit" Version="1.20.1" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.20.1" />
     <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
     <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis shared with the tests (pure, no VS dependency). -->
