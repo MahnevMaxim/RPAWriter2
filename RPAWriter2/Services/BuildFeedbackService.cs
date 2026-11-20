@@ -26,6 +26,9 @@ namespace RPAWriter2.Services
 
         private static readonly string[] OutputPaneNames = { "Build", "Debug", "General" };
 
+        private const int MaxErrorItems = 1000;
+        private const int OutputTailLines = 1000;
+
         public async Task BuildAsync(string configuration, CancellationToken cancellationToken = default)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
@@ -140,7 +143,8 @@ namespace RPAWriter2.Services
                 throw new InvalidOperationException("The Visual Studio Error List is not available.");
 
             var result = new List<BuildError>();
-            for (var i = 1; i <= errorItems.Count; i++)
+            var count = Math.Min(errorItems.Count, MaxErrorItems);
+            for (var i = 1; i <= count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var item = errorItems.Item(i);
@@ -226,8 +230,13 @@ namespace RPAWriter2.Services
 
             try
             {
-                var editPoint = pane.TextDocument.StartPoint.CreateEditPoint();
-                return editPoint.GetText(pane.TextDocument.EndPoint) ?? string.Empty;
+                var doc = pane.TextDocument;
+                var start = doc.StartPoint.CreateEditPoint();
+                var from = doc.EndPoint.CreateEditPoint();
+                from.LineUp(OutputTailLines);
+                if (from.LessThan(start))
+                    from = start;
+                return from.GetText(doc.EndPoint) ?? string.Empty;
             }
             catch
             {

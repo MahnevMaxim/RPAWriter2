@@ -433,67 +433,78 @@ namespace RPAWriter2.Services.AgentTools
             if (entries.Count == 0)
                 return "Missing or invalid \"files\" argument. Expected an array of {path, start_line?, end_line?} objects (or a string / array of strings).";
 
-            // Detecting an open editor tab and reading its buffer must happen on the VS UI thread.
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
-            var dte = _getDte();
-
-            var sb = new StringBuilder();
+            // 1) Background: validate + resolve paths.
+            var resolved = new List<(string? Path, string? Error, int Start, int End)>();
             foreach (var entry in entries)
             {
                 var p = ResolvePath(entry.Path ?? "");
                 if (string.IsNullOrWhiteSpace(p))
                 {
-                    sb.AppendLine("Error reading a files entry: missing \"path\".");
+                    resolved.Add((null, "Error reading a files entry: missing \"path\".", entry.StartLine, entry.EndLine));
                     continue;
                 }
-
                 if (!IsReadAllowed(p))
                 {
-                    sb.AppendLine("Error reading " + p + ": access denied — path is outside the allowed directories (solution / knowledge base / robots / skills / additional read folders) or matches a protected file name.");
+                    resolved.Add((null, "Error reading " + p + ": access denied — path is outside the allowed directories (solution / knowledge base / robots / skills / additional read folders) or matches a protected file name.", entry.StartLine, entry.EndLine));
                     continue;
                 }
+                resolved.Add((p, null, entry.StartLine, entry.EndLine));
+            }
 
-                string text;
-                string source;
+            // 2) UI thread: read ONLY open editor buffers.
+            var buffers = new Dictionary<string, (string Text, string Source)>(StringComparer.OrdinalIgnoreCase);
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            var dte = _getDte();
+            foreach (var r in resolved)
+            {
+                if (r.Error != null || r.Path == null)
+                    continue;
 
-                var doc = dte != null ? VsDocumentService.FindOpenDocument(dte, p) : null;
-                if (doc != null)
+                var doc = dte != null ? VsDocumentService.FindOpenDocument(dte, r.Path!) : null;
+                if (doc == null)
+                    continue;
+
+                await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
+                var buffer = VsDocumentService.ReadDocumentText(doc);
+                if (buffer != null)
+                    buffers[r.Path!] = (buffer, "editor buffer");
+            }
+
+            // 3) Background: disk reads + formatting/truncation.
+            return await Task.Run(() =>
+            {
+                var sb = new StringBuilder();
+                foreach (var r in resolved)
                 {
-                    await VsDocumentService.WaitForDocumentReadyAsync(doc).ConfigureAwait(true);
-                    var buffer = VsDocumentService.ReadDocumentText(doc);
-                    if (buffer != null)
+                    if (r.Error != null)
                     {
-                        text = buffer;
-                        source = "editor buffer";
+                        sb.AppendLine(r.Error);
+                        continue;
+                    }
+
+                    string text;
+                    string source;
+                    if (buffers.TryGetValue(r.Path!, out var b))
+                    {
+                        text = b.Text;
+                        source = b.Source;
                     }
                     else
                     {
-                        var diskText = ReadFromDiskOrNull(p, out var diskError);
+                        var diskText = ReadFromDiskOrNull(r.Path!, out var diskError);
                         if (diskError != null)
                         {
-                            sb.AppendLine("Error reading " + p + ": " + diskError);
+                            sb.AppendLine("Error reading " + r.Path! + ": " + diskError);
                             continue;
                         }
                         text = diskText!;
-                        source = "disk (buffer unreadable, fallback)";
+                        source = "disk";
                     }
-                }
-                else
-                {
-                    var diskText = ReadFromDiskOrNull(p, out var diskError);
-                    if (diskError != null)
-                    {
-                        sb.AppendLine("Error reading " + p + ": " + diskError);
-                        continue;
-                    }
-                    text = diskText!;
-                    source = "disk";
-                }
 
-                sb.Append(FormatReadFilesResult(p, source, text, entry.StartLine, entry.EndLine));
-            }
-
-            return sb.ToString();
+                    sb.Append(FormatReadFilesResult(r.Path!, source, text, r.Start, r.End));
+                }
+                return sb.ToString();
+            }, ct).ConfigureAwait(false);
         }
 
         private Task<string> ReadFilesDisplayAsync(JObject args, CancellationToken ct)
@@ -912,6 +923,7 @@ namespace RPAWriter2.Services.AgentTools
             if (string.IsNullOrWhiteSpace(path)) return "Missing \"path\" argument.";
             if (!IsReadAllowed(path)) return "Access denied: " + path;
 
+            await _roslyn.EnsureResolvedAsync(ct);
             var document = await _roslyn.GetDocumentAsync(path, ct).ConfigureAwait(false);
             if (document == null)
                 return "Not a C# document in the open Visual Studio solution: " + path + " (Roslyn semantic tools require the file to be part of the open solution).";
@@ -937,6 +949,7 @@ namespace RPAWriter2.Services.AgentTools
             var symbol = args["symbol"]?.Value<string>() ?? "";
             if (string.IsNullOrWhiteSpace(symbol)) return "Missing \"symbol\" argument.";
 
+            await _roslyn.EnsureResolvedAsync(ct);
             var solution = _roslyn.GetSolution();
             if (solution == null) return "Visual Studio workspace is not available.";
 
@@ -971,6 +984,7 @@ namespace RPAWriter2.Services.AgentTools
             var symbol = args["symbol"]?.Value<string>() ?? "";
             if (string.IsNullOrWhiteSpace(symbol)) return "Missing \"symbol\" argument.";
 
+            await _roslyn.EnsureResolvedAsync(ct);
             var solution = _roslyn.GetSolution();
             if (solution == null) return "Visual Studio workspace is not available.";
 
@@ -1019,6 +1033,7 @@ namespace RPAWriter2.Services.AgentTools
                 if (!IsReadAllowed(displayPath)) return "Access denied: " + displayPath;
             }
 
+            await _roslyn.EnsureResolvedAsync(ct);
             document = await _roslyn.GetDocumentAsync(displayPath, ct).ConfigureAwait(false);
             if (document == null)
                 return "Not a C# document in the open Visual Studio solution: " + displayPath;
@@ -1687,62 +1702,77 @@ namespace RPAWriter2.Services.AgentTools
                 else if (int.TryParse(insertToken.Value<string>(), out var parsed)) insertLine = parsed;
             }
 
-            // Read the current content from the open VS editor buffer when available, else from disk.
+            // 1) UI thread: locate + read the open editor buffer only.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
             var dte = _getDte();
             var openDoc = dte != null ? VsDocumentService.FindOpenDocument(dte, p) : null;
-
-            string current;
+            string? buffer = null;
             if (openDoc != null)
             {
                 var ready = await VsDocumentService.WaitForDocumentReadyAsync(openDoc).ConfigureAwait(true);
-                current = ready ? (VsDocumentService.ReadDocumentText(openDoc) ?? "") : ReadDiskText(p);
-            }
-            else
-            {
-                current = ReadDiskText(p);
+                buffer = ready ? VsDocumentService.ReadDocumentText(openDoc) : null;
             }
 
-            string newContent;
-            if (insertLine.HasValue)
+            // 2) Background: disk fallback + content computation + line-ending normalization.
+            var edit = await Task.Run<(string? newContent, string? error)>(() =>
             {
-                newContent = InsertAtLine(current, insertLine.Value, newText);
-            }
-            else if (oldText != null)
-            {
-                var idx = current.IndexOf(oldText, StringComparison.Ordinal);
-                if (idx < 0) return "old_text was not found in the file (no edit was made).";
-                var second = current.IndexOf(oldText, idx + oldText.Length, StringComparison.Ordinal);
-                if (second >= 0) return "old_text is not unique in the file; make it more specific and retry.";
-                newContent = current.Substring(0, idx) + newText + current.Substring(idx + oldText.Length);
-            }
-            else
-            {
-                newContent = newText;
-            }
+                var current = buffer ?? ReadDiskText(p);
+                var (newContent, error) = ApplyEdit(current, oldText, insertLine, newText);
+                if (error != null)
+                    return (null, error);
 
-            // Normalize line endings so the edit never introduces mixed CRLF/LF endings
-            // (which trigger Visual Studio's "Inconsistent Line Endings" dialog on load).
-            newContent = LineEndings.Normalize(newContent, LineEndings.Detect(current));
+                var normalized = LineEndings.Normalize(newContent!, LineEndings.Detect(current));
+                return (normalized, null);
+            }, ct).ConfigureAwait(false);
 
-            // Prefer editing the open VS editor buffer; otherwise write straight to disk.
+            if (edit.error != null)
+                return edit.error;
+
+            // 3) UI thread: write to the open buffer; otherwise write to disk on background.
             if (openDoc != null && dte != null)
             {
-                var error = VsDocumentService.ReplaceDocumentText(dte, openDoc, newContent);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+                var error = VsDocumentService.ReplaceDocumentText(dte, openDoc, edit.newContent!);
                 if (error != null) return error;
                 try { openDoc.Save(); }
                 catch (Exception ex) { return "Edited in the editor but failed to save: " + ex.Message; }
                 return "Edited in editor and saved: " + p;
             }
 
-            try
+            return await Task.Run(() =>
             {
-                var dir = Path.GetDirectoryName(p);
-                if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-                LineEndings.WriteAllText(p, newContent);
-                return "File written: " + p;
+                try
+                {
+                    var dir = Path.GetDirectoryName(p);
+                    if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+                    LineEndings.WriteAllText(p, edit.newContent!);
+                    return "File written: " + p;
+                }
+                catch (Exception ex)
+                {
+                    return "Failed to write file: " + ex.Message;
+                }
+            }, ct).ConfigureAwait(false);
+        }
+
+        private static (string? newContent, string? error) ApplyEdit(
+            string current, string? oldText, int? insertLine, string newText)
+        {
+            if (insertLine.HasValue)
+                return (InsertAtLine(current, insertLine.Value, newText), null);
+
+            if (oldText != null)
+            {
+                var idx = current.IndexOf(oldText, StringComparison.Ordinal);
+                if (idx < 0)
+                    return (null, "old_text was not found in the file (no edit was made).");
+                var second = current.IndexOf(oldText, idx + oldText.Length, StringComparison.Ordinal);
+                if (second >= 0)
+                    return (null, "old_text is not unique in the file; make it more specific and retry.");
+                return (current.Substring(0, idx) + newText + current.Substring(idx + oldText.Length), null);
             }
-            catch (Exception ex) { return "Failed to write file: " + ex.Message; }
+
+            return (newText, null);
         }
 
         private Task<string> EditorDisplayAsync(JObject args, CancellationToken ct)

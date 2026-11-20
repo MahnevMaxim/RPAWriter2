@@ -25,45 +25,41 @@ namespace RPAWriter2.Services
         private static VisualStudioWorkspace _workspace;
         private static bool _resolved;
 
-        /// <summary>Resolves the singleton VisualStudioWorkspace once and caches it.</summary>
-        public VisualStudioWorkspace Workspace
+        /// <summary>
+        /// Resolves the singleton VisualStudioWorkspace once, on the VS UI thread.
+        /// Idempotent and safe to call from any thread via JoinableTaskFactory.
+        /// </summary>
+        public async Task EnsureResolvedAsync(CancellationToken cancellationToken = default)
         {
-            get
+            if (_resolved)
+                return;
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+            if (_resolved)
+                return;
+
+            try
             {
-                if (!_resolved)
-                {
-                    lock (Gate)
-                    {
-                        if (!_resolved)
-                        {
-                            try
-                            {
-                                var componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
-                                _workspace = componentModel?.GetService<VisualStudioWorkspace>();
-                            }
-                            catch
-                            {
-                                _workspace = null;
-                            }
-                            _resolved = true;
-                        }
-                    }
-                }
-                return _workspace;
+                var componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
+                _workspace = componentModel?.GetService<VisualStudioWorkspace>();
             }
+            catch
+            {
+                _workspace = null;
+            }
+            _resolved = true;
         }
+
+        private VisualStudioWorkspace Workspace => _workspace;
 
         /// <summary>Returns the live Roslyn document for the given absolute file path, or null.</summary>
         public Task<Document?> GetDocumentAsync(string fullPath, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(fullPath))
+            if (string.IsNullOrWhiteSpace(fullPath) || _workspace == null)
                 return Task.FromResult<Document?>(null);
 
-            var workspace = Workspace;
-            if (workspace == null)
-                return Task.FromResult<Document?>(null);
-
-            var solution = workspace.CurrentSolution;
+            var solution = _workspace.CurrentSolution;
             var documentIds = solution.GetDocumentIdsWithFilePath(fullPath);
             if (documentIds.Length == 0)
                 return Task.FromResult<Document?>(null);
@@ -74,7 +70,7 @@ namespace RPAWriter2.Services
         /// <summary>Returns the live solution of the open workspace, or null when unavailable.</summary>
         public Solution GetSolution()
         {
-            return Workspace?.CurrentSolution;
+            return _workspace?.CurrentSolution;
         }
     }
 }
