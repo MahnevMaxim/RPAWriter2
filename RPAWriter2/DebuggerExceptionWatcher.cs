@@ -61,8 +61,7 @@ namespace RPAWriter2
 
         private void OnEnterBreakMode(dbgEventReason reason, ref dbgExecutionAction executionAction)
         {
-            if (reason != dbgEventReason.dbgEventReasonExceptionThrown &&
-                reason != dbgEventReason.dbgEventReasonExceptionNotHandled)
+            if (!DebuggerExceptionPolicy.ShouldCapture(MapReason(reason)))
                 return;
 
             _package.JoinableTaskFactory.RunAsync(async delegate
@@ -109,7 +108,7 @@ namespace RPAWriter2
 
             Pending = snapshot;
 
-            if (IsAutoSendEnabled())
+            if (DebuggerExceptionPolicy.ShouldAutoSend(MapReason(reason), IsAutoSendEnabled()))
             {
                 await SendToChatAsync(snapshot);
                 Pending = null;
@@ -118,13 +117,20 @@ namespace RPAWriter2
 
         private static bool IsAutoSendEnabled()
         {
-            try
+            return DebuggerExceptionPolicy.ReadAutoCaptureEnabledSafely(
+                () => SettingsStore.Load().AutoCaptureRuntimeExceptions);
+        }
+
+        private static DebuggerBreakReason MapReason(dbgEventReason reason)
+        {
+            switch (reason)
             {
-                return SettingsStore.Load().AutoCaptureRuntimeExceptions;
-            }
-            catch
-            {
-                return true;
+                case dbgEventReason.dbgEventReasonExceptionThrown:
+                    return DebuggerBreakReason.ExceptionThrown;
+                case dbgEventReason.dbgEventReasonExceptionNotHandled:
+                    return DebuggerBreakReason.ExceptionNotHandled;
+                default:
+                    return DebuggerBreakReason.None;
             }
         }
 

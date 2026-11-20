@@ -2493,6 +2493,17 @@ namespace RPAWriter2
                 : ToolCallingMode.JsonChat;
             var allowedPermissions = BuildAllowedPermissions();
             var budget = BuildSubAgentBudget();
+            // The sub-agent must return a text report instead of interacting with the user, so
+            // it gets the same tools as the parent (respecting the current mode and permissions)
+            // but WITHOUT ask_question. This prevents the sub-agent from posting a question card
+            // and keeps its answer as plain chat text.
+            var subRegistry = new AgentToolRegistry();
+            foreach (var tool in registry.ForMode(_chatModel.Mode, allowedPermissions))
+            {
+                if (string.Equals(tool.Name, "ask_question", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                subRegistry.Register(tool);
+            }
 
             var item = new SubagentStatusItem { Prompt = task };
             AppendChatMessage(new ChatMessage
@@ -2505,8 +2516,8 @@ namespace RPAWriter2
 
             var runner = new AgentRunner(
                 _ai,
-                registry,
-                m => AgentPromptBuilder.Build(m, registry, toolCallingMode, allowedPermissions, GetReadRootsForPrompt()),
+                subRegistry,
+                m => AgentPromptBuilder.Build(m, subRegistry, toolCallingMode, allowedPermissions, GetReadRootsForPrompt()),
                 budget,
                 toolCallingMode: toolCallingMode,
                 allowedPermissions: allowedPermissions);
