@@ -14,8 +14,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AgentToolkit" Version="1.21.0.1" />
-    <PackageReference Include="AgentToolkit.Wpf" Version="1.21.0.1" />
+    <PackageReference Include="AgentToolkit" Version="1.21.0.2" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.21.0.2" />
   </ItemGroup>
 
 </Project>

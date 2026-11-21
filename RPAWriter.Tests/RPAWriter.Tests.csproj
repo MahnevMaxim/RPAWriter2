@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AgentToolkit.Wpf" Version="1.21.0.1" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.21.0.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <!-- Shared agent packages (generic core + MVVM + models) via local NuGet feed. -->
-    <PackageReference Include="AgentToolkit" Version="1.21.0.1" />
+    <PackageReference Include="AgentToolkit" Version="1.21.0.2" />
     <!-- RPA-specific layer (robot generation, spec analysis, converters, log analysis). -->
     <ProjectReference Include="..\Agent.Rpa\Agent.Rpa.csproj" />
     <!-- Roslyn semantic analysis (pure, testable without Visual Studio). -->
